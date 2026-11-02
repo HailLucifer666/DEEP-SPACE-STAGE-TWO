@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>STAGE TWO</title>
+<style>
+:root{
+  --ink:#dff1ff; --dim:#8fa8bd; --accent:#7dd7ff; --warm:#ff9d54; --warn:#ff5a3c;
+}
+html,body{margin:0;height:100%;overflow:hidden;}
+body{
+  background:radial-gradient(120% 130% at 50% 108%, #24384d 0%, #10161f 55%, #070a10 100%);
+  font-family:"Segoe UI",system-ui,-apple-system,sans-serif;color:var(--ink);
+  -webkit-user-select:none;user-select:none;
+}
+#scene-canvas{position:fixed;inset:0;width:100%;height:100%;display:block;}
+#vignette{position:fixed;inset:0;z-index:20;pointer-events:none;
+  background:radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,.38) 100%);}
+.overlay{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;}
+[hidden]{display:none !important;}
+
+#hud{position:fixed;inset:0;z-index:30;pointer-events:none;}
+#count{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-size:17vh;font-weight:900;color:#fff;letter-spacing:.04em;opacity:.95;
+  text-shadow:0 0 46px rgba(255,255,255,.4), 0 2px 16px rgba(0,0,0,.45);}
+#count.pop{animation:hpop .52s cubic-bezier(.16,.9,.24,1);}
+@keyframes hpop{0%{transform:scale(1.8);opacity:.05;filter:blur(10px);}55%{opacity:1;filter:blur(0);}100%{transform:scale(1);}}
+#tele{position:absolute;top:18px;right:22px;font:12px/1.75 ui-monospace,Consolas,monospace;
+  color:#9fd8ff;letter-spacing:.1em;white-space:pre;text-align:right;
+  text-shadow:0 0 12px rgba(159,216,255,.35);}
+#warn{position:fixed;left:50%;bottom:64px;transform:translateX(-50%);z-index:34;pointer-events:none;
+  font:700 13px ui-monospace,Consolas,monospace;letter-spacing:.34em;color:#ffd88f;
+  text-shadow:0 0 14px rgba(255,216,143,.45);text-transform:uppercase;}
+
+#webglveil{z-index:70;background:#0a0e14;padding:0 24px;}
+#webglveil h2{letter-spacing:.08em;margin:0 0 12px;}
+#webglveil p{color:var(--dim);line-height:1.6;margin:0;}
+
+#loading{z-index:60;pointer-events:none;}
+.spin{width:18px;height:18px;border:2px solid rgba(255,255,255,.22);border-top-color:var(--accent);
+  border-radius:50%;animation:s1 1s linear infinite;margin-bottom:10px;}
+@keyframes s1{to{transform:rotate(360deg)}}
+#loading-note{font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:var(--dim);}
+
+#title{z-index:40;}
+.brand{font-size:clamp(46px,9vw,92px);font-weight:900;letter-spacing:.14em;margin:0;line-height:1;
+  background:linear-gradient(180deg,#fff 18%,#7dd7ff 62%,#3d7fb8 100%);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+  filter:drop-shadow(0 0 26px rgba(125,215,255,.30));}
+.tagline{margin:12px 0 30px;color:var(--dim);letter-spacing:.26em;text-transform:uppercase;font-size:12px;}
+.row{display:flex;gap:14px;flex-wrap:wrap;justify-content:center;}
+.pill{font:700 13px/1 inherit;padding:14px 24px;background:rgba(10,16,24,.55);color:var(--ink);
+  border:1px solid rgba(125,215,255,.4);border-radius:10px;letter-spacing:.16em;cursor:pointer;
+  transition:border-color .18s, box-shadow .18s, transform .18s;}
+.pill:hover{border-color:var(--accent);color:#fff;box-shadow:0 0 24px rgba(125,215,255,.26);transform:translateY(-1px);}
+.pill:focus-visible{outline:2px solid var(--accent);outline-offset:3px;}
+.pill.warm{border-color:rgba(255,157,84,.5);}
+.pill.warm:hover{border-color:var(--warm);box-shadow:0 0 24px rgba(255,157,84,.28);}
+.hs{margin-top:24px;letter-spacing:.2em;font-size:12px;color:var(--dim);}
+.hints{margin-top:8px;font-size:11px;color:#66798a;letter-spacing:.12em;}
+
+#debug{position:fixed;top:12px;left:12px;z-index:75;padding:10px 12px;background:rgba(4,8,12,.62);
+  border:1px solid rgba(125,215,255,.22);border-radius:8px;font:11px/1.55 ui-monospace,Consolas,monospace;
+  color:#9fe8c0;white-space:pre;margin:0;}
+#toast{position:fixed;left:50%;bottom:34px;transform:translateX(-50%) translateY(8px);z-index:80;
+  padding:10px 18px;background:rgba(8,13,20,.82);border:1px solid rgba(125,215,255,.35);border-radius:999px;
+  font-size:12px;letter-spacing:.08em;opacity:0;transition:opacity .22s, transform .22s;pointer-events:none;}
+#toast.on{opacity:1;transform:translateX(-50%) translateY(0);}
+
+/* S3 transition: B1 flash veil */
+#flash{position:fixed;inset:0;z-index:50;background:#fff;opacity:0;pointer-events:none;transition:opacity .12s linear;}
+#flash.on{opacity:.85;}
+/* S3 transition: B4 slow-burn title */
+#combat-online{z-index:45;font-weight:900;font-family:ui-monospace,Consolas,monospace;font-size:clamp(34px,7vw,72px);
+  letter-spacing:.42em;padding-left:.42em;color:#bfe9ff;opacity:0;filter:blur(14px);transform:scale(1.08);
+  transition:opacity 1.4s ease, filter 1.6s ease, transform 1.6s ease;
+  text-shadow:0 0 40px rgba(125,215,255,.45);}
+#combat-online.on{opacity:1;filter:blur(0);transform:scale(1);}
+/* S3 transition: B2 HUD lock-in assembly */
+#reticle{position:absolute;left:50%;top:50%;width:132px;height:132px;transform:translate(-50%,-50%) scale(1.55);
+  opacity:0;transition:transform .6s cubic-bezier(.16,.9,.24,1), opacity .5s ease;pointer-events:none;}
+#reticle span{position:absolute;width:26px;height:26px;border:2px solid rgba(125,215,255,.75);}
+#reticle .tl{left:0;top:0;border-right:0;border-bottom:0;}
+#reticle .tr{right:0;top:0;border-left:0;border-bottom:0;}
+#reticle .bl{left:0;bottom:0;border-right:0;border-top:0;}
+#reticle .br{right:0;bottom:0;border-left:0;border-top:0;}
+#hud.assemble #reticle{transform:translate(-50%,-50%) scale(1);opacity:1;}
+#hud.assemble #tele{animation:teleIn .7s cubic-bezier(.16,.9,.24,1) both;}
+@keyframes teleIn{from{transform:translateX(26px);opacity:0;}to{transform:translateX(0);opacity:1;}}
+
+/* S4 combat: hull/shield/boost bars + score */
+#hud-bars{position:absolute;left:22px;bottom:20px;font:700 11px/1.6 ui-monospace,Consolas,monospace;
+  letter-spacing:.14em;color:#bfe9ff;text-shadow:0 0 10px rgba(125,215,255,.4);}
+#hud-bars .bar{width:180px;height:6px;background:rgba(255,255,255,.09);border:1px solid rgba(125,215,255,.28);
+  border-radius:3px;margin:2px 0 8px;overflow:hidden;}
+#hud-bars .bar i{display:block;height:100%;background:#ff5a3c;transition:width .18s ease;}
+#hud-bars .bar.sh i{background:#7dd7ff;}
+#hud-score{position:absolute;top:18px;left:22px;font:700 13px/1.4 ui-monospace,Consolas,monospace;
+  letter-spacing:.18em;color:#bfe9ff;text-shadow:0 0 12px rgba(125,215,255,.4);}
+/* S4 combat: damage veil */
+#hitveil{position:fixed;inset:0;z-index:46;pointer-events:none;opacity:0;transition:opacity .14s ease;
+  background:radial-gradient(ellipse at center, transparent 42%, rgba(255,42,26,.42) 100%);}
+#hitveil.on{opacity:1;}
+/* S4 combat: pause + gameover cards */
+#pause,#gameover{z-index:48;background:rgba(5,9,14,.72);backdrop-filter:blur(3px);}
+#pause h2,#gameover h2{margin:0 0 10px;letter-spacing:.3em;font-size:34px;}
+#pause p,#gameover .go-score,#gameover .go-hs{color:var(--dim);letter-spacing:.2em;font-size:13px;margin:6px 0;}
+#gameover .go-score{color:#ffd88f;}
+#gameover .row{margin-top:22px;}
+</style>
+</head>
+<body>
+<canvas id="scene-canvas"></canvas>
+<div id="vignette"></div>
+<div id="hud" hidden>
+  <div id="tele"></div>
+  <div id="count"></div>
+  <div id="reticle" hidden><span class="tl"></span><span class="tr"></span><span class="bl"></span><span class="br"></span></div>
+  <div id="hud-bars"></div>
+  <div id="hud-score"></div>
+</div>
+<div id="hitveil"></div>
+<div id="pause" class="overlay" hidden><h2>PAUSED</h2><p>P / ESC to resume · M mute</p></div>
+<div id="gameover" class="overlay" hidden>
+  <h2>SHIP LOST</h2>
+  <div id="go-score" class="go-score">SCORE — 0</div>
+  <div id="go-hs" class="go-hs">HIGH SCORE — 0</div>
+  <div class="row">
+    <button id="go-replay" class="pill warm" type="button">[ REPLAY LAUNCH ]</button>
+    <button id="go-skip" class="pill" type="button">[ SKIP TO COMBAT ]</button>
+  </div>
+</div>
+<div id="flash" hidden></div>
+<div id="combat-online" class="overlay" hidden>COMBAT ONLINE</div>
+<div id="warn" hidden></div>
+
+<div id="webglveil" class="overlay" hidden>
+  <h2>GPU renderer unavailable</h2>
+  <p>STAGE TWO needs hardware-accelerated WebGL2.<br>
+     Open this page in a hardware-accelerated desktop browser (Chrome / Edge / Firefox).</p>
+</div>
+
+<div id="loading" class="overlay" hidden>
+  <div class="spin"></div>
+  <div id="loading-note">decoding rocket…</div>
+</div>
+
+<div id="title" class="overlay" hidden>
+  <h1 class="brand">STAGE TWO</h1>
+  <div class="tagline">stage one falls away — stage two fights</div>
+  <div class="row">
+    <button id="btn-launch" class="pill warm" type="button">[ LAUNCH ]</button>
+    <button id="btn-skip" class="pill" type="button">[ SKIP TO COMBAT ]</button>
+  </div>
+  <div id="hs-line" class="hs">HIGH SCORE — 0</div>
+  <div class="hints">MOUSE steer · HOLD fire · SHIFT boost · P pause · M mute</div>
+</div>
+
+<pre id="debug" hidden></pre>
+<div id="toast"></div>
+
+<script>window.__GLB_B64="{{GLB_B64}}";</script>
+<script>window.__BUILD_MODE="{{MODE}}";</script>
+/*{{IMPORTMAP}}*/
+<script type="module">
+/*{{APP_JS}}*/
+</script>
+</body>
+</html>
