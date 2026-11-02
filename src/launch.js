@@ -282,6 +282,10 @@ export function seedWrecks(proto) { // idempotent; silent no-op without a decode
 }
 export function wreckCount() { return L.wrecksSeeded; }
 
+export function combatFlow(dt, boost01) { // combat keeps the lane — the field drifts past, boost rushes it
+  streamTick(dt, 3 + 26 * clamp(boost01 || 0, 0, 1));
+}
+
 /* ---------- PHASE: PAD (drift) ---------- */
 export function enterPad() {
   resetStage();

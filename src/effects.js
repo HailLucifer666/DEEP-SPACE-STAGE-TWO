@@ -66,6 +66,9 @@ export function prepareEffects(scene, camera) {
 
 export function explosion(p) { if (FX.ready) FX.pool.burst(p, 12); }
 export function particleCount() { return FX.ready ? FX.pool.live : 0; }
+export function tickEffects(dt) { // drives the explosion pool — was never called before (fixed 2026-11-03): particles never faded
+  if (FX.ready) FX.pool.update(dt);
+}
 
 export function shake(amp) { FX.kickAmp = Math.min(0.5, FX.kickAmp + amp); }
 export function applyShake(dt) { // combat camera calls this AFTER setting its own position

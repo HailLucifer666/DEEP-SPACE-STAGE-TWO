@@ -9,7 +9,7 @@ import * as ENEMIES from './enemies.js';
 import * as EFFECTS from './effects.js';
 import { makePool } from './pool.js';
 import { beep, sweep, noiseBurst, loopStart, loopsStopAll } from './audio.js';
-import { stageShip } from './launch.js';
+import { stageShip, combatFlow } from './launch.js';
 
 const ARENA_Y = 18;
 const ARENA_HALF = 26;       // player soft clamp (drones may spawn outside and fly in)
@@ -33,6 +33,7 @@ const C = {
   bed: null, scriptT: -1, scriptDone: false,
   tmp: new THREE.Vector3(), tmp2: new THREE.Vector3(),
   ndc: new THREE.Vector3(), // hoisted unproject scratch (feel: no per-frame allocation)
+  flow: 0, // smoothed boost → field-flow factor (0 idle drift, 1 rush)
   retX: -1, retY: -1, lastBars: null, lastScore: null, // change-gates for DOM writes
 };
 const qs = new URLSearchParams(location.search);
@@ -113,7 +114,7 @@ function steer(dt) {
   target.x = clamp(target.x, -ARENA_HALF, ARENA_HALF);
   target.z = clamp(target.z, -ARENA_HALF, ARENA_HALF);
 
-  const boostWant = (keys.has('ShiftLeft') || keys.has('ShiftRight')) && C.boost > 0.12 && target.distanceTo(C.pos) > 1.5;
+  const boostWant = (input.boost || keys.has('ShiftLeft') || keys.has('ShiftRight')) && C.boost > 0.12 && target.distanceTo(C.pos) > 1.5;
   C.boosting = boostWant;
   C.boost = clamp(C.boost + (boostWant ? -0.45 : 0.25) * dt, 0, 1);
   const speed = MAX_SPEED * (boostWant ? BOOST_MULT : 1);
@@ -248,6 +249,7 @@ export function enterCombat(scene, camera, rocket, ui, api) {
   C.fireT = 0; C.boost = 1; C.boosting = false;
   C.score = 0; C.kills = 0; C.wave = 1; C.waveGapT = 0;
   C.scriptT = -1; C.scriptDone = false; C.scriptDrone = null;
+  C.flow = 0;
   C.lastBars = null; C.lastScore = null; // clearCombat emptied the DOM — force one HUD rewrite
   C.bolts.clear();
   ENEMIES.clearEnemies();
@@ -283,6 +285,9 @@ export function tickCombat(dt, t) {
   C.camera.position.lerp(camTarget, k);
   C.camera.lookAt(C.pos.x + forward(C.tmp2).x * 4, ARENA_Y, C.pos.z + C.tmp2.z * 4);
   EFFECTS.applyShake(dt);
+  EFFECTS.tickEffects(dt); // drive the explosion pool — was never called (particles never faded)
+  C.flow += ((C.boosting ? 1 : 0) - C.flow) * (1 - Math.exp(-4 * dt)); // smoothed boost rush
+  combatFlow(dt, C.flow); // the field streams past the lane — asteroids, wrecks, planet, hole
 
   // HUD — honest values, DOM writes only on change (feel: no per-frame innerHTML churn)
   if (C.ui.hudBars) {
@@ -335,6 +340,7 @@ export function combatState() {
     enemies: ENEMIES.aliveCount() + ENEMIES.queuedCount(),
     particles: EFFECTS.particleCount(),
     bolts: C.bolts ? C.bolts.live : 0,
+    boost: C.boost,
     dead: C.dead,
   };
 }

@@ -446,7 +446,7 @@ function dprTick(dt) { // raw dt (unscaled) — slow-mo must not fake slowness
 
 /* ============================== INPUT ============================== */
 // shared input state — combat consumes it; every listener only records, never interprets
-const input = { keys: new Set(), mouse: { x: 0, y: 0 }, mouseActive: false, fire: false, px: { x: 0, y: 0 } };
+const input = { keys: new Set(), mouse: { x: 0, y: 0 }, mouseActive: false, fire: false, boost: false, px: { x: 0, y: 0 } };
 let paused = false;
 
 function setPaused(p) {
@@ -468,7 +468,7 @@ function onKeydown(e) {
       if (e.code === 'Enter' || e.code === 'Space') { e.preventDefault(); COMBAT.deathFastForward(); }
       return;
     }
-    if (e.code === 'Space') { e.preventDefault(); input.fire = true; } // held Space = held trigger
+    if (e.code === 'Space') { e.preventDefault(); input.boost = true; } // Space = boost (rebind 2026-11-03); fire is LMB-only
     if (e.code === 'KeyP' || e.code === 'Escape') { e.preventDefault(); setPaused(!paused); }
     if (e.code === 'KeyM') setMuted(!isMuted());
     return;
@@ -479,7 +479,7 @@ function onKeydown(e) {
 }
 function onKeyup(e) {
   input.keys.delete(e.code);
-  if (e.code === 'Space') input.fire = false;
+  if (e.code === 'Space') input.boost = false;
 }
 function onPointerMove(e) {
   input.px.x = e.clientX; input.px.y = e.clientY; // client px — combat pins #reticle here (the hidden cursor's stand-in)
