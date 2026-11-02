@@ -71,9 +71,30 @@ body.playing, body.playing *{cursor:none !important;}
   font-size:12px;letter-spacing:.08em;opacity:0;transition:opacity .22s, transform .22s;pointer-events:none;}
 #toast.on{opacity:1;transform:translateX(-50%) translateY(0);}
 
-/* S3 transition: B1 flash veil */
+/* S3 transition: B1 flash veil (+ .soft = rift flare pop) */
 #flash{position:fixed;inset:0;z-index:50;background:#fff;opacity:0;pointer-events:none;transition:opacity .12s linear;}
 #flash.on{opacity:.85;}
+#flash.on.soft{opacity:.38;}
+/* rift-sequence LOGO card — glitch-in inside the warp, punch-out at B4 */
+#go-logo{z-index:52;pointer-events:none;}
+#go-logo .logo-glyph{font-size:clamp(40px,7.6vw,80px);font-weight:900;letter-spacing:.18em;padding-left:.18em;
+  color:#eaf7ff;text-shadow:0 0 34px rgba(125,215,255,.55),0 0 90px rgba(125,215,255,.25);}
+#go-logo.on .logo-glyph{animation:glitchIn .55s steps(2,end) both, logoFloat 2.4s ease-in-out .55s infinite;}
+#go-logo.out .logo-glyph{animation:logoOut .5s ease both;}
+#go-logo .logo-sub{margin-top:14px;font:600 12px/1.6 'Rajdhani','Segoe UI',sans-serif;
+  letter-spacing:.5em;padding-left:.5em;color:#9fd8ff;opacity:0;}
+#go-logo.on .logo-sub{animation:subIn .8s ease .5s both;}
+@keyframes glitchIn{
+  0%{opacity:0;transform:translateX(-8px) skewX(8deg);clip-path:inset(20% 0 55% 0);}
+  20%{opacity:1;clip-path:inset(0 0 0 0);transform:translateX(6px) skewX(-6deg);}
+  40%{clip-path:inset(45% 0 20% 0);transform:translateX(-4px);}
+  60%{clip-path:inset(0 0 0 0);transform:translateX(3px) skewX(3deg);}
+  80%{clip-path:inset(25% 0 30% 0);}
+  100%{opacity:1;clip-path:inset(0 0 0 0);transform:none;}
+}
+@keyframes logoFloat{0%,100%{transform:translateY(0);}50%{transform:translateY(-5px);}}
+@keyframes subIn{from{opacity:0;letter-spacing:.8em;}to{opacity:1;letter-spacing:.5em;}}
+@keyframes logoOut{to{opacity:0;transform:scale(1.16);filter:blur(14px);}}
 /* S3 transition: B4 slow-burn title */
 #combat-online{z-index:45;font-weight:900;font-family:ui-monospace,Consolas,monospace;font-size:clamp(34px,7vw,72px);
   letter-spacing:.42em;padding-left:.42em;color:#bfe9ff;opacity:0;filter:blur(14px);transform:scale(1.08);
@@ -114,7 +135,7 @@ body.playing, body.playing *{cursor:none !important;}
 
 /* downloaded fonts — the woff2 files register via the FontFace API (src/assets.js);
    these rules only route the families. System stack reads until the faces land. */
-.brand, #combat-online, #gameover h2, #pause h2 { font-family:'Orbitron','Segoe UI',system-ui,sans-serif; }
+.brand, #combat-online, #gameover h2, #pause h2, #go-logo .logo-glyph { font-family:'Orbitron','Segoe UI',system-ui,sans-serif; }
 .pill, .hs, .hints, #tele, #hud-bars, #hud-score, #count, #loading-note,
 #gameover .go-score, #gameover .go-hs, #webglveil h2 { font-family:'Rajdhani','Segoe UI',system-ui,sans-serif; }
 </style>
@@ -141,6 +162,10 @@ body.playing, body.playing *{cursor:none !important;}
   </div>
 </div>
 <div id="flash" hidden></div>
+<div id="go-logo" class="overlay" hidden>
+  <div class="logo-glyph">STAGE TWO</div>
+  <div class="logo-sub">SECTOR DEFENSE // PROTOCOL II</div>
+</div>
 <div id="combat-online" class="overlay" hidden>COMBAT ONLINE</div>
 <div id="warn" hidden></div>
 

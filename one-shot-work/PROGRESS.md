@@ -1,3 +1,4 @@
+STATE 2026-11-03 04:45 | task: controls | last good tag: good-controls | build: ok 4.64MB | next: rift/warp/logo rework (F) | blockers: none
 STATE 2026-11-03 04:03 | task: assets | last good tag: good-assets | build: ok 4.64MB | next: Vi3W drone+boss (P0), bloom, README/deploy | blockers: SFX/music handoff (CREDITS.md); real git email
 STATE 2026-11-03 03:53 | task: launch-cinematic | last good tag: good-launch | build: ok 4.59MB | next: assets (D) then final sweep | blockers: visual pass is the user's (build/shots/c4-*.png)
 STATE 2026-11-03 03:34 | task: feel | last good tag: good-feel | build: ok 2.59MB | next: cinematic launch + Vi3W rocket props | blockers: none
