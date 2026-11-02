@@ -85,7 +85,13 @@ const PHASES = {
       if (ui.hud) ui.hud.hidden = true;
     },
   },
-  pad: { enter() { ui.title.hidden = true; ui.hud.hidden = false; LAUNCH.enterPad(); TRANSITION.hudAssemble(false); } },
+  pad: {
+    enter() {
+      COMBAT.clearCombat(); // death card REPLAY lands here — re-seat the rocket from the combat pose (§8.6)
+      if (ui.gameover) ui.gameover.hidden = true; // setPhase is exit-before-enter: gameover.exit never runs on the way out
+      ui.title.hidden = true; ui.hud.hidden = false; LAUNCH.enterPad(); TRANSITION.hudAssemble(false);
+    },
+  },
   countdown: { enter() { LAUNCH.enterCountdown(); } },
   ignition: { enter() { LAUNCH.enterIgnition(); } },
   ascent: { enter() { LAUNCH.enterAscent(); } },
@@ -102,6 +108,7 @@ const PHASES = {
       TRANSITION.clearTransition(); // central teardown — skip-mid-beat leaves nothing behind
       probs.sub = null;
       window.__stage2.combatEntries = (window.__stage2.combatEntries || 0) + 1;
+      if (ui.gameover) ui.gameover.hidden = true; // death-card SKIP lands here — same exit-before-enter gap as pad.enter
       LAUNCH.ambience(true); // vacuum: stars on, dawn off
       if (ui.hud) ui.hud.hidden = false; // gameover/title hide it; combat owns the bars
       COMBAT.enterCombat(scene, camera, rocket, ui, combatApi());
@@ -403,6 +410,10 @@ function onKeydown(e) {
     return;
   }
   if (probs.phase === 'combat') {
+    if (COMBAT.combatState().dead) { // dying: only the card-skip listens — fire/pause stay dead (gofix 2026-11-03)
+      if (e.code === 'Enter' || e.code === 'Space') { e.preventDefault(); COMBAT.deathFastForward(); }
+      return;
+    }
     if (e.code === 'Space') { e.preventDefault(); input.fire = true; } // held Space = held trigger
     if (e.code === 'KeyP' || e.code === 'Escape') { e.preventDefault(); setPaused(!paused); }
     if (e.code === 'KeyM') setMuted(!isMuted());

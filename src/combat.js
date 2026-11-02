@@ -19,7 +19,7 @@ const BOLT_SPEED = 42;
 const BOLT_LIFE = 1.2;
 const BOLT_POOL = 24;
 const HP_MAX = 100, SHIELD_MAX = 50, SHIELD_REGEN_DELAY = 3, SHIELD_REGEN_RATE = 14;
-const DEATH_SLOWMO = 1.2;    // seconds of real time at timeScale 0.3 before gameover
+const DEATH_SLOWMO = 0.7;    // seconds of real time at timeScale 0.3 before gameover (a click lands it sooner)
 const SCORE_DRONE = 100, SCORE_WAVE = 150;
 
 const C = {
@@ -292,6 +292,7 @@ export function tickCombat(dt, t) {
   if (C.ui.hudScore) C.ui.hudScore.textContent = `SCORE ${fmt(C.score)}   WAVE ${fmt(C.wave)}`;
 
   if (C.dead) {
+    if (C.api.input.fire) C.deathT = DEATH_SLOWMO; // dying: a click lands the card now (gofix 2026-11-03)
     C.deathT += dt / Math.max(0.05, C.api.getTimeScale()); // real-time slow-mo clock
     if (C.deathT >= DEATH_SLOWMO) { C.dead = false; C.api.go('gameover'); return; }
   }
@@ -322,3 +323,6 @@ export function combatState() {
   };
 }
 export function probeDamagePlayer(n) { damagePlayer(n); }
+export function deathFastForward() { // dying: Enter/Space skip the slow-mo (main routes here; no-op once the card is up)
+  if (C.dead) C.deathT = DEATH_SLOWMO;
+}
