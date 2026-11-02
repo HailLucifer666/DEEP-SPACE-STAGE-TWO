@@ -47,6 +47,33 @@ body.playing, body.playing *{cursor:none !important;}
 #loading-note{font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:var(--dim);}
 
 #title{z-index:40;}
+/* title chrome — corners, top/bottom bars, scanlines (pro-start-screen dressing) */
+.t-corner{position:absolute;width:30px;height:30px;border:2px solid rgba(125,215,255,.5);}
+.t-corner.tl{top:16px;left:16px;border-right:0;border-bottom:0;}
+.t-corner.tr{top:16px;right:16px;border-left:0;border-bottom:0;}
+.t-corner.bl{bottom:16px;left:16px;border-right:0;border-top:0;}
+.t-corner.br{bottom:16px;right:16px;border-left:0;border-top:0;}
+.t-top,.t-bottom{position:absolute;left:0;right:0;display:flex;justify-content:space-between;
+  padding:22px 34px;font:700 10px/1.4 'Rajdhani','Segoe UI',sans-serif;letter-spacing:.3em;color:var(--dim);}
+.t-top{top:0;border-bottom:1px solid rgba(125,215,255,.14);}
+.t-bottom{bottom:0;border-top:1px solid rgba(125,215,255,.14);}
+.t-mark{color:#bfe9ff;}
+.t-scan{position:absolute;inset:0;pointer-events:none;opacity:.45;
+  background:repeating-linear-gradient(0deg, rgba(125,215,255,.045) 0 1px, transparent 1px 4px);
+  animation:scanFlicker 4s ease-in-out infinite;}
+@keyframes scanFlicker{0%,100%{opacity:.45;}50%{opacity:.28;}}
+.row-sub{margin-top:14px;}
+.pill.mini{padding:9px 14px;font-size:11px;letter-spacing:.12em;}
+.pill.mini.armed{border-color:var(--warn);color:#ffd88f;box-shadow:0 0 18px rgba(255,90,60,.3);}
+.t-panel{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:min(540px,88vw);
+  background:rgba(6,10,16,.94);border:1px solid rgba(125,215,255,.4);border-radius:10px;
+  padding:16px 20px 18px;text-align:left;box-shadow:0 0 44px rgba(10,30,50,.7);z-index:5;}
+.t-panel-head{display:flex;justify-content:space-between;align-items:center;
+  border-bottom:1px solid rgba(125,215,255,.22);padding-bottom:10px;margin-bottom:10px;
+  font-weight:700;letter-spacing:.3em;color:#bfe9ff;font-size:13px;}
+.t-panel-body{font:500 13px/2 'Rajdhani','Segoe UI',sans-serif;color:var(--ink);}
+.t-panel-body b{color:#7dd7ff;font-weight:700;}
+.t-panel-body .t-note{color:var(--dim);font-size:12px;margin-top:8px;}
 .brand{font-size:clamp(46px,9vw,92px);font-weight:900;letter-spacing:.14em;margin:0;line-height:1;
   background:linear-gradient(180deg,#fff 18%,#7dd7ff 62%,#3d7fb8 100%);
   -webkit-background-clip:text;background-clip:text;color:transparent;
@@ -181,14 +208,29 @@ body.playing, body.playing *{cursor:none !important;}
 </div>
 
 <div id="title" class="overlay" hidden>
+  <div class="t-corner tl"></div><div class="t-corner tr"></div>
+  <div class="t-corner bl"></div><div class="t-corner br"></div>
+  <div class="t-top"><span class="t-mark">STAGE TWO // SECTOR DEFENSE</span><span class="t-ver">BUILD S4 · VI3W POWERED</span></div>
+  <div class="t-scan"></div>
   <h1 class="brand">STAGE TWO</h1>
   <div class="tagline">stage one falls away — stage two fights</div>
   <div class="row">
     <button id="btn-launch" class="pill warm" type="button">[ LAUNCH ]</button>
-    <button id="btn-skip" class="pill" type="button">[ SKIP TO COMBAT ]</button>
+    <button id="btn-skip" class="pill" type="button">[ SKIRMISH ]</button>
+  </div>
+  <div class="row row-sub">
+    <button id="btn-controls" class="pill mini" type="button">[ CONTROLS ]</button>
+    <button id="btn-reset" class="pill mini" type="button">[ RESET RECORD ]</button>
+    <button id="btn-sound" class="pill mini" type="button">[ SOUND: ON ]</button>
+    <button id="btn-credits" class="pill mini" type="button">[ CREDITS ]</button>
   </div>
   <div id="hs-line" class="hs">HIGH SCORE — 0</div>
   <div class="hints">MOUSE NAV · WASD STRAFE · LMB FIRE · SPACE/SHIFT BOOST · P PAUSE · M MUTE</div>
+  <div id="panel" class="t-panel" hidden>
+    <div class="t-panel-head"><span id="panel-title">CONTROLS</span><button id="panel-close" class="pill mini" type="button">[ X ]</button></div>
+    <div id="panel-body" class="t-panel-body"></div>
+  </div>
+  <div class="t-bottom"><span>MADE WITH VI3W MODELS — app.vi3w.in</span><span id="t-rec">RECORD 0</span></div>
 </div>
 
 <pre id="debug" hidden></pre>

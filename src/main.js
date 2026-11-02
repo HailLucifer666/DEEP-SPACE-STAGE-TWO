@@ -41,7 +41,59 @@ const ui = {
   hudBars: $('hud-bars'), hudScore: $('hud-score'), reticle: $('reticle'),
   gameover: $('gameover'), goScore: $('go-score'), goHs: $('go-hs'),
   goReplay: $('go-replay'), goSkip: $('go-skip'), pause: $('pause'),
+  btnControls: $('btn-controls'), btnReset: $('btn-reset'), btnSound: $('btn-sound'),
+  btnCredits: $('btn-credits'), panel: $('panel'), panelTitle: $('panel-title'),
+  panelBody: $('panel-body'), panelClose: $('panel-close'), tRec: $('t-rec'),
 };
+
+/* ---------- title panels + record reset (G) ---------- */
+const PANEL_HTML = {
+  CONTROLS:
+    '<p><b>MOUSE</b> — steer / nav &nbsp;·&nbsp; <b>LMB</b> — fire guns</p>' +
+    '<p><b>W A S D</b> — thrusters &nbsp;·&nbsp; <b>SPACE / SHIFT</b> — boost</p>' +
+    '<p><b>P / ESC</b> — pause &nbsp;·&nbsp; <b>M</b> — mute &nbsp;·&nbsp; <b>ENTER</b> — launch</p>' +
+    '<p class="t-note">Drones ram. Shields regen after 3 clean seconds. The field flows faster while you boost.</p>',
+  CREDITS:
+    '<p><b>MODELS</b> — hero ship + stage-one rocket made in <b>Vi3W</b> (app.vi3w.in)</p>' +
+    '<p><b>FONTS</b> — Orbitron, Rajdhani (SIL OFL 1.1, Google Fonts)</p>' +
+    '<p><b>SFX / MUSIC</b> — procedural synth; Kenney CC0 pack pending handoff</p>' +
+    '<p class="t-note">Full license log: CREDITS.md in the repo.</p>',
+};
+function openPanel(name) {
+  if (probs.phase !== 'title') return;
+  ui.panelTitle.textContent = name;
+  ui.panelBody.innerHTML = PANEL_HTML[name] || '';
+  ui.panel.hidden = false;
+}
+function closePanel() { if (ui.panel) ui.panel.hidden = true; }
+function refreshSoundButton() {
+  if (ui.btnSound) ui.btnSound.textContent = `[ SOUND: ${isMuted() ? 'OFF' : 'ON'} ]`;
+}
+function refreshRecordLine() {
+  if (ui.hsLine) ui.hsLine.textContent = `HIGH SCORE — ${readHighscore()}`;
+  if (ui.tRec) ui.tRec.textContent = `RECORD ${readHighscore()}`;
+}
+let resetArmT = 0;
+function onResetClick() { // arm-then-confirm — the saved record is never destroyed by one stray click
+  if (probs.phase !== 'title') return;
+  if (!ui.btnReset.classList.contains('armed')) {
+    ui.btnReset.classList.add('armed');
+    ui.btnReset.textContent = '[ SURE? CLICK AGAIN ]';
+    window.clearTimeout(resetArmT);
+    resetArmT = window.setTimeout(disarmReset, 3200);
+    return;
+  }
+  disarmReset();
+  writeHighscore(0);
+  refreshRecordLine();
+  toast('RECORD CLEARED');
+}
+function disarmReset() {
+  window.clearTimeout(resetArmT);
+  if (!ui.btnReset) return;
+  ui.btnReset.classList.remove('armed');
+  ui.btnReset.textContent = '[ RESET RECORD ]';
+}
 
 let toastTimer = 0;
 function toast(msg, ms = 2400) {
@@ -82,7 +134,10 @@ const PHASES = {
   title: {
     enter() {
       if (ui.loading) ui.loading.hidden = true;
-      if (ui.title) { ui.title.hidden = false; ui.hsLine.textContent = `HIGH SCORE — ${readHighscore()}`; }
+      if (ui.title) { ui.title.hidden = false; refreshRecordLine(); }
+      closePanel();
+      disarmReset();
+      refreshSoundButton();
       if (ui.hud) ui.hud.hidden = true;
     },
   },
@@ -389,6 +444,11 @@ function boot() {
   window.addEventListener('pointerup', onPointerUp);
   ui.btnLaunch?.addEventListener('click', () => onTitleAction('launch'));
   ui.btnSkip?.addEventListener('click', () => onTitleAction('skip'));
+  ui.btnControls?.addEventListener('click', () => openPanel('CONTROLS'));
+  ui.btnCredits?.addEventListener('click', () => openPanel('CREDITS'));
+  ui.btnReset?.addEventListener('click', onResetClick);
+  ui.btnSound?.addEventListener('click', () => { setMuted(!isMuted()); refreshSoundButton(); });
+  ui.panelClose?.addEventListener('click', closePanel);
   ui.goReplay?.addEventListener('click', () => setPhase('pad'));
   ui.goSkip?.addEventListener('click', () => setPhase('combat'));
 
@@ -475,7 +535,10 @@ function onKeydown(e) {
   }
   if (probs.phase === 'transition') { e.preventDefault(); TRANSITION.transitionSkip(); return; }
   if (probs.phase === 'gameover' && (e.code === 'Enter' || e.code === 'Space')) { e.preventDefault(); setPhase('combat'); return; }
-  if (probs.phase === 'title' && (e.code === 'Enter' || e.code === 'Space')) { e.preventDefault(); onTitleAction('launch'); }
+  if (probs.phase === 'title') {
+    if (e.code === 'Escape') { e.preventDefault(); closePanel(); return; } // panels never trap the keyboard
+    if (e.code === 'Enter' || e.code === 'Space') { e.preventDefault(); onTitleAction('launch'); }
+  }
 }
 function onKeyup(e) {
   input.keys.delete(e.code);
