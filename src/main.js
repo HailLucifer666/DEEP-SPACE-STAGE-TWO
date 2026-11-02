@@ -6,6 +6,7 @@ import * as TRANSITION from './transition.js';
 import * as COMBAT from './combat.js';
 import { audioUnlock, isAudioLive, audioSuspend, audioResume, setMuted, isMuted } from './audio.js';
 import { adapterRows, nextNose, nextTop } from './ship-fix.js';
+import { loadAssets, assetReport } from './assets.js';
 
 /* ============================== BOOT ============================== */
 const qs = new URLSearchParams(location.search);
@@ -364,6 +365,7 @@ function webglAvailable() {
 }
 
 function boot() {
+  loadAssets(); // fonts register async — the system stack reads until they land (display: swap)
   renderer = new THREE.WebGLRenderer({
     canvas: $('scene-canvas'), antialias: true, alpha: true, powerPreference: 'high-performance',
   });
@@ -577,6 +579,7 @@ window.__stage2 = {
   get phase() { return probs.phase; },
   get fps() { return fps.read; },
   get dpr() { return dprCtl.cur; },
+  assets: () => assetReport(),
   get rocket() { return probs.rocket; },
   hasTexture: () => probs.tex === 1,
   camPos: () => (camera ? camera.position.toArray().map((v) => +v.toFixed(3)) : null),

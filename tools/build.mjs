@@ -28,6 +28,7 @@ const ES = {
   sourcemap: false,
   platform: 'browser',
   logLevel: 'warning',
+  loader: { '.woff2': 'dataurl' }, // fonts ride JS imports as data URLs (template never sees esbuild)
 };
 
 // Escape the ONLY byte sequence that can terminate an inline <script> block.

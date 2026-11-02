@@ -111,6 +111,12 @@ body.playing, body.playing *{cursor:none !important;}
 #pause p,#gameover .go-score,#gameover .go-hs{color:var(--dim);letter-spacing:.2em;font-size:13px;margin:6px 0;}
 #gameover .go-score{color:#ffd88f;}
 #gameover .row{margin-top:22px;}
+
+/* downloaded fonts — the woff2 files register via the FontFace API (src/assets.js);
+   these rules only route the families. System stack reads until the faces land. */
+.brand, #combat-online, #gameover h2, #pause h2 { font-family:'Orbitron','Segoe UI',system-ui,sans-serif; }
+.pill, .hs, .hints, #tele, #hud-bars, #hud-score, #count, #loading-note,
+#gameover .go-score, #gameover .go-hs, #webglveil h2 { font-family:'Rajdhani','Segoe UI',system-ui,sans-serif; }
 </style>
 </head>
 <body>
