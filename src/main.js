@@ -277,6 +277,35 @@ function prepareRocket(root) {
   return wrap;
 }
 
+function loadPropRocket() { // Vi3W showcase prop — the stage-one rocket returns as derelicts.
+  // Optional by design: missing token or a bad decode resolves null (empty sky), never a crash.
+  const b64 = globalThis.__ROCKET_OLD_B64;
+  if (!b64) return Promise.resolve(null);
+  const loader = new GLTFLoader();
+  return new Promise((resolve) => {
+    loader.parse(b64ToArrayBuffer(b64), '', (gltf) => {
+      const root = gltf && gltf.scene ? gltf.scene : null;
+      resolve(root ? preparePropRocket(root) : null);
+    }, () => resolve(null));
+  });
+}
+
+function preparePropRocket(root) { // same hygiene as the hero, no adapter: raw +Y nose, per-wreck rotations
+  root.traverse((o) => {
+    if (o.isMesh && o.geometry && !o.geometry.attributes.normal) o.geometry.computeVertexNormals();
+  });
+  const box = new THREE.Box3().setFromObject(root);
+  const size = box.getSize(new THREE.Vector3());
+  const longest = Math.max(size.x, size.y, size.z);
+  const wrap = new THREE.Group();
+  if (Number.isFinite(longest) && longest > 0) {
+    wrap.scale.setScalar(ROCKET_HEIGHT / longest); // same 1.6 normalization as the hero
+    root.position.copy(box.getCenter(new THREE.Vector3())).multiplyScalar(-1);
+    wrap.add(root);
+  } else wrap.add(root);
+  return wrap;
+}
+
 function makeFallbackRocket() { // §8.2 — decode failure still ships a flyable rocket
   const g = new THREE.Group();
   const hull = new THREE.MeshStandardMaterial({ color: 0xd8dee8, roughness: 0.45, metalness: 0.15 });
@@ -366,21 +395,26 @@ function boot() {
     if (probs.phase === 'loading' && ui.loading) ui.loading.hidden = false;
   }, 350);
 
-  loadRocket().then((r) => {
-    rocket = r; scene.add(rocket);
+  // both GLBs decode before any phase runs — the restart probe snapshots entity counts,
+  // so the derelicts must exist before combat can ever be entered (deterministic probes)
+  Promise.all([
+    loadRocket().catch((err) => {
+      console.error('[stage2] GLB decode failed — using primitive fallback. reason:', err && (err.message || err));
+      return null;
+    }),
+    loadPropRocket(),
+  ]).then(([r, prop]) => {
+    if (r) { rocket = r; probs.rocket = 'glb'; }
+    else { probs.rocket = 'fallback'; rocket = makeFallbackRocket(); }
+    scene.add(rocket);
     LAUNCH.prepareLaunch(scene, camera, rocket, ui, (name) => setPhase(name));
+    if (prop) console.info(`[stage2] Vi3W derelicts seeded: ${LAUNCH.seedWrecks(prop)}`);
     setPhase('title');
     if (SPIN) setupSpinViewer(); // after title.enter — it re-hides the overlay (closed viewer)
     if (GOTO === 'launch') window.setTimeout(() => setPhase('pad'), 200);
     if (GOTO === 'transition') window.setTimeout(() => setPhase('transition'), 200);
     if (GOTO === 'combat') window.setTimeout(() => setPhase('combat'), 200);
     console.log(`[stage2] ready — mode:${BUILD_MODE} rocket:${probs.rocket} in ${(performance.now() - PERF_T0) | 0}ms`);
-  }).catch((err) => {
-    console.error('[stage2] GLB decode failed — using primitive fallback. reason:', err && (err.message || err));
-    probs.rocket = 'fallback';
-    rocket = makeFallbackRocket(); scene.add(rocket);
-    setPhase('title');
-    if (SPIN) setupSpinViewer(); // fallback rig: label works, no adapter to rotate
   });
 }
 
@@ -478,10 +512,10 @@ let last = 0, firstFrame = true;
 const fps = { times: [], read: 60 };
 
 function tickTitle(dt, t) {
-  if (rocket) { rocket.rotation.y += dt * 0.45; } // gentle idle spin; pad staging owns position
-  const a = 0.55 + t * 0.09; // same vista as the pad cam — title IS the pad
-  camera.position.set(Math.cos(a) * 6.6, 1.9 + Math.sin(t * 0.13) * 0.35, Math.sin(a) * 6.6);
-  camera.lookAt(0, 2.15, 0);
+  if (rocket) { rocket.rotation.y += dt * 0.45; } // gentle roll around the long axis; the rig owns the seat
+  const a = 0.55 + t * 0.09; // orbit the rig — the ship sits nose-forward at the lane origin
+  camera.position.set(Math.cos(a) * 6.8, 1.15 + Math.sin(t * 0.13) * 0.3, Math.sin(a) * 6.8);
+  camera.lookAt(0, 0.3, 0);
 }
 
 function tickSpin(dt, t) { // SHIP1: combat-view preview of the orientation under test
@@ -533,7 +567,7 @@ function updateDebug(dt, ts) {
     : '';
   if (ui.debug) ui.debug.textContent =
     `S4 v0.3.0 (${BUILD_MODE})\nfps ${fps.read}\nphase ${probs.phase}${sub}\nrocket ${probs.rocket}${probs.tex ? '+tex' : ''}${mLine}\n` +
-    `entities ${countMeshes()} · particles ${LAUNCH.particleCount ? LAUNCH.particleCount() : 0}\naudio ${isAudioLive() ? 'live' : 'locked'}${combatLine}`;
+    `entities ${countMeshes()} · wrecks ${LAUNCH.wreckCount ? LAUNCH.wreckCount() : 0} · particles ${LAUNCH.particleCount ? LAUNCH.particleCount() : 0}\naudio ${isAudioLive() ? 'live' : 'locked'}${combatLine}`;
 }
 
 const fmtN = (n) => (Number.isFinite(n) ? Math.floor(n) : 0);
@@ -549,6 +583,7 @@ window.__stage2 = {
   rocketY: () => (rocket ? +rocket.position.y.toFixed(3) : null),
   audioLive: () => isAudioLive(),
   get entities() { return countMeshes(); },
+  get wrecks() { return LAUNCH.wreckCount ? LAUNCH.wreckCount() : 0; },
   get particles() { return LAUNCH.particleCount ? LAUNCH.particleCount() : probs.particles; },
   get highscore() { return readHighscore(); },
   combatState: () => (COMBAT.combatState ? COMBAT.combatState() : null),

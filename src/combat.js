@@ -9,6 +9,7 @@ import * as ENEMIES from './enemies.js';
 import * as EFFECTS from './effects.js';
 import { makePool } from './pool.js';
 import { beep, sweep, noiseBurst, loopStart, loopsStopAll } from './audio.js';
+import { stageShip } from './launch.js';
 
 const ARENA_Y = 18;
 const ARENA_HALF = 26;       // player soft clamp (drones may spawn outside and fly in)
@@ -73,9 +74,7 @@ function reparentRocket(toPose) {
     r.position.set(0, 0, 0);
     r.rotation.set(0, 0, 0);
   } else {
-    C.scene.add(r); // back to scene root for pad/title staging
-    r.position.set(0, 0.62 + 0.8, 0);
-    r.rotation.set(0, 0, 0);
+    stageShip(); // back to the launch rig — launch owns the seat (was a hardcoded pad spot)
   }
 }
 

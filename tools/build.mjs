@@ -45,6 +45,9 @@ async function main() {
 
   const template = fs.readFileSync(templatePath, 'utf8');
   const glbB64 = fs.readFileSync(glbPath).toString('base64');
+  // second GLB: the stage-one rocket returns as derelict props (optional — empty string if absent)
+  const oldGlbPath = path.join(ROOT, 'build', 'rocket-old.glb');
+  const oldGlbB64 = fs.existsSync(oldGlbPath) ? fs.readFileSync(oldGlbPath).toString('base64') : '';
   const libPath = path.join(SRC, 'lib-entry.js');
   const mainPath = path.join(SRC, 'main.js');
 
@@ -70,10 +73,11 @@ async function main() {
   const html = template
     .replace('/*{{IMPORTMAP}}*/', importMapHtml)
     .replace('window.__GLB_B64="{{GLB_B64}}"', `window.__GLB_B64="${glbB64}"`)
+    .replace('window.__ROCKET_OLD_B64="{{ROCKET_OLD_B64}}"', `window.__ROCKET_OLD_B64="${oldGlbB64}"`)
     .replace('window.__BUILD_MODE="{{MODE}}"', `window.__BUILD_MODE="${mode}"`)
     .replace('/*{{APP_JS}}*/', () => escapeScript(appJs));
 
-  const leftovers = ['{{IMPORTMAP}}', '{{APP_JS}}', '{{GLB_B64}}', '{{MODE}}'].filter((t) => html.includes(t));
+  const leftovers = ['{{IMPORTMAP}}', '{{APP_JS}}', '{{GLB_B64}}', '{{ROCKET_OLD_B64}}', '{{MODE}}'].filter((t) => html.includes(t));
   if (leftovers.length) { console.error(`[build] unresolved template tokens: ${leftovers.join(', ')}`); process.exit(1); }
   fs.writeFileSync(outPath, html);
   console.log(`[build] index.html  mode=${mode}  ${(fs.statSync(outPath).size / 1024 / 1024).toFixed(2)} MB  (${Date.now() - t0} ms)`);

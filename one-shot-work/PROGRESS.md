@@ -1,3 +1,4 @@
+STATE 2026-11-03 03:34 | task: feel | last good tag: good-feel | build: ok 2.59MB | next: cinematic launch + Vi3W rocket props | blockers: none
 STATE 2026-11-03 03:28 | task: gofix | last good tag: good-gofix | build: ok 2.59MB | next: feel (cursor/reticle/fps/launch-cinematic) | blockers: none
 STATE 2026-11-03 02:35 | task: SHIP1 | last good tag: good-s4 | build: ok | next: orientation-confirm (spin N/T, then pad look) | blockers: awaiting human + provisional git email
 
