@@ -37,7 +37,7 @@ const ui = {
   title: $('title'), hud: $('hud'), debug: $('debug'), toast: $('toast'),
   count: $('count'), tele: $('tele'), warn: $('warn'),
   hsLine: $('hs-line'), btnLaunch: $('btn-launch'), btnSkip: $('btn-skip'),
-  hudBars: $('hud-bars'), hudScore: $('hud-score'),
+  hudBars: $('hud-bars'), hudScore: $('hud-score'), reticle: $('reticle'),
   gameover: $('gameover'), goScore: $('go-score'), goHs: $('go-hs'),
   goReplay: $('go-replay'), goSkip: $('go-skip'), pause: $('pause'),
 };
@@ -136,9 +136,11 @@ function setPhase(name) {
   if (!hook) { console.error(`[stage2] unknown phase "${name}" — refused`); return false; } // §10: a phase always lands
   if (hook.exit) hook.exit();
   probs.phase = name;
+  document.body.classList.toggle('playing', PLAYING_PHASES.has(name)); // cursor:none rides the play phases
   hook.enter?.();
   return true;
 }
+const PLAYING_PHASES = new Set(['pad', 'countdown', 'ignition', 'ascent', 'transition', 'combat']);
 
 /* ---------- combat API + restart probe (?restartProbe=N) ---------- */
 const RP = { left: RESTART_N, entries: [], ref: null };
@@ -336,7 +338,7 @@ function boot() {
   renderer = new THREE.WebGLRenderer({
     canvas: $('scene-canvas'), antialias: true, alpha: true, powerPreference: 'high-performance',
   });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2)); // §10: DPR cap 2
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2)); // §10: DPR cap 2 (auto-degrade below: dprTick)
   renderer.setSize(window.innerWidth, window.innerHeight);
   window.addEventListener('resize', onResize);
 
@@ -390,9 +392,25 @@ function onResize() {
 
 function countMeshes() { let n = 0; if (scene) scene.traverse((o) => { if (o.isMesh) n++; }); return n; }
 
+/* ---------- DPR auto-degrade (feel: sustained slow frames step the buffer down) ---------- */
+const dprCtl = { cap: Math.min(window.devicePixelRatio || 1, 2), cur: Math.min(window.devicePixelRatio || 1, 2), lowT: 0, highT: 0 };
+function setDpr(v) {
+  dprCtl.cur = v;
+  renderer.setPixelRatio(v);
+  renderer.setSize(window.innerWidth, window.innerHeight); // buffer size must be reapplied after a ratio change
+}
+function dprTick(dt) { // raw dt (unscaled) — slow-mo must not fake slowness
+  const f = fps.read;
+  if (f < 45) { dprCtl.lowT += dt; dprCtl.highT = 0; }
+  else if (f >= 50) { dprCtl.highT += dt; dprCtl.lowT = 0; }
+  else { dprCtl.lowT = 0; dprCtl.highT = 0; } // hold in the 45–50 band — only SUSTAINED dips degrade
+  if (dprCtl.lowT >= 2 && dprCtl.cur > 1) { setDpr(Math.max(1, +(dprCtl.cur - 0.5).toFixed(1))); dprCtl.lowT = 0; }
+  else if (dprCtl.highT >= 10 && dprCtl.cur < dprCtl.cap) { setDpr(Math.min(dprCtl.cap, +(dprCtl.cur + 0.5).toFixed(1))); dprCtl.highT = 0; }
+}
+
 /* ============================== INPUT ============================== */
 // shared input state — combat consumes it; every listener only records, never interprets
-const input = { keys: new Set(), mouse: { x: 0, y: 0 }, mouseActive: false, fire: false };
+const input = { keys: new Set(), mouse: { x: 0, y: 0 }, mouseActive: false, fire: false, px: { x: 0, y: 0 } };
 let paused = false;
 
 function setPaused(p) {
@@ -428,6 +446,7 @@ function onKeyup(e) {
   if (e.code === 'Space') input.fire = false;
 }
 function onPointerMove(e) {
+  input.px.x = e.clientX; input.px.y = e.clientY; // client px — combat pins #reticle here (the hidden cursor's stand-in)
   input.mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
   input.mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
   input.mouseActive = true;
@@ -484,6 +503,7 @@ function loop(ts) {
   game.time += sdt;
   TICKS[probs.phase]?.(sdt, game.time);
   updateFps(ts);
+  dprTick(dt);
   updateDebug(dt, ts);
   renderer.render(scene, camera);
 }
@@ -522,6 +542,7 @@ window.__stage2 = {
   version: 's4', mode: BUILD_MODE,
   get phase() { return probs.phase; },
   get fps() { return fps.read; },
+  get dpr() { return dprCtl.cur; },
   get rocket() { return probs.rocket; },
   hasTexture: () => probs.tex === 1,
   camPos: () => (camera ? camera.position.toArray().map((v) => +v.toFixed(3)) : null),

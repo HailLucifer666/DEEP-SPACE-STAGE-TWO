@@ -31,6 +31,8 @@ const C = {
   wave: 0, waveGapT: 0, score: 0, kills: 0,
   bed: null, scriptT: -1, scriptDone: false,
   tmp: new THREE.Vector3(), tmp2: new THREE.Vector3(),
+  ndc: new THREE.Vector3(), // hoisted unproject scratch (feel: no per-frame allocation)
+  retX: -1, retY: -1, lastBars: null, lastScore: null, // change-gates for DOM writes
 };
 const qs = new URLSearchParams(location.search);
 const SCRIPTED_KILL = qs.get('scriptedKill') === '1';
@@ -100,7 +102,7 @@ function steer(dt) {
     target = C.tmp2.copy(C.pos).addScaledVector(kb.normalize(), 6);
   } else if (input.mouseActive) {
     // mouse NDC → ray → intersect the arena plane y=ARENA_Y (clamp target into arena)
-    const ndc = new THREE.Vector3(input.mouse.x, input.mouse.y, 0.5).unproject(C.camera);
+    const ndc = C.ndc.set(input.mouse.x, input.mouse.y, 0.5).unproject(C.camera);
     const dir = ndc.sub(C.camera.position).normalize();
     if (Number.isFinite(dir.x) && Math.abs(dir.y) > 1e-4) { // parallel-to-plane guard
       const tHit = (ARENA_Y - C.camera.position.y) / dir.y;
@@ -119,7 +121,7 @@ function steer(dt) {
 
   const desired = C.tmp.copy(target).sub(C.pos);
   if (desired.lengthSq() > speed * speed) desired.setLength(speed);
-  const k = 1 - Math.exp(-6 * dt);
+  const k = 1 - Math.exp(-7.5 * dt); // feel: snappier pursuit (was 6)
   C.vel.lerp(desired, k);
   C.pos.addScaledVector(C.vel, dt);
 
@@ -247,6 +249,7 @@ export function enterCombat(scene, camera, rocket, ui, api) {
   C.fireT = 0; C.boost = 1; C.boosting = false;
   C.score = 0; C.kills = 0; C.wave = 1; C.waveGapT = 0;
   C.scriptT = -1; C.scriptDone = false; C.scriptDrone = null;
+  C.lastBars = null; C.lastScore = null; // clearCombat emptied the DOM — force one HUD rewrite
   C.bolts.clear();
   ENEMIES.clearEnemies();
   EFFECTS.clearEffects();
@@ -277,19 +280,33 @@ export function tickCombat(dt, t) {
   p.rotation.z = C.bank;
   const camTarget = C.tmp.copy(C.pos).addScaledVector(forward(C.tmp2), -7.5);
   camTarget.y += 3.4;
-  const k = 1 - Math.exp(-5 * dt);
+  const k = 1 - Math.exp(-6 * dt); // feel: tighter chase (was 5)
   C.camera.position.lerp(camTarget, k);
   C.camera.lookAt(C.pos.x + forward(C.tmp2).x * 4, ARENA_Y, C.pos.z + C.tmp2.z * 4);
   EFFECTS.applyShake(dt);
 
-  // HUD — honest values only
+  // HUD — honest values, DOM writes only on change (feel: no per-frame innerHTML churn)
   if (C.ui.hudBars) {
-    C.ui.hudBars.innerHTML =
+    const bars =
       `HULL ${fmt(C.hp)}<div class="bar"><i style="width:${fmt(clamp(C.hp, 0, HP_MAX))}%"></i></div>` +
       `SHIELD ${fmt(C.shield)}<div class="bar sh"><i style="width:${fmt(clamp(C.shield, 0, SHIELD_MAX) * 2)}%"></i></div>` +
       `BOOST ${fmt(C.boost * 100)}%`;
+    if (bars !== C.lastBars) { C.ui.hudBars.innerHTML = bars; C.lastBars = bars; }
   }
-  if (C.ui.hudScore) C.ui.hudScore.textContent = `SCORE ${fmt(C.score)}   WAVE ${fmt(C.wave)}`;
+  if (C.ui.hudScore) {
+    const score = `SCORE ${fmt(C.score)}   WAVE ${fmt(C.wave)}`;
+    if (score !== C.lastScore) { C.ui.hudScore.textContent = score; C.lastScore = score; }
+  }
+
+  // reticle rides the pointer — the OS cursor is hidden while playing (template .playing)
+  if (C.ui.reticle && C.api.input.mouseActive) {
+    const px = C.api.input.px;
+    if (px.x !== C.retX || px.y !== C.retY) {
+      C.retX = px.x; C.retY = px.y;
+      C.ui.reticle.style.left = px.x + 'px';
+      C.ui.reticle.style.top = px.y + 'px';
+    }
+  }
 
   if (C.dead) {
     if (C.api.input.fire) C.deathT = DEATH_SLOWMO; // dying: a click lands the card now (gofix 2026-11-03)

@@ -16,6 +16,8 @@ body{
   -webkit-user-select:none;user-select:none;
 }
 #scene-canvas{position:fixed;inset:0;width:100%;height:100%;display:block;}
+/* play phases hide the OS cursor — #reticle becomes the cursor (main.js toggles .playing) */
+body.playing, body.playing *{cursor:none !important;}
 #vignette{position:fixed;inset:0;z-index:20;pointer-events:none;
   background:radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,.38) 100%);}
 .overlay{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;}
