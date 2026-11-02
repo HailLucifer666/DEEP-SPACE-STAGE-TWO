@@ -102,7 +102,7 @@ export function hitDrone(d, dmg = 1) {
 }
 
 export function eachAlive(fn) { E.pool.update(0, fn); } // collision scan helper (no dt advance)
-export function aliveCount() { return E.pool.live; }
+export function aliveCount() { return E.pool ? E.pool.live : 0; } // pool is null until combat entry (spin smoke: combatState() threw at title, 2026-11-03)
 export function queuedCount() { return E.queued; }
 export function spawnForProbe(pos) { // scripted-kill probe: deterministic drone at a given point
   const d = E.pool.spawn();

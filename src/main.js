@@ -5,12 +5,14 @@ import * as LAUNCH from './launch.js';
 import * as TRANSITION from './transition.js';
 import * as COMBAT from './combat.js';
 import { audioUnlock, isAudioLive, audioSuspend, audioResume, setMuted, isMuted } from './audio.js';
+import { adapterRows, nextNose, nextTop } from './ship-fix.js';
 
 /* ============================== BOOT ============================== */
 const qs = new URLSearchParams(location.search);
 const IS_DEBUG = qs.get('debug') === '1';
 const CORRUPT_GLB = qs.get('corruptGlb') === '1'; // guard §8.2 probe switch
-const GOTO = qs.get('goto'); // probe-only: auto-walks a phase path so headless shots are deterministic
+const SPIN = qs.get('spin') === '1'; // SHIP1: closed orientation viewer — N/T cycle the axes
+const GOTO = SPIN ? null : qs.get('goto'); // probe-only: auto-walks a phase path (ignored in SPIN)
 // generator always splices this; an unspliced template leaves a placeholder-looking value — treat as unset
 const RAW_MODE = (typeof globalThis.__BUILD_MODE === 'string') ? globalThis.__BUILD_MODE : '';
 const BUILD_MODE = (!RAW_MODE || RAW_MODE.startsWith('{{')) ? 'bundle' : RAW_MODE;
@@ -165,6 +167,14 @@ function rpOnGameover() {
 /* ============================== ROCKET ============================== */
 const probs = { phase: 'boot', rocket: 'none', tex: 0, particles: 0 };
 
+// SHIP1 — orientation fix table. nose/top name the RAW GLB axes; the adapter rotation
+// maps nose -> +Y and top -> -Z (combat tilt then gives +Z forward / +Y up).
+// Set via ?debug=1&spin=1 (N cycles nose, T cycles top); the confirmed pair lands here.
+const MODEL_FIX = { nose: '-Z', top: '+Y', metalness: 0.3, roughness: 0.6 }; // SHIP1 guess — human confirms
+const activeFix = { ...MODEL_FIX }; // what the adapter applies right now (N/T update it)
+let shipAdapter = null; // set by prepareRocket; N/T re-applies the fix to this group
+const rocketShape = { size: null, center: null, metalness: null, roughness: null }; // metrics probe
+
 function b64ToArrayBuffer(b64) {
   const bin = atob(b64);
   const bytes = new Uint8Array(bin.length);
@@ -185,6 +195,31 @@ function loadRocket() {
   });
 }
 
+function applyShipFix(adapter, nose, top) {
+  try {
+    const r = adapterRows(nose, top); // row-major rows of the adapter rotation
+    adapter.quaternion.setFromRotationMatrix(new THREE.Matrix4().set(
+      r[0], r[1], r[2], 0,
+      r[3], r[4], r[5], 0,
+      r[6], r[7], r[8], 0,
+      0, 0, 0, 1,
+    ));
+  } catch (err) { // a bad MODEL_FIX pair must never kill the game — identity + evidence
+    console.error('[stage2] bad ship fix pair:', nose, top, '—', err.message, '(identity used)');
+    adapter.quaternion.identity();
+  }
+}
+
+function measureShip(wrap) { // wrap-frame metrics — position-independent, valid in any phase
+  wrap.updateMatrixWorld(true);
+  const b = new THREE.Box3();
+  wrap.traverse((o) => { if (o.isMesh) b.expandByObject(o); }); // meshes only — the spin AxesHelper must not pollute the numbers
+  if (b.isEmpty()) { rocketShape.size = null; rocketShape.center = null; return; }
+  const s = b.getSize(new THREE.Vector3());
+  rocketShape.size = [+s.x.toFixed(3), +s.y.toFixed(3), +s.z.toFixed(3)];
+  rocketShape.center = b.getCenter(new THREE.Vector3()).toArray().map((v) => +v.toFixed(3));
+}
+
 function prepareRocket(root) {
   // measured GLB truth (handoff §3): POSITION+TEXCOORD_0 present, NORMAL missing → compute
   root.traverse((o) => {
@@ -193,11 +228,42 @@ function prepareRocket(root) {
   });
   const box = new THREE.Box3().setFromObject(root);
   const size = box.getSize(new THREE.Vector3());
-  if (!Number.isFinite(size.y) || size.y <= 0) throw new Error('GLB bounds collapsed (size.y unusable)');
+  const rawLongest = Math.max(size.x, size.y, size.z);
+  if (!Number.isFinite(rawLongest) || rawLongest <= 0) throw new Error('GLB bounds collapsed (no usable axis)');
+
+  // SHIP1 adapter chain: wrap(scale) -> adapter(quaternion ONLY) -> root(centered, raw
+  // frame). Scale and centering stay on the SAME nodes as before, so the plume welded
+  // to the wrap by launch.js keeps both position and scale. Scale uses the RAW longest
+  // side — a wrong nose guess can then never produce a 4x giant.
+  const adapter = new THREE.Group();
   const wrap = new THREE.Group();
-  wrap.add(root);
+  adapter.add(root);
+  wrap.add(adapter);
+  applyShipFix(adapter, activeFix.nose, activeFix.top);
+  shipAdapter = adapter;
+  if (SPIN) adapter.add(new THREE.AxesHelper(0.5)); // SHIP1: arrows ride the raw frame
   root.position.copy(box.getCenter(new THREE.Vector3())).multiplyScalar(-1); // centered on origin
-  wrap.scale.setScalar(ROCKET_HEIGHT / size.y); // uniform → ~1.6 units tall, base at -0.8
+  wrap.scale.setScalar(ROCKET_HEIGHT / rawLongest); // uniform → longest side = 1.6, base at -0.8
+
+  // glTF default metalness 1.0 + no scene.environment = a black hull under direct
+  // lights only — retune this ship, and log the originals (patch 2e)
+  if (!scene || !scene.environment) {
+    root.traverse((o) => {
+      const mats = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
+      for (const m of mats) {
+        if (!m.isMeshStandardMaterial) continue;
+        if (rocketShape.metalness === null) {
+          console.info(`[stage2] ship material: metalness ${m.metalness} roughness ${m.roughness} -> ${MODEL_FIX.metalness}/${MODEL_FIX.roughness}`);
+          rocketShape.metalness = MODEL_FIX.metalness;
+          rocketShape.roughness = MODEL_FIX.roughness;
+        }
+        m.metalness = MODEL_FIX.metalness;
+        m.roughness = MODEL_FIX.roughness;
+      }
+    });
+  }
+
+  measureShip(wrap);
   probs.rocket = 'glb';
   return wrap;
 }
@@ -215,6 +281,37 @@ function makeFallbackRocket() { // §8.2 — decode failure still ships a flyabl
     fin.position.set(x, -0.34, z); g.add(fin);
   }
   return g;
+}
+
+/* ---------- SHIP1 spin viewer (?debug=1&spin=1) — closed: title actions dead ---------- */
+let spinRig = null;
+function setupSpinViewer() {
+  if (!rocket) return;
+  if (ui.title) ui.title.hidden = true;
+  rocket.position.set(0, 0, 0);
+  rocket.rotation.set(0, 0, 0);
+  const sway = new THREE.Group();
+  const tilt = new THREE.Group();
+  tilt.rotation.x = Math.PI / 2; // combat's map: adapter +Y nose -> +Z forward, -Z top -> +Y up
+  sway.add(tilt);
+  tilt.add(rocket); // the wrap; the plume welded to it stays invisible here
+  scene.add(sway);
+  spinRig = { sway };
+  const label = document.createElement('div'); // DOM label without touching the template
+  label.id = 'spin-label';
+  label.style.cssText = 'position:fixed;left:0;right:0;bottom:14px;text-align:center;' +
+    'color:#bfe9ff;font:16px/1.5 monospace;text-shadow:0 1px 2px #000;z-index:30;pointer-events:none;';
+  document.body.appendChild(label);
+  updateSpinLabel();
+}
+function updateSpinLabel() {
+  const el = document.getElementById('spin-label');
+  if (el) el.textContent = `nose=${activeFix.nose} top=${activeFix.top}  [N] next nose  [T] next top`;
+}
+function applySpinFix() { // N/T: re-apply rotation, re-measure, refresh the label
+  if (shipAdapter) applyShipFix(shipAdapter, activeFix.nose, activeFix.top);
+  if (rocket) measureShip(rocket);
+  updateSpinLabel();
 }
 
 /* ============================== SCENE ============================== */
@@ -264,6 +361,7 @@ function boot() {
     rocket = r; scene.add(rocket);
     LAUNCH.prepareLaunch(scene, camera, rocket, ui, (name) => setPhase(name));
     setPhase('title');
+    if (SPIN) setupSpinViewer(); // after title.enter — it re-hides the overlay (closed viewer)
     if (GOTO === 'launch') window.setTimeout(() => setPhase('pad'), 200);
     if (GOTO === 'transition') window.setTimeout(() => setPhase('transition'), 200);
     if (GOTO === 'combat') window.setTimeout(() => setPhase('combat'), 200);
@@ -273,6 +371,7 @@ function boot() {
     probs.rocket = 'fallback';
     rocket = makeFallbackRocket(); scene.add(rocket);
     setPhase('title');
+    if (SPIN) setupSpinViewer(); // fallback rig: label works, no adapter to rotate
   });
 }
 
@@ -298,6 +397,11 @@ function setPaused(p) {
 
 function onKeydown(e) {
   input.keys.add(e.code);
+  if (SPIN && probs.phase === 'title') { // closed viewer: N/T only — Enter can never launch
+    if (e.code === 'KeyN') { Object.assign(activeFix, nextNose(activeFix.nose, activeFix.top)); applySpinFix(); }
+    else if (e.code === 'KeyT') { Object.assign(activeFix, nextTop(activeFix.nose, activeFix.top)); applySpinFix(); }
+    return;
+  }
   if (probs.phase === 'combat') {
     if (e.code === 'Space') { e.preventDefault(); input.fire = true; } // held Space = held trigger
     if (e.code === 'KeyP' || e.code === 'Escape') { e.preventDefault(); setPaused(!paused); }
@@ -324,6 +428,7 @@ function onPointerUp(e) {
   if (e.button === 0) input.fire = false;
 }
 function onTitleAction(kind) {
+  if (SPIN) return; // closed viewer — a mis-oriented ship never reaches pad/combat
   audioUnlock(); // first gesture hands the context to the world (§8.3)
   if (kind === 'launch') setPhase('pad');
   else setPhase('combat'); // SKIP TO COMBAT is a real path since S4
@@ -331,7 +436,7 @@ function onTitleAction(kind) {
 
 /* ============================== LOOP ============================== */
 const TICKS = {
-  title: tickTitle,
+  title: SPIN ? tickSpin : tickTitle, // SHIP1: in SPIN nothing else writes camera/rocket
   pad: LAUNCH.tickPad,
   countdown: LAUNCH.tickCountdown,
   ignition: LAUNCH.tickIgnition,
@@ -347,6 +452,13 @@ function tickTitle(dt, t) {
   const a = 0.55 + t * 0.09; // same vista as the pad cam — title IS the pad
   camera.position.set(Math.cos(a) * 6.6, 1.9 + Math.sin(t * 0.13) * 0.35, Math.sin(a) * 6.6);
   camera.lookAt(0, 2.15, 0);
+}
+
+function tickSpin(dt, t) { // SHIP1: combat-view preview of the orientation under test
+  if (!spinRig) return;
+  spinRig.sway.rotation.y = 0.44 * Math.sin(t * 0.5); // ±25° yaw sway
+  camera.position.set(0, 2.1, -4.6); // behind-and-above, engine side (-Z when nose is -Z)
+  camera.lookAt(0, 0.4, 0);
 }
 
 function loop(ts) {
@@ -385,8 +497,11 @@ function updateDebug(dt, ts) {
     const cs = COMBAT.combatState();
     combatLine = `\nhull ${fmtN(cs.hp)} · shield ${fmtN(cs.shield)}\nscore ${fmtN(cs.score)} · wave ${fmtN(cs.wave)} · kills ${fmtN(cs.kills)}\nenemies ${fmtN(cs.enemies)} · bolts ${fmtN(cs.bolts)} · boom ${fmtN(cs.particles)}`;
   }
+  const mLine = rocketShape.size
+    ? `\nshipfix ${activeFix.nose}/${activeFix.top} size [${rocketShape.size.join(', ')}] center [${rocketShape.center.join(', ')}]`
+    : '';
   if (ui.debug) ui.debug.textContent =
-    `S4 v0.3.0 (${BUILD_MODE})\nfps ${fps.read}\nphase ${probs.phase}${sub}\nrocket ${probs.rocket}${probs.tex ? '+tex' : ''}\n` +
+    `S4 v0.3.0 (${BUILD_MODE})\nfps ${fps.read}\nphase ${probs.phase}${sub}\nrocket ${probs.rocket}${probs.tex ? '+tex' : ''}${mLine}\n` +
     `entities ${countMeshes()} · particles ${LAUNCH.particleCount ? LAUNCH.particleCount() : 0}\naudio ${isAudioLive() ? 'live' : 'locked'}${combatLine}`;
 }
 
@@ -409,6 +524,16 @@ window.__stage2 = {
   get paused() { return paused; },
   get muted() { return isMuted(); },
   bootMs: () => Math.round(performance.now() - PERF_T0),
+  // SHIP1: numbers-only orientation check (patch C). plumeAnchorY lists the y of every
+  // group riding the wrap — expect [-0.8] (the plume pivot) once launch.js welds it.
+  rocketMetrics: () => ({
+    size: rocketShape.size,
+    center: rocketShape.center,
+    metalness: rocketShape.metalness,
+    roughness: rocketShape.roughness,
+    shipFix: { ...activeFix },
+    plumeAnchorY: rocket ? rocket.children.filter((c) => c.isGroup).map((c) => +c.position.y.toFixed(2)) : null,
+  }),
 };
 
 /* ============================== GO ============================== */

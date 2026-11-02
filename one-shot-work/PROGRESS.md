@@ -1,3 +1,5 @@
+STATE 2026-11-03 02:35 | task: SHIP1 | last good tag: good-s4 | build: ok | next: orientation-confirm (spin N/T, then pad look) | blockers: awaiting human + provisional git email
+
 STATE 2026-11-03 02:16 | task: T1 | last good tag: good-s4 | build: ok | next: SHIP1 | blockers: provisional git email (real GitHub noreply pending)
 
 # PROGRESS
