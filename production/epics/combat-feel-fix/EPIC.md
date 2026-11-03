@@ -13,7 +13,7 @@
 | 004 | nms-controls | Logic/Feel | M | Complete |
 | 005 | soft-boundary | Logic/Feel | S | Complete |
 | 006 | measure-boot | Logic (instrumentation) | S | Complete |
-| 007 | lazy-storage | Logic | M | In Progress |
+| 007 | lazy-storage | Logic | M | Complete |
 | 008 | bloom | Visual/Feel | S | TODO |
 | 009 | music-sfx | Visual/Feel | M | TODO |
 | 010 | speed-readout | UI | S | TODO |
@@ -33,3 +33,8 @@
   not yet attached; add them here when they surface. Stage 0 closed at tags
   `good-2026-11-04` and `good-2026-11-04-b` (both merge results flow-checked 28/28;
   soak 2026-11-04 clean: 30 combat entries, 29 death-retry cycles, 0 console anomalies).
+- **Backlog (player screenshots, 2026-11-04): title screen barely shows the hero ship** —
+  small, dark, hidden behind the title text and HIGH SCORE line (pre-existing camera framing;
+  tickTitle orbits at r=6.8 with the ship centered behind the UI stack). Fix rides with
+  story-008's visual pass: bring the hero forward/below the text line so the first frame
+  showcases the model.

@@ -1,7 +1,7 @@
 # Story 007: lazy storage init + GLB size trim
 
 > **Epic**: combat-feel-fix (Stage 1 — impression pass)
-> **Status**: In Progress
+> **Status**: Complete
 > **Layer**: Foundation
 > **Type**: Logic
 > **Estimate**: M
@@ -33,15 +33,22 @@ design, and the build-step addition.
 
 ## Acceptance Criteria
 
-- [ ] No synchronous localStorage access during module evaluation: in `boot-marks headed`, no
-      storage mark fires before `title`, and MODULE → TITLE ≤ 2000 ms on a cold profile
-      (was 3.2–5.4 s).
-- [ ] High-score behavior is unchanged: saved value renders at title; death writes persist across
-      reload; RESET RECORD still arm-then-confirm (flow-check + element.click() probes).
-- [ ] Quantized GLBs decode error-free: `rocket: glb`, texture present (`probs.tex === 1`),
-      `CONSOLE []` (flow-check), ship visually correct (screenshot evidence + player look).
-- [ ] Build output shrinks: `index.html` ≤ 3.8 MB (from 4.66 MB); build log reports both GLB sizes.
-- [ ] Full flow-check 28/28 green; boot-marks passes in BOTH modes (its own assertions).
+- [x] No synchronous localStorage access during module evaluation: in `boot-marks headed`,
+      storage marks fire AFTER `title` (storeStart 514 > title 513), and MODULE → TITLE is
+      **513 ms** on a cold profile (was 3,214–5,403 ms).
+- [x] High-score behavior is unchanged: pre-warm reads render 0 then re-render the saved value
+      when the warm-up lands; death writes persist; RESET RECORD arm-then-confirm untouched
+      (flow-check death→REPLAY path green).
+- [x] Quantized GLBs decode error-free: `rocket: glb+tex`, bounds unchanged
+      `[1.418, 1.6, 0.651]`, `CONSOLE []`, ship visually correct — screenshot retained, player
+      look passed 2026-11-04.
+- [x] Build output shrinks: **4.66 → 4.32 MB**, build log reports both GLBs
+      (output.glb 1.33→1.20 MB, rocket-old.glb 1.50→1.38 MB). *Retargeted by the player
+      2026-11-04: the original ≤3.8 MB target was set on the wrong premise — 80% of GLB bytes
+      are two 1024×1024 PNG textures that quantization cannot touch; texture resize/KTX2
+      deferred to a Stage 2 texture story.*
+- [x] Full flow-check 28/28 green (`CONSOLE []`); boot-marks passes BOTH modes — headed title
+      513 ms, headless title 1,428 ms (was 3,991), headless TRUE wait 3.36 s (was 7.49 s).
 
 ---
 
@@ -80,7 +87,11 @@ design, and the build-step addition.
 
 ## Test Evidence
 
-**Status**: [ ] Created — pending
+**Status**: [x] Created — `production/qa/evidence/story-007-lazy-storage/` holds
+`programmer-report.md` (implementation + verification log), `s7-quantized-title.png` (retained
+screenshot, player-approved), `stamp.txt` (content hashes of all four changed files). Numbers:
+headed boot-marks storeStart 514 / storeEnd 2809 / title 513 (stall lands behind rendered
+title); headless title 1,428 ms; flow-check 28/28 `CONSOLE []` on the branch.
 
 ---
 
@@ -88,3 +99,23 @@ design, and the build-step addition.
 
 - Depends on: story-006 (the measurement this fixes; marks + harness)
 - Unlocks: Stage 1 slices 2–4 (smaller bundle benefits all; title wait is the Stage 1 metric)
+
+---
+
+## Completion Notes (story-done, 2026-11-04)
+
+- The AC-4 retarget (≤3.8 MB → 4.32 MB accepted) is a **premise correction, not a compromise**:
+  the story assumed geometry dominated the GLB payload; measurement showed textures do (2.37 of
+  2.97 MB). The player chose to defer texture work to a Stage 2 story (KTX2 or resize) rather
+  than accept a quality change inside this slice.
+- Honest trade-off recorded: quantized (16-bit) accessors decode slower — hero parse 60→412 ms
+  headed. Still paid before title and small; bought a 0.34 MB smaller file. Revisit only if
+  boot regresses.
+- The player's title screenshots surfaced a separate first-impression defect — the hero ship is
+  nearly invisible behind the title text (pre-existing camera framing, not quantization) —
+  recorded in EPIC.md, fix rides with story-008's visual pass.
+- v4 API notes for the next agent: `io.readBinary`/`writeBinary` (not readGLB/writeGLB),
+  `dedup` (not `dedupe`), and `@gltf-transform/extensions` must be installed with
+  `KHRMeshQuantization` registered on the IO — unregistered, the writer emits quantized data
+  with no extension declaration (malformed glTF).
+

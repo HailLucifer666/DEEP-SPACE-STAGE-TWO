@@ -26,7 +26,8 @@ const PERF_T0 = performance.now();
 const BOOT_MARKS = window.__BOOT = { t0: 0 };
 BOOT_MARKS.navT0 = Math.round(PERF_T0); // story-006: navigation-start → module eval (HTML parse + bundled deps)
 const mark = (k) => { BOOT_MARKS[k] = Math.round(performance.now() - PERF_T0); };
-mark('bodyStart'); // sanity anchor: t0 → here should be ~0 (imports eval before PERF_T0)
+// story-007: module-scope bodyStart/storeStart/storeEnd marks removed — storage is lazy now,
+// its marks fire behind the rendered title (see STORE below)
 const RESTART_N = Number(qs.get('restartProbe')) || 0; // probe: die→restart ×N baseline check
 
 window.addEventListener('error', (e) => {
@@ -117,29 +118,35 @@ function toast(msg, ms = 2400) {
 }
 
 /* ============================== STORE (§8.4) ============================== */
-mark('storeStart'); // story-006: bodyStart→preBoot gap suspect #1 — localStorage first touch
-const storage = (() => {
+// story-007: storage is lazy. The first localStorage touch on a cold profile stalls the main
+// thread 3-5 s (Chromium builds its storage database synchronously), so the probe must not run
+// during module eval nor inside title.enter. getStorage() memoizes the probe; boot() warms it
+// behind the rendered title — storeStart/storeEnd fire there now, never before the 'title' mark.
+let storageImpl = null;
+function getStorage() {
+  if (storageImpl) return storageImpl;
   try {
     window.localStorage.setItem('__s2_probe', '1');
     window.localStorage.removeItem('__s2_probe');
-    return { get: (k) => window.localStorage.getItem(k), set: (k, v) => window.localStorage.setItem(k, v) };
+    storageImpl = { get: (k) => window.localStorage.getItem(k), set: (k, v) => window.localStorage.setItem(k, v) };
   } catch (e) {
     // private mode / blocked storage — session-only memory; never crash on storage
     const mem = new Map();
     console.warn('[stage2] localStorage blocked; high score is session-only:', e && e.message);
-    return { get: (k) => (mem.has(k) ? mem.get(k) : null), set: (k, v) => { mem.set(k, String(v)); } };
+    storageImpl = { get: (k) => (mem.has(k) ? mem.get(k) : null), set: (k, v) => { mem.set(k, String(v)); } };
   }
-})();
-mark('storeEnd'); // story-006
+  return storageImpl;
+}
 const HIGHSCORE_KEY = 'stage2.highscore';
 function readHighscore() {
+  if (!storageImpl) return 0; // story-007: pre-warm read never triggers the probe — title renders 0, warm-up re-renders the real value
   try {
-    const n = Number(JSON.parse(storage.get(HIGHSCORE_KEY) ?? '0'));
+    const n = Number(JSON.parse(storageImpl.get(HIGHSCORE_KEY) ?? '0'));
     return Number.isFinite(n) && n >= 0 ? n : 0; // corrupt values read as 0, never NaN (§8.9)
   } catch { return 0; }
 }
 function writeHighscore(n) {
-  try { storage.set(HIGHSCORE_KEY, String(Math.max(0, Math.floor(Number(n) || 0)))); } catch { /* memory already holds it */ }
+  try { getStorage().set(HIGHSCORE_KEY, String(Math.max(0, Math.floor(Number(n) || 0)))); } catch { /* memory already holds it */ }
 }
 
 /* ============================== PHASES ============================== */
@@ -508,6 +515,9 @@ function boot() {
     if (prop) console.info(`[stage2] Vi3W derelicts seeded: ${LAUNCH.seedWrecks(prop)}`);
     setPhase('title');
     mark('title'); // title overlay live — the first thing a player can act on
+    // story-007: warm storage behind the rendered title — the cold-profile probe (3-5 s) lands
+    // after first paint, then the HIGH SCORE line re-renders with the saved value
+    window.setTimeout(() => { mark('storeStart'); getStorage(); mark('storeEnd'); refreshRecordLine(); }, 0);
     if (SPIN) setupSpinViewer(); // after title.enter — it re-hides the overlay (closed viewer)
     if (GOTO === 'launch') window.setTimeout(() => setPhase('pad'), 200);
     if (GOTO === 'transition') window.setTimeout(() => setPhase('transition'), 200);

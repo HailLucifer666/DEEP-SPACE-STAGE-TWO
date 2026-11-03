@@ -6,6 +6,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import esbuild from 'esbuild';
+import { NodeIO } from '@gltf-transform/core';
+import { KHRMeshQuantization } from '@gltf-transform/extensions';
+import { weld, dedup, prune, quantize } from '@gltf-transform/functions';
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url))); // E:\Game Build
 const SRC = path.join(ROOT, 'src');
@@ -44,11 +47,26 @@ async function main() {
   const t0 = Date.now();
   if (!fs.existsSync(glbPath)) { console.error(`[build] missing ${glbPath} — stage the GLB first`); process.exit(1); }
 
+  // story-007: GLB size trim — weld → dedup → prune → quantize (KHR_mesh_quantization; three's
+  // GLTFLoader decodes it natively, no runtime decoder). Transforms run IN MEMORY: the staged
+  // build/*.glb files stay the canonical assets and are never rewritten. NO meshopt/Draco/KTX2.
+  const io = new NodeIO();
+  io.registerExtensions([KHRMeshQuantization]); // unregistered, the writer silently drops the extension declaration
+  async function optimizeGlb(p) {
+    const before = fs.statSync(p).size;
+    const raw = fs.readFileSync(p);
+    const doc = await io.readBinary(new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength));
+    await doc.transform(weld(), dedup(), prune(), quantize());
+    const out = await io.writeBinary(doc); // Uint8Array → the existing base64 path
+    console.log(`[build] ${path.basename(p)}  ${(before / 1024 / 1024).toFixed(2)} MB → ${(out.byteLength / 1024 / 1024).toFixed(2)} MB  (weld+dedup+prune+quantize)`);
+    return Buffer.from(out).toString('base64');
+  }
+
   const template = fs.readFileSync(templatePath, 'utf8');
-  const glbB64 = fs.readFileSync(glbPath).toString('base64');
+  const glbB64 = await optimizeGlb(glbPath);
   // second GLB: the stage-one rocket returns as derelict props (optional — empty string if absent)
   const oldGlbPath = path.join(ROOT, 'build', 'rocket-old.glb');
-  const oldGlbB64 = fs.existsSync(oldGlbPath) ? fs.readFileSync(oldGlbPath).toString('base64') : '';
+  const oldGlbB64 = fs.existsSync(oldGlbPath) ? await optimizeGlb(oldGlbPath) : '';
   const libPath = path.join(SRC, 'lib-entry.js');
   const mainPath = path.join(SRC, 'main.js');
 
