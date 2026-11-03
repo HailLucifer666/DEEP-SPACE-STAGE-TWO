@@ -1,6 +1,7 @@
 // STAGE TWO — COMBAT CORE (S4): chase-cam space combat around the hero rocket.
 // Owns: player ship pose (re-parents the rocket into a yaw/pitch/roll pose group),
-// mouse+keys steering (no pointer lock), soft-clamped arena, hold-fire pooled bolts,
+// throttle+turn flight (W/S throttle, A/D + pointer steer — no pointer lock),
+// soft-clamped arena, hold-fire pooled bolts,
 // shield→HP damage with regen, boost meter, derived waves (via enemies.js), death
 // slow-mo handoff. Contained state contract (§8.6): clearCombat() re-parents the
 // rocket, drains every pool and resets all flags — restarts allocate nothing new.
@@ -15,6 +16,9 @@ const ARENA_Y = 18;
 const ARENA_HALF = 80;       // player soft clamp (raiders spawn outside and fly in) — 3x after the "stuck at the edge" report
 const MAX_SPEED = 17;        // bumped with the arena — same crossing time as the old 26 arena at 14
 const BOOST_MULT = 1.9;
+const TURN_RATE = 2.2;       // commanded yaw (rad/s) — full circle ≈ 3 s (story-004: heading is player-owned)
+const ACCEL = 14;            // W: u/s² toward the cruise/boost ceiling
+const BRAKE = 22;            // S: u/s² down to 0 — brakes harder than W accelerates, and S wins over W
 const FIRE_INTERVAL = 1 / 8; // ~8/s hold-fire
 const BOLT_SPEED = 42;
 const BOLT_LIFE = 1.2;
@@ -26,7 +30,7 @@ const SCORE_DRONE = 100, SCORE_GUNNER = 150, SCORE_WAVE = 150;
 const C = {
   ready: false, scene: null, camera: null, rocket: null, ui: null, api: null,
   pose: null, tilt: null,
-  pos: new THREE.Vector3(), vel: new THREE.Vector3(), heading: 0, bank: 0,
+  pos: new THREE.Vector3(), vel: new THREE.Vector3(), heading: 0, bank: 0, speed: 0, // speed = throttle state (u/s along the nose); heading is player-commanded (story-004)
   hp: HP_MAX, shield: SHIELD_MAX, regenT: 0, dead: false, deathT: 0,
   fireT: 0, boost: 1, boosting: false,
   wave: 0, waveGapT: 0, score: 0, kills: 0,
@@ -99,46 +103,38 @@ function forward(out) {
   return out.set(Math.sin(C.heading), 0, Math.cos(C.heading));
 }
 
-/* ---------- input → steering ---------- */
+/* ---------- input → steering (story-004: throttle + turn) ---------- */
 function steer(dt) {
   const input = C.api.input;
   const keys = input.keys;
-  const kb = C.tmp.set(0, 0, 0);
-  if (keys.has('KeyW') || keys.has('ArrowUp')) kb.z -= 1;
-  if (keys.has('KeyS') || keys.has('ArrowDown')) kb.z += 1;
-  if (keys.has('KeyA') || keys.has('ArrowLeft')) kb.x -= 1;
-  if (keys.has('KeyD') || keys.has('ArrowRight')) kb.x += 1;
 
-  const kbOn = kb.lengthSq() > 0;
-  let target = null;
-  if (kbOn) {
-    target = C.tmp2.copy(C.pos).addScaledVector(kb.normalize(), 6); // direction only — length is set below
-  } else if (input.mouseActive) {
-    // mouse NDC → ray → intersect the arena plane y=ARENA_Y (clamp target into arena)
-    const ndc = C.ndc.set(input.mouse.x, input.mouse.y, 0.5).unproject(C.camera);
-    const dir = ndc.sub(C.camera.position).normalize();
-    if (Number.isFinite(dir.x) && Math.abs(dir.y) > 1e-4) { // parallel-to-plane guard
-      const tHit = (ARENA_Y - C.camera.position.y) / dir.y;
-      if (tHit > 0) target = C.tmp2.set(C.camera.position.x + dir.x * tHit, ARENA_Y, C.camera.position.z + dir.z * tHit);
-    }
-  }
-  if (!target) target = C.tmp2.copy(C.pos);
+  // turn — the nose is player-owned now. Screen-right at heading 0 is world −x (camera basis
+  // x = up × (−forward)), so left = +Δh, right = −Δh; the pointer steers the same axis and the
+  // summed command is clamped so keys+mouse together can't spin past 1.25× TURN_RATE.
+  const keyTurn = (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0) - (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0);
+  const mx = input.mouseActive && Math.abs(input.mouse.x) > 0.08 ? input.mouse.x : 0; // deadzone: a resting pointer must not creep
+  const turn = clamp(keyTurn - mx, -1.25, 1.25);
+  C.heading += turn * TURN_RATE * dt;
 
-  target.x = clamp(target.x, -ARENA_HALF, ARENA_HALF);
-  target.z = clamp(target.z, -ARENA_HALF, ARENA_HALF);
-
-  const boostWant = (input.boost || keys.has('ShiftLeft') || keys.has('ShiftRight')) && C.boost > 0.12 && target.distanceTo(C.pos) > 1.5;
+  // throttle — W accelerates toward cruise (boost raises the ceiling), S brakes to 0 and wins
+  // over W; neither key holds speed (cruise). Space/Shift without W does nothing and doesn't
+  // drain the meter; releasing boost above cruise bleeds back down at brake rate.
+  const wHeld = keys.has('KeyW') || keys.has('ArrowUp');
+  const sHeld = keys.has('KeyS') || keys.has('ArrowDown');
+  const boostWant = wHeld && !sHeld && (input.boost || keys.has('ShiftLeft') || keys.has('ShiftRight')) && C.boost > 0.12;
   C.boosting = boostWant;
   C.boost = clamp(C.boost + (boostWant ? -0.45 : 0.25) * dt, 0, 1);
-  const speed = MAX_SPEED * (boostWant ? BOOST_MULT : 1);
+  const maxSpeed = MAX_SPEED * (boostWant ? BOOST_MULT : 1);
+  if (sHeld) C.speed = Math.max(0, C.speed - BRAKE * dt);
+  else if (wHeld) C.speed = Math.min(maxSpeed, C.speed + ACCEL * dt);
+  if (C.speed > maxSpeed) C.speed = Math.max(maxSpeed, C.speed - BRAKE * dt);
 
-  const desired = C.tmp.copy(target).sub(C.pos);
-  if (kbOn || desired.lengthSq() > speed * speed) desired.setLength(speed); // keyboard thrust = FULL speed (story-002: was capped at 6 — the 'WASD dead' feel)
-  const k = 1 - Math.exp(-7.5 * dt); // feel: snappier pursuit (was 6)
-  C.vel.lerp(desired, k);
+  // the ship flies where the nose points — vel is derived from heading, never the reverse
+  // (the old velocity-derived heading is what made W flip the camera 180°)
+  C.vel.copy(forward(C.tmp)).multiplyScalar(C.speed);
   C.pos.addScaledVector(C.vel, dt);
 
-  // soft arena clamp + warning
+  // soft arena clamp + warning (story-005 turns this square into a soft circle)
   const out = Math.abs(C.pos.x) > ARENA_HALF || Math.abs(C.pos.z) > ARENA_HALF;
   C.pos.x = clamp(C.pos.x, -ARENA_HALF, ARENA_HALF);
   C.pos.z = clamp(C.pos.z, -ARENA_HALF, ARENA_HALF);
@@ -147,10 +143,8 @@ function steer(dt) {
     C.ui.warn.textContent = 'RETURNING TO SECTOR';
   }
 
-  // heading follows velocity when it means anything; bank reads the turn
-  if (C.vel.lengthSq() > 0.6) C.heading = Math.atan2(C.vel.x, C.vel.z);
-  const side = C.vel.x * Math.cos(C.heading) - C.vel.z * Math.sin(C.heading); // lateral component
-  C.bank += (clamp(-side * 0.09, -0.7, 0.7) - C.bank) * (1 - Math.exp(-7 * dt));
+  // bank reads the commanded turn — same visual sign as the old left-turn lean (right turn +)
+  C.bank += (clamp(-turn * 0.7, -0.7, 0.7) - C.bank) * (1 - Math.exp(-7 * dt));
 }
 
 /* ---------- weapons ---------- */
@@ -383,6 +377,7 @@ export function combatState() {
     bolts: C.bolts ? C.bolts.live : 0,
     ebolts: ENEMIES.eboltCount(),
     boost: C.boost,
+    speed: +C.speed.toFixed(2), heading: +C.heading.toFixed(3), // probe surface — flow-check's throttle/turn asserts (story-004)
     pos: C.pos.toArray().map((v) => +v.toFixed(2)), // probe surface — flow-check's keyboard-motion assert (story-003)
     dead: C.dead,
   };

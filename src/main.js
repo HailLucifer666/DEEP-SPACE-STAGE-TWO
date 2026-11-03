@@ -49,8 +49,8 @@ const ui = {
 /* ---------- title panels + record reset (G) ---------- */
 const PANEL_HTML = {
   CONTROLS:
-    '<p><b>MOUSE</b> — steer / nav &nbsp;·&nbsp; <b>LMB</b> — fire guns</p>' +
-    '<p><b>W A S D</b> — thrusters &nbsp;·&nbsp; <b>SPACE / SHIFT</b> — boost</p>' +
+    '<p><b>W / S</b> — throttle &amp; brake &nbsp;·&nbsp; <b>A / D</b> — turn left / right</p>' +
+    '<p><b>MOUSE</b> — steer &nbsp;·&nbsp; <b>LMB</b> — fire guns &nbsp;·&nbsp; <b>SPACE / SHIFT</b> — boost</p>' +
     '<p><b>P / ESC</b> — pause &nbsp;·&nbsp; <b>M</b> — mute &nbsp;·&nbsp; <b>ENTER</b> — launch</p>' +
     '<p class="t-note">Drones ram. Shields regen after 3 clean seconds. The field flows faster while you boost.</p>',
   CREDITS:

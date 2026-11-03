@@ -1,5 +1,5 @@
 // STAGE TWO — flow regression harness (story-003). Drives the complete critical flow with
-// real CDP clicks + synthetic keys and asserts overlay state at every step — the "stuck
+// element clicks + synthetic keys and asserts overlay state at every step — the "stuck
 // window" class (title-on-SKIRMISH, death-card gaps) can never silently return.
 // Usage: node tools/flow-check.mjs   (expects the built index.html; ~3-4 min headless)
 import { spawn, spawnSync } from 'node:child_process';
@@ -86,22 +86,63 @@ try {
   ok('SKIRMISH reticle assembled', sk.reticleHidden === false && sk.assembled === true, JSON.stringify(sk));
   ok('SKIRMISH body.playing', sk.playing === true);
 
-  /* --- WASD probe (combat) --- */
+  /* --- WASD + boundary probes (story-004 throttle+turn / story-005 soft boundary) ---
+     Mutation evidence 2026-11-03: this full probe set ran against the story-002 build
+     (world-axis strafe, velocity-derived heading) with a 2-line combatState instrument
+     (speed: C.vel.length(), heading: C.heading). Recorded reds, each for the stated
+     reason (full output: production/qa/evidence/story-004-nms-controls/):
+       W holds the nose       heading flipped to π (nose copied velocity)
+       cruise holds speed     speed decayed toward 0 (no keys → pursuit of own position)
+       S brakes               speed stayed ~17 (S is world +z strafe, not a brake)
+       A turns in place       strafed −x ~8u, heading −π/2 (sign inverted vs new scheme)
+       D turns in place       mirrored (+π/2)
+       mouse steer            translated toward pointer, heading sign inverted
+     Boundary probes (maxRadial=29.8, r=101.2, pin d=2.1 — all red on old) land with
+     story-005's soft-circle commit; full record in production/qa/evidence/story-004-nms-controls/. */
   const keyHold = async (code, ms) => { await key(code, 'keydown'); await sleep(ms); await key(code, 'keyup'); };
-  const posBefore = await evl(`__stage2.combatState().pos`);
-  await keyHold('KeyW', 1500);
-  await sleep(250);
-  const posAfterW = await evl(`__stage2.combatState().pos`);
-  const dzW = Math.abs(posAfterW[2] - posBefore[2]);
-  ok('W thrust moves ship ≥15u', dzW >= 15, `Δz=${dzW.toFixed(1)}`);
+  const cs = async () => J(`({ s: __stage2.combatState().speed, h: __stage2.combatState().heading, x: __stage2.combatState().pos[0], z: __stage2.combatState().pos[2] })`);
+  const alive = async (at) => { if (await evl(`__stage2.combatState().dead`)) throw new Error('player died during probes at ' + at); };
+  const pointer = async (ndcX) => {
+    await evl(`window.dispatchEvent(new PointerEvent('pointermove', {clientX: Math.round((${ndcX} + 1) / 2 * window.innerWidth), clientY: Math.round(window.innerHeight / 2), bubbles: true}))`);
+  };
+  const dist = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
+
+  // 1 — W accelerates AND holds the nose (the shipped complaint: W used to flip the view 180°)
+  await alive('W probe');
+  const p1 = await cs();
+  await keyHold('KeyW', 2000);
+  const q1 = await cs();
+  ok('W accelerates ≥14 u/s', q1.s >= 14, `speed=${q1.s.toFixed(1)}`);
+  ok('W moves ship ≥15u', dist(p1, q1) >= 15, `d=${dist(p1, q1).toFixed(1)}`);
+  ok('W holds the nose (|Δh|<0.2)', Math.abs(q1.h - p1.h) < 0.2, `Δh=${(q1.h - p1.h).toFixed(2)}`);
+
+  // 2 — cruise: neither W nor S → speed holds (throttle model, not pursuit decay)
+  await sleep(500);
+  const p2 = await cs();
+  ok('cruise holds speed ±2', Math.abs(p2.s - q1.s) <= 2, `Δs=${Math.abs(p2.s - q1.s).toFixed(1)}`);
+
+  // 3 — S brakes
+  await keyHold('KeyS', 1500);
+  const p3 = await cs();
+  ok('S brakes to ≤3', p3.s <= 3, `speed=${p3.s.toFixed(1)}`);
+
+  // 4/5 — A/D turn in place (≈no thrust): A → Δh ≥ +0.5, D → Δh ≤ −0.5, both move <3u
+  await alive('A/D probe');
+  const p4 = await cs();
   await keyHold('KeyA', 600);
-  const posA = await evl(`__stage2.combatState().pos`);
-  const dxA = posA[0] - posAfterW[0];
+  const q4 = await cs();
+  ok('A turns left in place (Δh≥+0.5, <3u)', q4.h - p4.h >= 0.5 && dist(p4, q4) < 3, `Δh=${(q4.h - p4.h).toFixed(2)} d=${dist(p4, q4).toFixed(1)}`);
   await keyHold('KeyD', 600);
-  const posD = await evl(`__stage2.combatState().pos`);
-  const dxD = posD[0] - posA[0];
-  ok('A moves −X', dxA < -2, `Δx=${dxA.toFixed(1)}`);
-  ok('D moves +X', dxD > 2, `Δx=${dxD.toFixed(1)}`);
+  const q5 = await cs();
+  ok('D turns right in place (Δh≤−0.5, <3u)', q5.h - q4.h <= -0.5 && dist(q4, q5) < 3, `Δh=${(q5.h - q4.h).toFixed(2)} d=${dist(q4, q5).toFixed(1)}`);
+
+  // 6 — mouse steer: pointer right of center turns the nose right, in place
+  await pointer(0.8);
+  const p6 = await cs();
+  await sleep(600);
+  const q6 = await cs();
+  await pointer(0); // neutralize steering
+  ok('mouse right steers right in place (Δh≤−0.5, <3u)', q6.h - p6.h <= -0.5 && dist(p6, q6) < 3, `Δh=${(q6.h - p6.h).toFixed(2)} d=${dist(p6, q6).toFixed(1)}`);
 
   /* --- natural death → REPLAY path --- */
   await poll(`({d: __stage2.combatState().dead})`, (v) => v.d, 90000, 300);
