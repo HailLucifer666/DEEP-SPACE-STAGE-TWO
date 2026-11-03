@@ -383,6 +383,7 @@ export function combatState() {
     bolts: C.bolts ? C.bolts.live : 0,
     ebolts: ENEMIES.eboltCount(),
     boost: C.boost,
+    pos: C.pos.toArray().map((v) => +v.toFixed(2)), // probe surface — flow-check's keyboard-motion assert (story-003)
     dead: C.dead,
   };
 }
