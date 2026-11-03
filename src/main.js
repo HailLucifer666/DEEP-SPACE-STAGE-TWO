@@ -95,6 +95,12 @@ function disarmReset() {
   ui.btnReset.textContent = '[ RESET RECORD ]';
 }
 
+// overlay policy (story-001): a phase change hides EVERY overlay; the entering phase
+// re-declares what it shows. Kills the stuck-layer class at the root — no phase can
+// leave a stale layer up (title-on-SKIRMISH, the old death-card hide gap, ...).
+const OVERLAY_ELMS = [ui.title, ui.hud, ui.gameover, ui.pause, ui.loading, ui.warn,
+  $('combat-online'), $('go-logo'), $('flash')].filter(Boolean);
+
 let toastTimer = 0;
 function toast(msg, ms = 2400) {
   if (!ui.toast) return;
@@ -148,11 +154,12 @@ const PHASES = {
       ui.title.hidden = true; ui.hud.hidden = false; LAUNCH.enterPad(); TRANSITION.hudAssemble(false);
     },
   },
-  countdown: { enter() { LAUNCH.enterCountdown(); } },
-  ignition: { enter() { LAUNCH.enterIgnition(); } },
-  ascent: { enter() { LAUNCH.enterAscent(); } },
+  countdown: { enter() { ui.hud.hidden = false; LAUNCH.enterCountdown(); } }, // sweep would orphan it — re-show (story-001)
+  ignition: { enter() { ui.hud.hidden = false; LAUNCH.enterIgnition(); } },
+  ascent: { enter() { ui.hud.hidden = false; LAUNCH.enterAscent(); } },
   transition: {
     enter() {
+      ui.hud.hidden = false; // numerals/tele/reticle live inside #hud — the sweep must not orphan it
       TRANSITION.enterTransition(scene, camera, rocket, ui, {
         go: (n) => setPhase(n),
         report: (r) => { probs.sub = r; window.__stage2.lastReport = r; },
@@ -167,6 +174,7 @@ const PHASES = {
       if (ui.gameover) ui.gameover.hidden = true; // death-card SKIP lands here — same exit-before-enter gap as pad.enter
       LAUNCH.ambience(true); // vacuum: stars on, dawn off
       if (ui.hud) ui.hud.hidden = false; // gameover/title hide it; combat owns the bars
+      TRANSITION.hudAssemble(true); // SKIRMISH lands without beat B2 — the reticle assembles on entry (story-001)
       COMBAT.enterCombat(scene, camera, rocket, ui, combatApi());
       if (RESTART_N && RP.left > 0) window.setTimeout(rpOnCombat, 700);
     },
@@ -192,6 +200,7 @@ function setPhase(name) {
   if (!hook) { console.error(`[stage2] unknown phase "${name}" — refused`); return false; } // §10: a phase always lands
   if (hook.exit) hook.exit();
   probs.phase = name;
+  for (const elm of OVERLAY_ELMS) elm.hidden = true; // overlay sweep (story-001)
   document.body.classList.toggle('playing', PLAYING_PHASES.has(name)); // cursor:none rides the play phases
   hook.enter?.();
   return true;
