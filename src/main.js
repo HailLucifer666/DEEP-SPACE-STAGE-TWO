@@ -1,6 +1,6 @@
 // STAGE TWO — entry, loop, phase machine. Banners: BOOT / UI / STORE / PHASES / ROCKET / SCENE / INPUT / LOOP / DEBUG.
 // Slice 1 scope: boot spike, GLB rocket (with fallback), TITLE, LOADING overlay, debug overlay.
-import { THREE, GLTFLoader } from 'stage-two-lib';
+import { THREE, GLTFLoader, EffectComposer, RenderPass, UnrealBloomPass, OutputPass } from 'stage-two-lib';
 import * as LAUNCH from './launch.js';
 import * as TRANSITION from './transition.js';
 import * as COMBAT from './combat.js';
@@ -254,7 +254,7 @@ function rpOnGameover() {
 }
 
 /* ============================== ROCKET ============================== */
-const probs = { phase: 'boot', rocket: 'none', tex: 0, particles: 0 };
+const probs = { phase: 'boot', rocket: 'none', tex: 0, particles: 0, post: 'off' }; // post: story-008 bloom probe
 
 // SHIP1 — orientation fix table. nose/top name the RAW GLB axes; the adapter rotation
 // maps nose -> +Y and top -> -Z (combat tilt then gives +Z forward / +Y up).
@@ -445,6 +445,7 @@ function applySpinFix() { // N/T: re-apply rotation, re-measure, refresh the lab
 
 /* ============================== SCENE ============================== */
 let renderer, scene, camera, rocket = null;
+let composer = null, bloomPass = null; // story-008: post chain — null keeps the direct-render fallback alive
 const game = { time: 0, timeScale: 1 }; // timeScale <1 = death slow-mo (combat)
 
 function webglAvailable() {
@@ -475,6 +476,21 @@ function boot() {
   const key = new THREE.DirectionalLight(0xfff2df, 1.6); key.position.set(2.5, 3, 2); scene.add(key);
   const rim = new THREE.DirectionalLight(0x7dd7ff, 0.5); rim.position.set(-2, 1.4, -2.5); scene.add(rim);
   const dawn = new THREE.DirectionalLight(0xff9d54, 0.9); dawn.position.set(-7, 1.4, 5); scene.add(dawn);
+
+  // story-008: bloom post chain — high threshold so only emissive/additive content blooms.
+  // §8.3 never-crash: a composer failure (old GPU) logs once and keeps the direct-render path.
+  try {
+    composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+    bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.6, 0.4, 0.85); // strength/radius/threshold
+    composer.addPass(bloomPass);
+    composer.addPass(new OutputPass());
+    probs.post = 'bloom';
+  } catch (err) {
+    composer = null;
+    bloomPass = null;
+    console.error('[stage2] post chain disabled — direct render fallback. reason:', err && (err.message || err));
+  }
 
   window.addEventListener('keydown', onKeydown);
   window.addEventListener('keyup', onKeyup);
@@ -528,8 +544,9 @@ function boot() {
 
 function onResize() {
   renderer.setSize(window.innerWidth, window.innerHeight);
+  if (composer) composer.setSize(window.innerWidth, window.innerHeight); // §8.5: post chain tracks the buffer (story-008)
   camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix(); // §8.5: composer+bloom resize land with the post chain (S4)
+  camera.updateProjectionMatrix();
 }
 
 function countMeshes() { let n = 0; if (scene) scene.traverse((o) => { if (o.isMesh) n++; }); return n; }
@@ -540,14 +557,20 @@ function setDpr(v) {
   dprCtl.cur = v;
   renderer.setPixelRatio(v);
   renderer.setSize(window.innerWidth, window.innerHeight); // buffer size must be reapplied after a ratio change
+  if (composer) { composer.setPixelRatio(v); composer.setSize(window.innerWidth, window.innerHeight); } // story-008: post chain follows the buffer
 }
 function dprTick(dt) { // raw dt (unscaled) — slow-mo must not fake slowness
   const f = fps.read;
   if (f < 45) { dprCtl.lowT += dt; dprCtl.highT = 0; }
   else if (f >= 50) { dprCtl.highT += dt; dprCtl.lowT = 0; }
   else { dprCtl.lowT = 0; dprCtl.highT = 0; } // hold in the 45–50 band — only SUSTAINED dips degrade
-  if (dprCtl.lowT >= 2 && dprCtl.cur > 1) { setDpr(Math.max(1, +(dprCtl.cur - 0.5).toFixed(1))); dprCtl.lowT = 0; }
-  else if (dprCtl.highT >= 10 && dprCtl.cur < dprCtl.cap) { setDpr(Math.min(dprCtl.cap, +(dprCtl.cur + 0.5).toFixed(1))); dprCtl.highT = 0; }
+  if (dprCtl.lowT >= 2) { // degrade ladder — bloom is the cheap win, drop it before touching DPR (story-008)
+    if (bloomPass && bloomPass.enabled) { bloomPass.enabled = false; dprCtl.lowT = 0; }
+    else if (dprCtl.cur > 1) { setDpr(Math.max(1, +(dprCtl.cur - 0.5).toFixed(1))); dprCtl.lowT = 0; }
+  } else if (dprCtl.highT >= 10) { // recovery ladder — bloom re-enables before DPR climbs back (story-008)
+    if (bloomPass && !bloomPass.enabled) { bloomPass.enabled = true; dprCtl.highT = 0; }
+    else if (dprCtl.cur < dprCtl.cap) { setDpr(Math.min(dprCtl.cap, +(dprCtl.cur + 0.5).toFixed(1))); dprCtl.highT = 0; }
+  }
 }
 
 /* ============================== INPUT ============================== */
@@ -629,8 +652,8 @@ const fps = { times: [], read: 60 };
 function tickTitle(dt, t) {
   if (rocket) { rocket.rotation.y += dt * 0.45; } // gentle roll around the long axis; the rig owns the seat
   const a = 0.55 + t * 0.09; // orbit the rig — the ship sits nose-forward at the lane origin
-  camera.position.set(Math.cos(a) * 6.8, 1.15 + Math.sin(t * 0.13) * 0.3, Math.sin(a) * 6.8);
-  camera.lookAt(0, 0.3, 0);
+  camera.position.set(Math.cos(a) * 5.6, 2.25 + Math.sin(t * 0.13) * 0.3, Math.sin(a) * 5.6);
+  camera.lookAt(0, 1.35, 0); // look above the ship — it sinks into the lower third, clear of the title stack (story-008)
 }
 
 function tickSpin(dt, t) { // SHIP1: combat-view preview of the orientation under test
@@ -647,14 +670,14 @@ function loop(ts) {
   last = ts;
   if (!Number.isFinite(dt) || dt <= 0) dt = 0; // §8.9 NaN hygiene
   if (dt > DT_CLAMP) dt = DT_CLAMP;
-  if (paused) { last = ts; renderer.render(scene, camera); return; } // frozen frame, clock held
+  if (paused) { last = ts; composer ? composer.render() : renderer.render(scene, camera); return; } // frozen frame, clock held — post chain still applies
   const sdt = dt * game.timeScale; // slow-mo scales the world, never the FPS meter
   game.time += sdt;
   TICKS[probs.phase]?.(sdt, game.time);
   updateFps(ts);
   dprTick(dt);
   updateDebug(dt, ts);
-  renderer.render(scene, camera);
+  composer ? composer.render() : renderer.render(scene, camera); // story-008: post chain; direct draw is the never-crash fallback
 }
 
 function updateFps(ts) {
@@ -682,7 +705,7 @@ function updateDebug(dt, ts) {
     : '';
   if (ui.debug) ui.debug.textContent =
     `S4 v0.3.0 (${BUILD_MODE})\nfps ${fps.read}\nphase ${probs.phase}${sub}\nrocket ${probs.rocket}${probs.tex ? '+tex' : ''}${mLine}\n` +
-    `entities ${countMeshes()} · wrecks ${LAUNCH.wreckCount ? LAUNCH.wreckCount() : 0} · particles ${LAUNCH.particleCount ? LAUNCH.particleCount() : 0}\naudio ${isAudioLive() ? 'live' : 'locked'}${combatLine}`;
+    `entities ${countMeshes()} · wrecks ${LAUNCH.wreckCount ? LAUNCH.wreckCount() : 0} · particles ${LAUNCH.particleCount ? LAUNCH.particleCount() : 0}\naudio ${isAudioLive() ? 'live' : 'locked'} · post ${probs.post}${combatLine}`;
 }
 
 const fmtN = (n) => (Number.isFinite(n) ? Math.floor(n) : 0);
@@ -692,6 +715,7 @@ window.__stage2 = {
   get phase() { return probs.phase; },
   get fps() { return fps.read; },
   get dpr() { return dprCtl.cur; },
+  get post() { return probs.post; }, // story-008: 'bloom' | 'off'
   assets: () => assetReport(),
   get rocket() { return probs.rocket; },
   hasTexture: () => probs.tex === 1,

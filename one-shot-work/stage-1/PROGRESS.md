@@ -7,10 +7,11 @@ State: Stage 0 CLOSED (good-2026-11-04, good-2026-11-04-b — both merge results
 TRUE wait 5.79 s). Setup branch `stage-1-setup` carries the story files + this ledger.
 
 - [x] Stage 0: merge + tag story-004, story-006; housekeeping (worktree removed, tmp tool deleted)
-- [ ] Setup: story-007..010 files + EPIC.md rows (in progress on stage-1-setup)
-- [ ] Slice 1: story-007 — pending
-- [ ] Slice 2: story-008 — pending
-- [ ] Slice 3: story-009 — pending
+- [x] Setup: story-007..010 files + EPIC.md rows (merged 2a40fc6)
+- [x] Slice 1: story-007 — COMPLETE, merged good-2026-11-04-c. Title 513 ms headed (was 3.2–5.4 s);
+      4.66→4.32 MB (AC retargeted by player — textures deferred to Stage 2)
+- [x] Slice 2: story-008 — COMPLETE (bloom + title framing; player verdicts both green)
+- [ ] Slice 3: story-009 — in progress (sound-designer spec first)
 - [ ] Slice 4: story-010 — pending
 - [ ] Stage close: code-review pass, smoke-check, GATE.md, changelog — pending
 
