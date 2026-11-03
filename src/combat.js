@@ -12,8 +12,8 @@ import { beep, sweep, noiseBurst, loopStart, loopsStopAll } from './audio.js';
 import { stageShip, combatFlow } from './launch.js';
 
 const ARENA_Y = 18;
-const ARENA_HALF = 26;       // player soft clamp (drones may spawn outside and fly in)
-const MAX_SPEED = 14;
+const ARENA_HALF = 80;       // player soft clamp (raiders spawn outside and fly in) — 3x after the "stuck at the edge" report
+const MAX_SPEED = 17;        // bumped with the arena — same crossing time as the old 26 arena at 14
 const BOOST_MULT = 1.9;
 const FIRE_INTERVAL = 1 / 8; // ~8/s hold-fire
 const BOLT_SPEED = 42;

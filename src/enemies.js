@@ -50,9 +50,9 @@ export function startWave(w, playerPos) {
 
 function spawnDrone(playerPos) {
   const d = E.pool.spawn();
-  // arena edge: ring at radius 30 around the player, random angle
+  // spawn ring OUTSIDE the camera view — 55 out with the 80 arena (was 30/26)
   const a = Math.random() * Math.PI * 2;
-  d.position.set(playerPos.x + Math.cos(a) * 30, playerPos.y, playerPos.z + Math.sin(a) * 30);
+  d.position.set(playerPos.x + Math.cos(a) * 55, playerPos.y, playerPos.z + Math.sin(a) * 55);
   d.userData.hp = 1;
   d.userData.phase = Math.random() * Math.PI * 2;
   d.userData.t = 0;
