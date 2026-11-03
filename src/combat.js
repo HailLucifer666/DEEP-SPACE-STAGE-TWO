@@ -109,9 +109,10 @@ function steer(dt) {
   if (keys.has('KeyA') || keys.has('ArrowLeft')) kb.x -= 1;
   if (keys.has('KeyD') || keys.has('ArrowRight')) kb.x += 1;
 
+  const kbOn = kb.lengthSq() > 0;
   let target = null;
-  if (kb.lengthSq() > 0) {
-    target = C.tmp2.copy(C.pos).addScaledVector(kb.normalize(), 6);
+  if (kbOn) {
+    target = C.tmp2.copy(C.pos).addScaledVector(kb.normalize(), 6); // direction only — length is set below
   } else if (input.mouseActive) {
     // mouse NDC → ray → intersect the arena plane y=ARENA_Y (clamp target into arena)
     const ndc = C.ndc.set(input.mouse.x, input.mouse.y, 0.5).unproject(C.camera);
@@ -132,7 +133,7 @@ function steer(dt) {
   const speed = MAX_SPEED * (boostWant ? BOOST_MULT : 1);
 
   const desired = C.tmp.copy(target).sub(C.pos);
-  if (desired.lengthSq() > speed * speed) desired.setLength(speed);
+  if (kbOn || desired.lengthSq() > speed * speed) desired.setLength(speed); // keyboard thrust = FULL speed (story-002: was capped at 6 — the 'WASD dead' feel)
   const k = 1 - Math.exp(-7.5 * dt); // feel: snappier pursuit (was 6)
   C.vel.lerp(desired, k);
   C.pos.addScaledVector(C.vel, dt);
@@ -292,9 +293,9 @@ export function tickCombat(dt, t) {
   p.position.copy(C.pos);
   p.rotation.y = C.heading;
   p.rotation.z = C.bank;
-  const camTarget = C.tmp.copy(C.pos).addScaledVector(forward(C.tmp2), -7.5);
+  const camTarget = C.tmp.copy(C.pos).addScaledVector(forward(C.tmp2), -7.5 - C.vel.length() * 0.22); // velocity trail (story-002): thrust visibly surges the ship ahead in frame
   camTarget.y += 3.4;
-  const k = 1 - Math.exp(-6 * dt); // feel: tighter chase (was 5)
+  const k = 1 - Math.exp(-5 * dt); // feel: trail reads — 6 -> 5 (story-002)
   C.camera.position.lerp(camTarget, k);
   C.camera.lookAt(C.pos.x + forward(C.tmp2).x * 4, ARENA_Y, C.pos.z + C.tmp2.z * 4);
   EFFECTS.applyShake(dt);

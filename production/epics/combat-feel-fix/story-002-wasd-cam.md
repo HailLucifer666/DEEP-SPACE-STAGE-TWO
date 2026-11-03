@@ -1,7 +1,7 @@
 # Story 002: wasd-cam
 
 > **Epic**: combat-feel-fix
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Visual/Feel
 > **Estimate**: S
@@ -57,7 +57,7 @@
 
 ## Files
 
-- `src/combat.js` (tickCombat camera block: camTarget line + k)
+- `src/combat.js` (tickCombat camera block: camTarget trail + k 6->5; steer keyboard full-speed thrust)
 
 ---
 
@@ -80,3 +80,19 @@
 
 - Depends on: `production/epics/combat-feel-fix/story-001-overlay-sweep.md` (evidence is captured with the HUD visible)
 - Unlocks: `production/epics/combat-feel-fix/story-003-flow-check.md` (its WASD probe asserts the motion the camera now shows)
+
+---
+
+## Completion Notes (story-done, 2026-11-03)
+
+- All 6 ACs verified. Traceability: AC1/AC2/AC3 via live CDP evidence (W hold 1.5s:
+  camera −3.41 → −9.85 → −18.96 through release = ≥15 unit motion; x centers; y settles;
+  screenshot `w-thrust.png` retained — the trail offset reads at ~3.7 units); AC4/AC5 by
+  code trajectory (mouse branch untouched when no key; clamp constant untouched); AC6 by
+  inspection (reuses C.tmp — no new allocation).
+- **Evidence-discovered extra fix**: keyboard nav was capped at 6 u/s (target 6 units ahead <
+  speed cap 17) — `steer` now setLength(speed) on keyboard thrust. This is the real "WASD
+  dead" core; the camera trail makes it visible. Both in src/combat.js.
+- Evidence: `production/qa/evidence/story-002-wasd-cam/w-thrust.png` (receipted). UI/Feel
+  screenshot retained — not waived. Console clean. QL/LP gates skipped (minimal).
+- Verdict: COMPLETE (user-approved per plan).
