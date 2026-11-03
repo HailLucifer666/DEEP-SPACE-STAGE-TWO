@@ -1,3 +1,4 @@
+STATE 2026-11-03 06:22 | task: ccgs-review | last good tag: good-studio | build: ok 4.65MB | next: fix TD-001/TD-002 (overlay sweep + WASD cam, plan ready) then Vi3W drone+boss | blockers: none
 STATE 2026-11-03 06:06 | task: studio-install | last good tag: good-studio | build: ok 4.65MB | next: WASD-feel + overlay-flow fix (plan drafted), then Vi3W drone+boss | blockers: none
 STATE 2026-11-03 05:42 | task: pips | last good tag: good-pips | build: ok 4.65MB | next: final sweep + user visual pass | blockers: none
 STATE 2026-11-03 05:40 | task: raiders | last good tag: good-raiders | build: ok 4.65MB | next: edge pips + kill juice (J) | blockers: none
