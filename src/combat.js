@@ -34,6 +34,7 @@ const C = {
   tmp: new THREE.Vector3(), tmp2: new THREE.Vector3(),
   ndc: new THREE.Vector3(), // hoisted unproject scratch (feel: no per-frame allocation)
   flow: 0, // smoothed boost → field-flow factor (0 idle drift, 1 rush)
+  pips: [], pipDir: new THREE.Vector3(), pipFwd: new THREE.Vector3(), pipInv: new THREE.Quaternion(),
   retX: -1, retY: -1, lastBars: null, lastScore: null, // change-gates for DOM writes
 };
 const qs = new URLSearchParams(location.search);
@@ -64,6 +65,17 @@ export function prepareCombat(scene, camera, rocket, ui, api) {
   C.bolts = makePool(scene, makeBolt, BOLT_POOL);
   EFFECTS.prepareEffects(scene, camera);
   ENEMIES.prepareEnemies(scene);
+  // edge pips (J) — off-screen raider awareness; created once, #hud hides them outside combat
+  if (C.ui.hud && !C.pips.length) {
+    for (let i = 0; i < 8; i++) {
+      const p = document.createElement('div');
+      p.style.cssText = 'position:absolute;left:0;top:0;width:14px;height:14px;opacity:0;' +
+        'background:#ff5a3c;clip-path:polygon(50% 0, 100% 78%, 78% 100%, 22% 100%, 0 78%);' +
+        'filter:drop-shadow(0 0 6px rgba(255,90,60,.7));will-change:transform,opacity;';
+      C.ui.hud.appendChild(p);
+      C.pips.push(p);
+    }
+  }
 }
 
 /* ---------- ship ↔ world ---------- */
@@ -170,6 +182,7 @@ function boltsTick(dt) {
         if (ENEMIES.hitDrone(d, 1)) {
           C.score += d.userData.kind === 'gunner' ? SCORE_GUNNER : SCORE_DRONE;
           C.kills++;
+          EFFECTS.shake(0.06); // kill feedback (J)
           beep({ freq: 620, dur: 0.09, vol: 0.16, type: 'triangle' });
         }
       }
@@ -310,6 +323,33 @@ export function tickCombat(dt, t) {
       C.ui.reticle.style.left = px.x + 'px';
       C.ui.reticle.style.top = px.y + 'px';
     }
+  }
+
+  // edge pips — point at raiders you can't see (off-screen or behind the camera)
+  if (C.pips.length) {
+    const ring = 130, cx = window.innerWidth / 2, cy = window.innerHeight / 2;
+    C.camera.getWorldDirection(C.pipFwd);
+    C.pipInv.copy(C.camera.quaternion).invert();
+    let pi = 0;
+    ENEMIES.eachAlive((d) => {
+      if (pi >= C.pips.length) return;
+      C.pipDir.set(d.position.x, d.position.y, d.position.z).sub(C.camera.position);
+      const dist = C.pipDir.length();
+      const inFront = C.pipDir.dot(C.pipFwd) > 0;
+      if (inFront) {
+        C.ndc.set(d.position.x, d.position.y, d.position.z).project(C.camera);
+        if (Math.abs(C.ndc.x) < 0.93 && Math.abs(C.ndc.y) < 0.88) return; // visible — no pip
+      }
+      C.pipDir.copy(d.position).sub(C.camera.position).applyQuaternion(C.pipInv);
+      const len = Math.hypot(C.pipDir.x, C.pipDir.y) || 1; // behind threats project by their turn direction
+      const pxN = C.pipDir.x / len, pyN = C.pipDir.y / len;
+      const pip = C.pips[pi++];
+      pip.style.transform =
+        `translate(${(cx + pxN * ring - 7).toFixed(1)}px, ${(cy - pyN * ring - 7).toFixed(1)}px)` +
+        ` rotate(${Math.atan2(pxN, pyN).toFixed(2)}rad)`;
+      pip.style.opacity = (0.85 - 0.55 * Math.min(1, dist / 110)).toFixed(2);
+    });
+    for (; pi < C.pips.length; pi++) C.pips[pi].style.opacity = '0';
   }
 
   if (C.dead) {
