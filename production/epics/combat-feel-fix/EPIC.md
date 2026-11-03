@@ -11,7 +11,7 @@
 | 002 | wasd-cam | Visual/Feel | S | Complete |
 | 003 | flow-check | Logic | M | Complete |
 | 004 | nms-controls | Logic/Feel | M | Complete |
-| 005 | soft-boundary | Logic/Feel | S | Ready |
+| 005 | soft-boundary | Logic/Feel | S | Complete |
 
 ## Notes
 

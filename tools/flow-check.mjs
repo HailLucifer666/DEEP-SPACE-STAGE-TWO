@@ -97,8 +97,10 @@ try {
        A turns in place       strafed −x ~8u, heading −π/2 (sign inverted vs new scheme)
        D turns in place       mirrored (+π/2)
        mouse steer            translated toward pointer, heading sign inverted
-     Boundary probes (maxRadial=29.8, r=101.2, pin d=2.1 — all red on old) land with
-     story-005's soft-circle commit; full record in production/qa/evidence/story-004-nms-controls/. */
+       soft rim bleeds        maxRadial=29.8 — full-speed radial at r≈70 (square does nothing before 80)
+       boundary is a circle   r=101.2 — diagonal flight sat far outside any 80-circle
+       rim slides             pinned dead at the corner, d=2.1 (no slide at all)
+     All 9 red on old — the full set discriminates old from new (mutation run, 2026-11-03). */
   const keyHold = async (code, ms) => { await key(code, 'keydown'); await sleep(ms); await key(code, 'keyup'); };
   const cs = async () => J(`({ s: __stage2.combatState().speed, h: __stage2.combatState().heading, x: __stage2.combatState().pos[0], z: __stage2.combatState().pos[2] })`);
   const alive = async (at) => { if (await evl(`__stage2.combatState().dead`)) throw new Error('player died during probes at ' + at); };
@@ -143,6 +145,36 @@ try {
   const q6 = await cs();
   await pointer(0); // neutralize steering
   ok('mouse right steers right in place (Δh≤−0.5, <3u)', q6.h - p6.h <= -0.5 && dist(p6, q6) < 3, `Δh=${(q6.h - p6.h).toFixed(2)} d=${dist(p6, q6).toFixed(1)}`);
+
+  /* --- boundary probes (story-005 soft circular boundary) --- */
+  // 7 — boosted straight out: radial speed bleeds inside the soft ring (design cap at r is
+  // 17·(80−r)/20 floored at 3 — ≤13 across the measured window; old build measured 29.8 here)
+  await alive('boundary probe');
+  let maxRadial = 0, rimSamples = 0, prev = await cs(), prevT = Date.now();
+  await key('KeyW', 'keydown'); await key('Space', 'keydown');
+  for (let i = 0; i < 20; i++) {
+    await sleep(250);
+    const s = await cs(); const t = Date.now();
+    const r = Math.hypot(s.x, s.z), pr = Math.hypot(prev.x, prev.z);
+    if (pr > 65 && pr < 78 && r > pr) { rimSamples++; maxRadial = Math.max(maxRadial, (r - pr) / ((t - prevT) / 1000)); }
+    prev = s; prevT = t;
+    if (r >= 79) break;
+  }
+  await key('Space', 'keyup');
+  ok('soft rim bleeds radial speed (≤13, sampled in r 65–78)', rimSamples > 0 && maxRadial <= 13, `maxRadial=${maxRadial.toFixed(1)} samples=${rimSamples}`);
+
+  // 7b — the hard clamp is a circle: diagonal flight can't reach a square corner
+  await keyHold('KeyD', 4000); // W still held; new scheme arcs, old scheme pinned r≈113 here
+  const p7 = await cs();
+  ok('boundary is a circle (r≤81)', Math.hypot(p7.x, p7.z) <= 81, `r=${Math.hypot(p7.x, p7.z).toFixed(1)}`);
+
+  // 8 — rim slides, never pins: oblique heading + W keeps carrying the ship along the rim
+  await keyHold('KeyD', 300); // ~0.66 rad oblique
+  const p8 = await cs();
+  await sleep(1600); // W still held
+  const q8 = await cs();
+  await key('KeyW', 'keyup');
+  ok('rim slides (carry >5u over 1.6s)', dist(p8, q8) > 5, `d=${dist(p8, q8).toFixed(1)}`);
 
   /* --- natural death → REPLAY path --- */
   await poll(`({d: __stage2.combatState().dead})`, (v) => v.d, 90000, 300);

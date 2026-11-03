@@ -13,7 +13,13 @@ import { beep, sweep, noiseBurst, loopStart, loopsStopAll } from './audio.js';
 import { stageShip, combatFlow } from './launch.js';
 
 const ARENA_Y = 18;
-const ARENA_HALF = 80;       // player soft clamp (raiders spawn outside and fly in) — 3x after the "stuck at the edge" report
+// Sector boundary (story-005): a soft circular rim. Inside R_SOFT flight is untouched; from
+// R_SOFT to R_HARD the outward radial speed bleeds toward zero (tangential preserved — the ship
+// slides along the rim instead of pinning), and the rim renders as a visible ground ring. The
+// old hard ±80 square pinned the ship at full thrust over streaming ground — the "stuck at the
+// edge" report, twice (the ±80 was itself a 3x enlargement for the same symptom). Raiders spawn
+// 55 off the player, so R_HARD 80 keeps the spawn ring off-camera.
+const R_SOFT = 60, R_HARD = 80;
 const MAX_SPEED = 17;        // bumped with the arena — same crossing time as the old 26 arena at 14
 const BOOST_MULT = 1.9;
 const TURN_RATE = 2.2;       // commanded yaw (rad/s) — full circle ≈ 3 s (story-004: heading is player-owned)
@@ -38,6 +44,7 @@ const C = {
   tmp: new THREE.Vector3(), tmp2: new THREE.Vector3(),
   ndc: new THREE.Vector3(), // hoisted unproject scratch (feel: no per-frame allocation)
   flow: 0, // smoothed boost → field-flow factor (0 idle drift, 1 rush)
+  rim: null, // story-005: the visible sector-edge ring (created once, opacity driven by proximity)
   pips: [], pipDir: new THREE.Vector3(), pipFwd: new THREE.Vector3(), pipInv: new THREE.Quaternion(),
   retX: -1, retY: -1, lastBars: null, lastScore: null, // change-gates for DOM writes
 };
@@ -132,16 +139,33 @@ function steer(dt) {
   // the ship flies where the nose points — vel is derived from heading, never the reverse
   // (the old velocity-derived heading is what made W flip the camera 180°)
   C.vel.copy(forward(C.tmp)).multiplyScalar(C.speed);
+
+  // soft circular rim (story-005): past R_SOFT the outward radial component bleeds toward zero
+  // (tangential preserved — the ship slides along the rim instead of pinning against a wall)
+  let r = Math.hypot(C.pos.x, C.pos.z);
+  if (r > R_SOFT) {
+    const nx = C.pos.x / r, nz = C.pos.z / r; // outward unit normal
+    const radial = C.vel.x * nx + C.vel.z * nz;
+    const cap = Math.max(3, MAX_SPEED * (R_HARD - r) / (R_HARD - R_SOFT)); // floor 3: bounded arrival — the linear cap alone is asymptotic (dr/dt ∝ (R_HARD−r)), which reads as mud at the rim
+    if (radial > cap) {
+      const excess = radial - cap;
+      C.vel.x -= excess * nx; C.vel.z -= excess * nz;
+    }
+  }
   C.pos.addScaledVector(C.vel, dt);
 
-  // soft arena clamp + warning (story-005 turns this square into a soft circle)
-  const out = Math.abs(C.pos.x) > ARENA_HALF || Math.abs(C.pos.z) > ARENA_HALF;
-  C.pos.x = clamp(C.pos.x, -ARENA_HALF, ARENA_HALF);
-  C.pos.z = clamp(C.pos.z, -ARENA_HALF, ARENA_HALF);
-  if (C.ui.warn) {
-    C.ui.warn.hidden = !out || C.dead;
-    C.ui.warn.textContent = 'RETURNING TO SECTOR';
+  // hard circular clamp — safety net for the one frame the bleed cap allows
+  r = Math.hypot(C.pos.x, C.pos.z);
+  if (r > R_HARD) {
+    const s = R_HARD / r;
+    C.pos.x *= s; C.pos.z *= s;
+    r = R_HARD;
   }
+  if (C.ui.warn) {
+    C.ui.warn.hidden = r <= R_SOFT || C.dead;
+    C.ui.warn.textContent = 'EDGE OF SECTOR';
+  }
+  if (C.rim) C.rim.material.opacity = clamp((r - R_SOFT) / (R_HARD - R_SOFT), 0, 1) * 0.55;
 
   // bank reads the commanded turn — same visual sign as the old left-turn lean (right turn +)
   C.bank += (clamp(-turn * 0.7, -0.7, 0.7) - C.bank) * (1 - Math.exp(-7 * dt));
@@ -250,9 +274,20 @@ function scriptedKillTick(dt) {
 export function enterCombat(scene, camera, rocket, ui, api) {
   prepareCombat(scene, camera, rocket, ui, api);
   reparentRocket(true);
+  if (!C.rim) { // story-005: the sector edge is visible before you reach it
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(R_HARD - 0.8, R_HARD + 0.8, 128),
+      new THREE.MeshBasicMaterial({ color: 0x9fd8ff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = ARENA_Y + 0.5;
+    ring.renderOrder = 5;
+    scene.add(ring);
+    C.rim = ring;
+  }
   C.pos.set(0, ARENA_Y, 0);
   C.vel.set(0, 0, 0);
-  C.heading = 0; C.bank = 0;
+  C.heading = 0; C.bank = 0; C.speed = 0;
   C.hp = HP_MAX; C.shield = SHIELD_MAX; C.regenT = 0; C.dead = false; C.deathT = 0;
   C.fireT = 0; C.boost = 1; C.boosting = false;
   C.score = 0; C.kills = 0; C.wave = 1; C.waveGapT = 0;
@@ -365,7 +400,8 @@ export function clearCombat() {
   if (C.ui.warn) C.ui.warn.hidden = true;
   if (C.ui.hudBars) C.ui.hudBars.innerHTML = ''; // pad phases must not inherit combat bars
   if (C.ui.hudScore) C.ui.hudScore.textContent = '';
-  C.dead = false; C.deathT = 0;
+  C.dead = false; C.deathT = 0; C.speed = 0;
+  if (C.rim) C.rim.material.opacity = 0; // story-005: rim fades out with combat
 }
 
 /* ---------- probe surface (window.__stage2 reads these) ---------- */
