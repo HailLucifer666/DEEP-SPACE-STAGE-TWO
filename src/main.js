@@ -21,6 +21,12 @@ const BUILD_MODE = (!RAW_MODE || RAW_MODE.startsWith('{{')) ? 'bundle' : RAW_MOD
 const DT_CLAMP = 0.05; // §8.1 — a backgrounded tab never teleports the world
 const ROCKET_HEIGHT = 1.6; // handoff §5: uniform-scaled hero size
 const PERF_T0 = performance.now();
+// story-006: boot-time breakdown, ms since module eval — read by tools/boot-marks.mjs (Gate A:
+// the 55-60 s boot figure was headless-only; measure the premise where it actually runs)
+const BOOT_MARKS = window.__BOOT = { t0: 0 };
+BOOT_MARKS.navT0 = Math.round(PERF_T0); // story-006: navigation-start → module eval (HTML parse + bundled deps)
+const mark = (k) => { BOOT_MARKS[k] = Math.round(performance.now() - PERF_T0); };
+mark('bodyStart'); // sanity anchor: t0 → here should be ~0 (imports eval before PERF_T0)
 const RESTART_N = Number(qs.get('restartProbe')) || 0; // probe: die→restart ×N baseline check
 
 window.addEventListener('error', (e) => {
@@ -111,6 +117,7 @@ function toast(msg, ms = 2400) {
 }
 
 /* ============================== STORE (§8.4) ============================== */
+mark('storeStart'); // story-006: bodyStart→preBoot gap suspect #1 — localStorage first touch
 const storage = (() => {
   try {
     window.localStorage.setItem('__s2_probe', '1');
@@ -123,6 +130,7 @@ const storage = (() => {
     return { get: (k) => (mem.has(k) ? mem.get(k) : null), set: (k, v) => { mem.set(k, String(v)); } };
   }
 })();
+mark('storeEnd'); // story-006
 const HIGHSCORE_KEY = 'stage2.highscore';
 function readHighscore() {
   try {
@@ -257,11 +265,15 @@ function b64ToArrayBuffer(b64) {
 }
 
 function loadRocket() {
+  mark('heroB64Start');
   let buffer = b64ToArrayBuffer(globalThis.__GLB_B64 ?? '');
+  mark('heroB64'); // base64 → ArrayBuffer, kept separate from GLTF.parse cost
   if (CORRUPT_GLB) buffer = buffer.slice(0, 4096); // probe: loses the GLB magic → decode must fail loudly
   const loader = new GLTFLoader();
   return new Promise((resolve, reject) => {
+    mark('heroParseStart');
     loader.parse(buffer, '', (gltf) => {
+      mark('heroParse'); // GLTF.parse main-thread decode only — prepare measured separately
       const root = gltf && gltf.scene ? gltf.scene : null;
       if (!root) { reject(new Error('GLB parsed but scene root missing')); return; }
       try { resolve(prepareRocket(root)); } catch (err) { reject(err); }
@@ -296,10 +308,12 @@ function measureShip(wrap) { // wrap-frame metrics — position-independent, val
 
 function prepareRocket(root) {
   // measured GLB truth (handoff §3): POSITION+TEXCOORD_0 present, NORMAL missing → compute
+  const tNorm = performance.now(); // story-006: normals sweep cost, accumulated across both models
   root.traverse((o) => {
     if (o.isMesh && o.geometry && !o.geometry.attributes.normal) o.geometry.computeVertexNormals();
     if (o.isMesh && o.material?.map?.isTexture) probs.tex = 1;
   });
+  BOOT_MARKS.normalsMs = (BOOT_MARKS.normalsMs || 0) + Math.round(performance.now() - tNorm);
   const box = new THREE.Box3().setFromObject(root);
   const size = box.getSize(new THREE.Vector3());
   const rawLongest = Math.max(size.x, size.y, size.z);
@@ -346,9 +360,14 @@ function loadPropRocket() { // Vi3W showcase prop — the stage-one rocket retur
   // Optional by design: missing token or a bad decode resolves null (empty sky), never a crash.
   const b64 = globalThis.__ROCKET_OLD_B64;
   if (!b64) return Promise.resolve(null);
+  mark('propB64Start');
+  const propBuffer = b64ToArrayBuffer(b64);
+  mark('propB64');
   const loader = new GLTFLoader();
   return new Promise((resolve) => {
-    loader.parse(b64ToArrayBuffer(b64), '', (gltf) => {
+    mark('propParseStart');
+    loader.parse(propBuffer, '', (gltf) => {
+      mark('propParse');
       const root = gltf && gltf.scene ? gltf.scene : null;
       resolve(root ? preparePropRocket(root) : null);
     }, () => resolve(null));
@@ -429,12 +448,16 @@ function webglAvailable() {
 }
 
 function boot() {
+  mark('bootStart'); // story-006
   loadAssets(); // fonts register async — the system stack reads until they land (display: swap)
+  if (document.fonts) document.fonts.ready.then(() => mark('fonts')); // story-006
+  mark('rendererStart'); // story-006: the 4.1 s pre-mark gap suspect — D3D/WebGL device creation
   renderer = new THREE.WebGLRenderer({
     canvas: $('scene-canvas'), antialias: true, alpha: true, powerPreference: 'high-performance',
   });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2)); // §10: DPR cap 2 (auto-degrade below: dprTick)
   renderer.setSize(window.innerWidth, window.innerHeight);
+  mark('renderer'); // story-006: WebGL/D3D device creation cost
   window.addEventListener('resize', onResize);
 
   scene = new THREE.Scene();
@@ -465,7 +488,7 @@ function boot() {
 
   setPhase('loading');
   window.setTimeout(() => { // §6: LOADING only shows if decode takes perceptible time
-    if (probs.phase === 'loading' && ui.loading) ui.loading.hidden = false;
+    if (probs.phase === 'loading' && ui.loading) { ui.loading.hidden = false; mark('veilShown'); }
   }, 350);
 
   // both GLBs decode before any phase runs — the restart probe snapshots entity counts,
@@ -477,12 +500,14 @@ function boot() {
     }),
     loadPropRocket(),
   ]).then(([r, prop]) => {
+    mark('glbsDone'); // both decodes + preparation complete
     if (r) { rocket = r; probs.rocket = 'glb'; }
     else { probs.rocket = 'fallback'; rocket = makeFallbackRocket(); }
     scene.add(rocket);
     LAUNCH.prepareLaunch(scene, camera, rocket, ui, (name) => setPhase(name));
     if (prop) console.info(`[stage2] Vi3W derelicts seeded: ${LAUNCH.seedWrecks(prop)}`);
     setPhase('title');
+    mark('title'); // title overlay live — the first thing a player can act on
     if (SPIN) setupSpinViewer(); // after title.enter — it re-hides the overlay (closed viewer)
     if (GOTO === 'launch') window.setTimeout(() => setPhase('pad'), 200);
     if (GOTO === 'transition') window.setTimeout(() => setPhase('transition'), 200);
@@ -607,7 +632,7 @@ function tickSpin(dt, t) { // SHIP1: combat-view preview of the orientation unde
 
 function loop(ts) {
   window.requestAnimationFrame(loop);
-  if (firstFrame) { last = ts; firstFrame = false; return; } // §8.1 first-frame skip
+  if (firstFrame) { last = ts; firstFrame = false; mark('firstTick'); return; } // §8.1 first-frame skip
   let dt = (ts - last) / 1000;
   last = ts;
   if (!Number.isFinite(dt) || dt <= 0) dt = 0; // §8.9 NaN hygiene
@@ -685,10 +710,12 @@ window.__stage2 = {
 };
 
 /* ============================== GO ============================== */
+mark('preBoot'); // story-006: end of module-body evaluation
 if (!webglAvailable()) { // §8.10 — no GPU → friendly veil, nothing else runs
   if (ui.webglveil) ui.webglveil.hidden = false;
   console.warn('[stage2] no WebGL — veil shown, game not started');
 } else {
+  mark('probe'); // webglAvailable() done — canvas getContext probe measured
   boot();
   window.requestAnimationFrame(loop);
   const unlock = () => audioUnlock(); // any first gesture owns the audio contract
