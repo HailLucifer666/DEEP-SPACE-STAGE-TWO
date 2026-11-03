@@ -1,0 +1,4 @@
+Reviewed-Content-Hash: src/main.js 9b852168f81bdedd01518cf874f0024b62fe1c77
+Reviewed-Content-Hash: tools/build.mjs b5c57acb49d2b56b5fb8712a69b4f098f3cae4a8
+Reviewed-Content-Hash: package.json 7e81088adc071062e2d75742cb5666571d0317b9
+Reviewed-Content-Hash: index.html 0f14f9e7f44c978d3e20de115f0262a8ac16a50b
