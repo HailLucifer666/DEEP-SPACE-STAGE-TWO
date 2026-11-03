@@ -9,7 +9,7 @@ import { THREE } from 'stage-two-lib';
 import * as ENEMIES from './enemies.js';
 import * as EFFECTS from './effects.js';
 import { makePool } from './pool.js';
-import { beep, sweep, noiseBurst, loopStart, loopsStopAll } from './audio.js';
+import { beep, sweep, noiseBurst, loopStart, musicEvict, musicSetDuck, alarmTick, proximityTick } from './audio.js';
 import { stageShip, combatFlow } from './launch.js';
 
 const ARENA_Y = 18;
@@ -44,6 +44,7 @@ const C = {
   tmp: new THREE.Vector3(), tmp2: new THREE.Vector3(),
   ndc: new THREE.Vector3(), // hoisted unproject scratch (feel: no per-frame allocation)
   flow: 0, // smoothed boost → field-flow factor (0 idle drift, 1 rush)
+  proxScanT: 0, nearest: null, // story-009: nearest-hostile scan gate (≤ every 0.15 s) + last result (spec §5)
   rim: null, // story-005: the visible sector-edge ring (created once, opacity driven by proximity)
   pips: [], pipDir: new THREE.Vector3(), pipFwd: new THREE.Vector3(), pipInv: new THREE.Quaternion(),
   retX: -1, retY: -1, lastBars: null, lastScore: null, // change-gates for DOM writes
@@ -271,6 +272,16 @@ function scriptedKillTick(dt) {
   }
 }
 
+function scanNearest() { // full-3D distance to the closest live raider, or null (story-009 spec §5)
+  let best = null;
+  ENEMIES.eachAlive((d) => {
+    const dx = d.position.x - C.pos.x, dy = d.position.y - C.pos.y, dz = d.position.z - C.pos.z;
+    const dist = Math.hypot(dx, dy, dz);
+    if (best === null || dist < best) best = dist;
+  });
+  return best;
+}
+
 /* ---------- phase API ---------- */
 export function enterCombat(scene, camera, rocket, ui, api) {
   prepareCombat(scene, camera, rocket, ui, api);
@@ -295,6 +306,7 @@ export function enterCombat(scene, camera, rocket, ui, api) {
   C.score = 0; C.kills = 0; C.wave = 1; C.waveGapT = 0;
   C.scriptT = -1; C.scriptDone = false; C.scriptDrone = null;
   C.flow = 0;
+  C.proxScanT = 0; C.nearest = null; // story-009: proximity scan restarts clean (§8.6)
   C.lastBars = null; C.lastScore = null; // clearCombat emptied the DOM — force one HUD rewrite
   C.bolts.clear();
   ENEMIES.clearEnemies();
@@ -302,7 +314,7 @@ export function enterCombat(scene, camera, rocket, ui, api) {
   if (ui.warn) ui.warn.hidden = true;
   api.setTimeScale(1);
   ENEMIES.startWave(C.wave, C.pos);
-  loopsStopAll(0.2);
+  musicEvict(0.2); // story-009: engine loops die, the music bags survive — the phase hooks own stopping them (spec §7)
   C.bed = loopStart({ freq: 46, vol: 0.05, playback: 0.4 }); // deep-space bed
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); // Space must not re-click title buttons
 }
@@ -333,6 +345,13 @@ export function tickCombat(dt, t) {
   EFFECTS.tickEffects(dt); // drive the explosion pool — was never called (particles never faded)
   C.flow += ((C.boosting ? 1 : 0) - C.flow) * (1 - Math.exp(-4 * dt)); // smoothed boost rush
   combatFlow(dt, C.flow); // the field streams past the lane — asteroids, wrecks, planet, hole
+
+  // story-009 audio — exactly one duck / alarm / proximity call per frame, nothing else (spec §7)
+  C.proxScanT -= dt;
+  if (!C.dead && C.proxScanT <= 0) { C.proxScanT = 0.15; C.nearest = scanNearest(); }
+  musicSetDuck(C.flow);
+  alarmTick(dt, C.hp, C.dead);
+  proximityTick(dt, C.dead ? null : C.nearest);
 
   // HUD — honest values, DOM writes only on change (feel: no per-frame innerHTML churn)
   if (C.ui.hudBars) {
@@ -396,7 +415,7 @@ export function clearCombat() {
   C.bolts.clear();
   ENEMIES.clearEnemies();
   EFFECTS.clearEffects();
-  loopsStopAll(0.25);
+  musicEvict(0.25); // story-009: engine loops die, the music bags survive — the phase hooks own stopping them (spec §7)
   C.bed = null;
   reparentRocket(false);
   if (C.ui.warn) C.ui.warn.hidden = true;

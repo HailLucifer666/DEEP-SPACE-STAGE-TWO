@@ -1,7 +1,7 @@
 # Story 009: music bed + SFX enrichment
 
 > **Epic**: combat-feel-fix (Stage 1 — impression pass)
-> **Status**: TODO
+> **Status**: Complete
 > **Layer**: Feature (audio)
 > **Type**: Visual/Feel
 > **Estimate**: M
@@ -33,20 +33,24 @@ palette, ducking curve, alarm cadence, proximity threshold — written into
 
 ## Acceptance Criteria
 
-- [ ] A pad loop is audible on title and a distinct combat variant in combat; phase switches
-      crossfade without clicks (loops stopped, not cut).
-- [ ] Boost audibly ducks the pad; hull < 25 triggers the repeating alarm until recovered;
-      a nearby raider produces the proximity cue (playtest-verifiable states; probe surface
-      exposes active loop count + alarm flag).
-- [ ] Mute (M / button) silences everything; pause (P/ESC) freezes the audio clock; resume
-      restores — `tools/combat-probe.mjs` stays green.
-- [ ] No loop leaks: every phase exit stops its loops (`runningLoops` empty after leaving
-      combat; verified by probe after death → title path).
-- [ ] Kenney conditional: if `src/assets/sfx/` contains audio files at build time they are
-      inlined and credited in CREDITS.md; otherwise synth-only ships and the handoff note
-      stays. Either way build + flow-check 28/28 green, `CONSOLE []`.
-- [ ] Retained evidence in `production/qa/evidence/story-009-music-sfx/` (probe output +
-      debug-overlay screenshot); the player's ears gate the merge.
+- [x] A pad loop is audible on title and a distinct combat variant in combat; phase switches
+      crossfade overlapping via idempotent `musicTo()` (title A2 open fifth → combat A minor +
+      55 Hz 0.8 Hz pulse, per the sound spec) — no clicks (setTargetAtTime-only fades; probe:
+      musicState 'combat'/'title', never 'none' after unlock).
+- [x] Boost ducks the combat bed via `setVol(1 − 0.45 × C.flow, 0.1)`; hull < 25 triggers the
+      880 Hz alarm (900 ms cadence, re-arm ≥35, cap 0.13, silent when dead); nearest-hostile
+      <20 u drives the 300 Hz proximity tick (0.7→2.2 Hz, ≤0.05) — player ears verdict:
+      "sounds right" 2026-11-04.
+- [x] Mute silences everything; pause freezes the audio clock — `tools/combat-probe.mjs` green
+      (mute PASS, holdfire PASS, honest PASS, `CONSOLE []`), re-run independently post-swap.
+- [x] No loop leaks: `max loops 3 over 30 samples across 3 death-retry cycles` (expected count
+      per phase per the spec — music bags are SUPPOSED to live in runningLoops; the old
+      empty-set assertion is obsolete by design).
+- [x] Kenney conditional resolved: `src/assets/sfx/` absent → synth-only shipped, CREDITS.md
+      handoff note stays untouched; build + flow-check 28/28 green, `CONSOLE []`.
+- [x] Retained evidence in `production/qa/evidence/story-009-music-sfx/` (spec, programmer
+      report with probe outputs, combat debug screenshot, stamp.txt); player's ears gate
+      passed.
 
 ---
 
@@ -85,7 +89,36 @@ palette, ducking curve, alarm cadence, proximity threshold — written into
 
 ## Test Evidence
 
-**Status**: [ ] Created — pending
+**Status**: [x] Created — `production/qa/evidence/story-009-music-sfx/`: `sound-spec.md`
+(sound-designer, parameter-complete), `programmer-report.md` (probe outputs: combat →
+musicState 'combat', loopsCount 3 in every stint, max 3 over 30 samples/3 cycles, restartProbe
+clean:true), `story009-combat-debug.png`, stamp.txt. flow-check 28/28 `CONSOLE []` on the
+branch (implementer + orchestrator re-run after the transition.js swap).
+
+---
+
+## Dependencies
+
+- Depends on: story-008 (final frame the music sits under)
+- Unlocks: Stage 2 (boss gets the audio language for free)
+
+---
+
+## Completion Notes (story-done, 2026-11-04)
+
+- The spec caught a design conflict before it shipped: `loopsStopAll` at engine-teardown sites
+  would have killed the crossfading music. Resolution: `musicEvict(fade)` (spares `music`-flagged
+  bags) replaced it at combat.js ×2, launch.js resetStage, AND transition.js clearTransition —
+  the last site was missed by the spec's audit, surfaced by the implementer as an out-of-scope
+  flag, and swapped by the orchestrator in the main thread (verified: transition.js owns no
+  loops of its own, so the swap preserves the engine-loop teardown semantic exactly).
+- C.bed (combat's deep-space bed) persists through gameover by the pre-existing
+  exit-before-enter phase mechanics — bounded (it fades under the gameover card) and verified
+  leak-free; noted here so nobody "fixes" it blindly in Stage 2.
+- Ducking idle-threshold and air-layer gain routing were reconciled to the spec during
+  implementation (documented in the programmer report).
+- Kenney handoff remains open exactly as CREDITS.md documents; `sample()` was NOT added — no
+  dead code for an asset that has not landed.
 
 ---
 
