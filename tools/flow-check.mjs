@@ -138,29 +138,43 @@ try {
   const q5 = await cs();
   ok('D turns right in place (Δh≤−0.5, <3u)', q5.h - q4.h <= -0.5 && dist(q4, q5) < 3, `Δh=${(q5.h - q4.h).toFixed(2)} d=${dist(q4, q5).toFixed(1)}`);
 
-  // 6 — mouse steer: pointer right of center turns the nose right, in place
+  // 6 — mouse steer: pointer right of center turns the nose right, in place …
   await pointer(0.8);
   const p6 = await cs();
   await sleep(600);
   const q6 = await cs();
-  await pointer(0); // neutralize steering
   ok('mouse right steers right in place (Δh≤−0.5, <3u)', q6.h - p6.h <= -0.5 && dist(p6, q6) < 3, `Δh=${(q6.h - p6.h).toFixed(2)} d=${dist(p6, q6).toFixed(1)}`);
 
+  // 6b — …and a pointer that LEAVES the window stops steering (review R2-2: stale pointer was a
+  // permanent full-rate turn; cursor is hidden in play so the player can't see it sitting there)
+  await evl(`document.dispatchEvent(new PointerEvent('pointerout', {bubbles: true, relatedTarget: null}))`);
+  await sleep(500);
+  const q6b = await cs();
+  ok('pointer leave stops steering (|Δh|<0.15 over 0.5s)', Math.abs(q6b.h - q6.h) < 0.15, `Δh=${(q6b.h - q6.h).toFixed(2)}`);
+  await pointer(0); // neutralize for the next probes
+
   /* --- boundary probes (story-005 soft circular boundary) --- */
-  // 7 — boosted straight out: radial speed bleeds inside the soft ring (design cap at r is
-  // 17·(80−r)/20 floored at 3 — ≤13 across the measured window; old build measured 29.8 here)
+  // 7 — boosted straight out: (a) boost expiry BLEEDS, never snaps (review R2-1: the old branch
+  // order snap-clamped 32→17 in one frame — assert drop rate ≤ 25 u/s², bleed is 22, snap ~38);
+  // (b) radial speed bleeds inside the soft ring (design cap 17·(80−r)/20 floored at 3 — old
+  // build measured 29.8 here). alive() runs INSIDE the loop: a mid-probe death would otherwise
+  // let slow-mo trivially pass both (review R2-5).
   await alive('boundary probe');
-  let maxRadial = 0, rimSamples = 0, prev = await cs(), prevT = Date.now();
+  let maxRadial = 0, rimSamples = 0, maxDropRate = 0, prev = await cs(), prevT = Date.now();
   await key('KeyW', 'keydown'); await key('Space', 'keydown');
   for (let i = 0; i < 20; i++) {
+    await alive('boundary loop');
     await sleep(250);
     const s = await cs(); const t = Date.now();
+    const dtS = (t - prevT) / 1000;
     const r = Math.hypot(s.x, s.z), pr = Math.hypot(prev.x, prev.z);
-    if (pr > 65 && pr < 78 && r > pr) { rimSamples++; maxRadial = Math.max(maxRadial, (r - pr) / ((t - prevT) / 1000)); }
+    if (pr < 60) maxDropRate = Math.max(maxDropRate, Math.abs(s.s - prev.s) / dtS);
+    if (pr > 65 && pr < 78 && r > pr) { rimSamples++; maxRadial = Math.max(maxRadial, (r - pr) / dtS); }
     prev = s; prevT = t;
     if (r >= 79) break;
   }
   await key('Space', 'keyup');
+  ok('boost expiry bleeds (drop ≤25 u/s², no snap)', maxDropRate <= 25, `maxDropRate=${maxDropRate.toFixed(1)}`);
   ok('soft rim bleeds radial speed (≤13, sampled in r 65–78)', rimSamples > 0 && maxRadial <= 13, `maxRadial=${maxRadial.toFixed(1)} samples=${rimSamples}`);
 
   // 7b — the hard clamp is a circle: diagonal flight can't reach a square corner
@@ -168,13 +182,31 @@ try {
   const p7 = await cs();
   ok('boundary is a circle (r≤81)', Math.hypot(p7.x, p7.z) <= 81, `r=${Math.hypot(p7.x, p7.z).toFixed(1)}`);
 
-  // 8 — rim slides, never pins: oblique heading + W keeps carrying the ship along the rim
-  await keyHold('KeyD', 300); // ~0.66 rad oblique
+  // 8 — rim slides, never pins. Deterministic rim approach (review R2-6: the 7b arc can end
+  // anywhere, and a slide assert from mid-field proves nothing): brake, face outward, boost to
+  // the rim, THEN measure the carry.
+  await alive('rim approach');
+  await keyHold('KeyS', 1200); // kill leftover speed from the 7b arc
+  const aim = await cs();
+  let dh = Math.atan2(aim.x, aim.z) - aim.h; // heading that points away from the center
+  while (dh > Math.PI) dh -= 2 * Math.PI; while (dh < -Math.PI) dh += 2 * Math.PI;
+  await keyHold(dh > 0 ? 'KeyA' : 'KeyD', Math.round(Math.abs(dh) / 2.2 * 1000) + 120); // A=+Δh, D=−Δh
+  await key('KeyW', 'keydown'); await key('Space', 'keydown'); // meter regened during 7b (~0.25/s)
+  for (let i = 0; i < 24; i++) {
+    await alive('rim approach loop');
+    await sleep(300);
+    const s = await cs();
+    if (Math.hypot(s.x, s.z) >= 75) break;
+  }
+  await key('Space', 'keyup');
   const p8 = await cs();
+  ok('rim precondition (ship at the rim, r≥72)', Math.hypot(p8.x, p8.z) >= 72, `r=${Math.hypot(p8.x, p8.z).toFixed(1)}`);
+  await keyHold('KeyD', 300); // ~0.66 rad oblique
+  const p8b = await cs();
   await sleep(1600); // W still held
   const q8 = await cs();
   await key('KeyW', 'keyup');
-  ok('rim slides (carry >5u over 1.6s)', dist(p8, q8) > 5, `d=${dist(p8, q8).toFixed(1)}`);
+  ok('rim slides (carry >5u over 1.6s)', dist(p8b, q8) > 5, `d=${dist(p8b, q8).toFixed(1)}`);
 
   /* --- natural death → REPLAY path --- */
   await poll(`({d: __stage2.combatState().dead})`, (v) => v.d, 90000, 300);

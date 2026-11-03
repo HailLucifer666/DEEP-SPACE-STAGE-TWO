@@ -125,7 +125,8 @@ function steer(dt) {
 
   // throttle — W accelerates toward cruise (boost raises the ceiling), S brakes to 0 and wins
   // over W; neither key holds speed (cruise). Space/Shift without W does nothing and doesn't
-  // drain the meter; releasing boost above cruise bleeds back down at brake rate.
+  // drain the meter. Boost expiry bleeds back down at brake rate even with W held (review R2:
+  // the old else-if order snap-clamped 32→17 in one frame via Math.min).
   const wHeld = keys.has('KeyW') || keys.has('ArrowUp');
   const sHeld = keys.has('KeyS') || keys.has('ArrowDown');
   const boostWant = wHeld && !sHeld && (input.boost || keys.has('ShiftLeft') || keys.has('ShiftRight')) && C.boost > 0.12;
@@ -133,8 +134,8 @@ function steer(dt) {
   C.boost = clamp(C.boost + (boostWant ? -0.45 : 0.25) * dt, 0, 1);
   const maxSpeed = MAX_SPEED * (boostWant ? BOOST_MULT : 1);
   if (sHeld) C.speed = Math.max(0, C.speed - BRAKE * dt);
+  else if (C.speed > maxSpeed) C.speed = Math.max(maxSpeed, C.speed - BRAKE * dt); // expiry bleed, never a snap
   else if (wHeld) C.speed = Math.min(maxSpeed, C.speed + ACCEL * dt);
-  if (C.speed > maxSpeed) C.speed = Math.max(maxSpeed, C.speed - BRAKE * dt);
 
   // the ship flies where the nose points — vel is derived from heading, never the reverse
   // (the old velocity-derived heading is what made W flip the camera 180°)
@@ -285,6 +286,7 @@ export function enterCombat(scene, camera, rocket, ui, api) {
     scene.add(ring);
     C.rim = ring;
   }
+  C.rim.visible = true;
   C.pos.set(0, ARENA_Y, 0);
   C.vel.set(0, 0, 0);
   C.heading = 0; C.bank = 0; C.speed = 0;
@@ -401,7 +403,7 @@ export function clearCombat() {
   if (C.ui.hudBars) C.ui.hudBars.innerHTML = ''; // pad phases must not inherit combat bars
   if (C.ui.hudScore) C.ui.hudScore.textContent = '';
   C.dead = false; C.deathT = 0; C.speed = 0;
-  if (C.rim) C.rim.material.opacity = 0; // story-005: rim fades out with combat
+  if (C.rim) { C.rim.material.opacity = 0; C.rim.visible = false; } // story-005: rim leaves the render list with combat (review R2-9)
 }
 
 /* ---------- probe surface (window.__stage2 reads these) ---------- */

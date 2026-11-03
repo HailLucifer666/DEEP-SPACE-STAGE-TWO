@@ -107,3 +107,20 @@ S brakes to 0.0, A/D turn in place ±1.36/−1.32 at d=0.0, mouse steers −1.08
   prediction**: "rim slides" was expected green-on-old but measured red (d=2.1 — the old code pins
   dead at the square corner rather than sliding); the boundary probes that prove the new rim
   behavior ship with story-005.
+
+## Full-review R2 addendum (2026-11-03)
+
+Independent code review of this branch returned APPROVED WITH SUGGESTIONS with 2 IMPORTANT
+findings; both verified and fixed the same day (flow-check now 28 asserts):
+- **R2-1 boost expiry snapped** — the W-held branch's `Math.min` clamp cut 32.3→17 in one frame
+  while the comment promised a brake-rate bleed. Fixed by reordering brake → expiry-bleed →
+  accelerate; probe "boost expiry bleeds (≤25 u/s²)" (old code measures ~38).
+- **R2-2 stale pointer steered forever** — `mouseActive` was never cleared, and position→rate
+  steering means a parked pointer is a permanent full-rate turn. Fixed: `pointerout`
+  (relatedTarget null) + `blur` clear it; probe "pointer leave stops steering".
+- Advisory corrected in the record: the claim "`vel.length() === speed` so the camera trail stays
+  valid" holds **only outside the soft zone** — inside it the bleed makes |vel| < speed while the
+  trail correctly tracks actual motion. Speed is the throttle state, not |vel|.
+- Advisories taken into the harness (review R2-5/6): `alive()` guards inside the boundary loops
+  (slow-mo can no longer trivially pass them) and a deterministic rim precondition (r≥72) before
+  the slide assert.
