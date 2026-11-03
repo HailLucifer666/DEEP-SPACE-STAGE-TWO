@@ -6,7 +6,7 @@
 // (state-guarded; double-skip no-op). clear() teardown (§8.6): dispose beat objects, cancel
 // overlay classes, stop audio, RESTORE THE FOV — a leaked kick would warp every later camera.
 import { THREE } from 'stage-two-lib';
-import { beep, sweep, vacuumDrop, loopsStopAll } from './audio.js';
+import { beep, sweep, vacuumDrop, musicEvict } from './audio.js';
 import { plumeSet } from './launch.js';
 
 const BEAT_B1 = 0.05, BEAT_B2 = 2.6, BEAT_B3 = 5.4, BEAT_LOGO = 7.6, BEAT_B4 = 9.6;
@@ -333,7 +333,7 @@ export function clearTransition() {
   }
   for (const gate of T.gates) gate.material.dispose();
   flash(false); burnText(false); burnLogo(false);
-  loopsStopAll(0.2);
+  musicEvict(0.2); // story-009: engine loops still die here; the music bed survives the clear — combat.enter owns its swell (spec §7)
   if (T.camera) { T.camera.fov = FOV_BASE; T.camera.updateProjectionMatrix(); } // never leak the kick into combat
   T.ready = false; T.skipped = false; T.fired.clear();
   T.riftTear = null; T.riftPull = null; T.riftMatTear = null; T.riftMatPull = null;

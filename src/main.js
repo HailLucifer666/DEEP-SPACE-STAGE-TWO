@@ -4,7 +4,8 @@ import { THREE, GLTFLoader, EffectComposer, RenderPass, UnrealBloomPass, OutputP
 import * as LAUNCH from './launch.js';
 import * as TRANSITION from './transition.js';
 import * as COMBAT from './combat.js';
-import { audioUnlock, isAudioLive, audioSuspend, audioResume, setMuted, isMuted } from './audio.js';
+import { audioUnlock, isAudioLive, audioSuspend, audioResume, setMuted, isMuted,
+  musicTo, musicState, loopsCount, alarmActive } from './audio.js';
 import { adapterRows, nextNose, nextTop } from './ship-fix.js';
 import { loadAssets, assetReport } from './assets.js';
 
@@ -154,6 +155,7 @@ const PHASES = {
   loading: { enter() { if (ui.title) ui.title.hidden = true; } },
   title: {
     enter() {
+      musicTo('title'); // story-009: the pad owns title — deferred until audio unlock (spec §2)
       if (ui.loading) ui.loading.hidden = true;
       if (ui.title) { ui.title.hidden = false; refreshRecordLine(); }
       closePanel();
@@ -164,6 +166,7 @@ const PHASES = {
   },
   pad: {
     enter() {
+      musicTo('title'); // story-009: the title bed carries through the launch phases (spec §2)
       COMBAT.clearCombat(); // death card REPLAY lands here — re-seat the rocket from the combat pose (§8.6)
       if (ui.gameover) ui.gameover.hidden = true; // setPhase is exit-before-enter: gameover.exit never runs on the way out
       ui.title.hidden = true; ui.hud.hidden = false; LAUNCH.enterPad(); TRANSITION.hudAssemble(false);
@@ -174,6 +177,7 @@ const PHASES = {
   ascent: { enter() { ui.hud.hidden = false; LAUNCH.enterAscent(); } },
   transition: {
     enter() {
+      musicTo('combat'); // story-009: warp crossfade starts — tension builds across the beat (spec §2)
       ui.hud.hidden = false; // numerals/tele/reticle live inside #hud — the sweep must not orphan it
       TRANSITION.enterTransition(scene, camera, rocket, ui, {
         go: (n) => setPhase(n),
@@ -191,12 +195,14 @@ const PHASES = {
       if (ui.hud) ui.hud.hidden = false; // gameover/title hide it; combat owns the bars
       TRANSITION.hudAssemble(true); // SKIRMISH lands without beat B2 — the reticle assembles on entry (story-001)
       COMBAT.enterCombat(scene, camera, rocket, ui, combatApi());
+      musicTo('combat'); // story-009: SKIP path crossfade; idempotent — also rebuilds if teardown killed the bed (spec §2)
       if (RESTART_N && RP.left > 0) window.setTimeout(rpOnCombat, 700);
     },
     exit() { COMBAT.clearCombat(); }, // any exit drains pools — no spawn-during-restart (§8.6)
   },
   gameover: {
     enter() {
+      musicTo('title'); // story-009: dawn crossfade under the death card (spec §2)
       game.timeScale = 1; // card reads in real time; restarts must never inherit slow-mo
       const finalScore = COMBAT.combatState().score;
       writeHighscore(Math.max(finalScore, readHighscore()));
@@ -722,6 +728,9 @@ window.__stage2 = {
   camPos: () => (camera ? camera.position.toArray().map((v) => +v.toFixed(3)) : null),
   rocketY: () => (rocket ? +rocket.position.y.toFixed(3) : null),
   audioLive: () => isAudioLive(),
+  musicState: () => musicState(), // story-009: current music target 'title' | 'combat' | 'none'
+  loopsCount: () => loopsCount(), // story-009: live loop bags — the leak probe's counter
+  alarmActive: () => alarmActive(), // story-009: low-hull alarm latch
   get entities() { return countMeshes(); },
   get wrecks() { return LAUNCH.wreckCount ? LAUNCH.wreckCount() : 0; },
   get particles() { return LAUNCH.particleCount ? LAUNCH.particleCount() : probs.particles; },

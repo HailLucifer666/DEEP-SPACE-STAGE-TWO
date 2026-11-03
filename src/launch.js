@@ -6,7 +6,7 @@
 // and the combat arena (origin-anchored) keep their staging untouched. Phase entry/exit resets
 // ALL of its own state (§8.6 discipline). Vi3W showcase: stage-one rocket derelicts (seedWrecks).
 import { THREE } from 'stage-two-lib';
-import { beep, noiseBurst, loopStart, loopsStopAll, sweep } from './audio.js';
+import { beep, noiseBurst, loopStart, musicEvict, sweep } from './audio.js';
 
 const COUNT_STEP = 0.95;
 const IGNITION_DUR = 2.0;
@@ -214,7 +214,7 @@ function resetStage() { // full phase-reset contract (§8.6) — restarts alloca
   if (L.planet) L.planet.position.set(-95, 26, 260);
   if (L.bh) L.bh.position.set(48, 10, 950);
   L.smoke && L.smoke.clear(); L.sparks && L.sparks.clear();
-  loopsStopAll(0.15);
+  musicEvict(0.15); // story-009: engine loops (wind/rumble/whoosh) die — the music bags survive (spec §7)
 }
 
 export function stageShip() { // the world-side seat for the hero — clearCombat (REPLAY/restart) lands here

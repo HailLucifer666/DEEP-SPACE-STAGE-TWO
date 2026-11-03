@@ -1,0 +1,6 @@
+Reviewed-Content-Hash: src/audio.js b012f068da9e97a3c02e8aa7bb2ac44bc560d8fe
+Reviewed-Content-Hash: src/main.js 3fcad4bafe081718da42b148a7a28e986c65d4e7
+Reviewed-Content-Hash: src/combat.js 08948f93557b6f70d4b55c5875a2dbb1426603df
+Reviewed-Content-Hash: src/launch.js 3da9c10a9406a7f74f1bfcf1d91758472c93f903
+Reviewed-Content-Hash: src/transition.js c19d14e6c3445d22e20aeb28753b3607aa2d3b70
+Reviewed-Content-Hash: index.html 7cf0b51d59d0e327ef8c79e2df0653e482c6ba13
