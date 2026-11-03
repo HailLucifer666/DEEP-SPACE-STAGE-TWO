@@ -21,7 +21,7 @@ const BOLT_LIFE = 1.2;
 const BOLT_POOL = 24;
 const HP_MAX = 100, SHIELD_MAX = 50, SHIELD_REGEN_DELAY = 3, SHIELD_REGEN_RATE = 14;
 const DEATH_SLOWMO = 0.7;    // seconds of real time at timeScale 0.3 before gameover (a click lands it sooner)
-const SCORE_DRONE = 100, SCORE_WAVE = 150;
+const SCORE_DRONE = 100, SCORE_GUNNER = 150, SCORE_WAVE = 150;
 
 const C = {
   ready: false, scene: null, camera: null, rocket: null, ui: null, api: null,
@@ -168,7 +168,7 @@ function boltsTick(dt) {
         EFFECTS.explosion(d.position);
         noiseBurst({ dur: 0.28, vol: 0.4, f0: 900, f1: 140 });
         if (ENEMIES.hitDrone(d, 1)) {
-          C.score += SCORE_DRONE;
+          C.score += d.userData.kind === 'gunner' ? SCORE_GUNNER : SCORE_DRONE;
           C.kills++;
           beep({ freq: 620, dur: 0.09, vol: 0.16, type: 'triangle' });
         }
@@ -340,6 +340,7 @@ export function combatState() {
     enemies: ENEMIES.aliveCount() + ENEMIES.queuedCount(),
     particles: EFFECTS.particleCount(),
     bolts: C.bolts ? C.bolts.live : 0,
+    ebolts: ENEMIES.eboltCount(),
     boost: C.boost,
     dead: C.dead,
   };

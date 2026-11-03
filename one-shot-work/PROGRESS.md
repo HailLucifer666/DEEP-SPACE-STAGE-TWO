@@ -1,3 +1,4 @@
+STATE 2026-11-03 05:33 | task: arena | last good tag: good-arena | build: ok 4.65MB | next: raider ships gunners+rammers (I) | blockers: none
 STATE 2026-11-03 04:58 | task: title | last good tag: good-title | build: ok 4.65MB | next: final sweep then user visual pass | blockers: none
 STATE 2026-11-03 04:56 | task: rift | last good tag: good-rift | build: ok 4.65MB | next: title overhaul (G) | blockers: user visual pass on f-rift/f-tunnel/f-logo shots
 STATE 2026-11-03 04:45 | task: controls | last good tag: good-controls | build: ok 4.64MB | next: rift/warp/logo rework (F) | blockers: none
