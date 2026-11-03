@@ -14,7 +14,7 @@
 | 005 | soft-boundary | Logic/Feel | S | Complete |
 | 006 | measure-boot | Logic (instrumentation) | S | Complete |
 | 007 | lazy-storage | Logic | M | Complete |
-| 008 | bloom | Visual/Feel | S | TODO |
+| 008 | bloom | Visual/Feel | S | Complete |
 | 009 | music-sfx | Visual/Feel | M | TODO |
 | 010 | speed-readout | UI | S | TODO |
 
