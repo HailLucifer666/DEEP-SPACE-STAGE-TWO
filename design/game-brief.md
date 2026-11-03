@@ -4,7 +4,7 @@
 
 ## Core loop
 - Launch: drift → prep → ignition → the cruise (streaming asteroids, planet, black hole) → rift → warp → logo → combat.
-- Combat: mouse-nav + WASD strafe + LMB fire; kill gunners (hold range, shoot dodgeable bolts) and rammers (dive).
+- Combat: W/S throttle (cruise holds speed) + A/D turn + mouse steer + LMB fire; kill gunners (hold range, shoot dodgeable bolts) and rammers (dive).
 - Progress: waves escalate (count, speed, gunner share) for score + wave bonus; die → death card → REPLAY LAUNCH or SKIP TO COMBAT; record persists.
 
 ## Player goal & fail state — what "working" looks like
@@ -15,7 +15,7 @@
 1. Cinematic launch (cruise → rift → warp → logo) with the Vi3W hero ship.
 2. Arena combat: gunners + rammers, dodgeable enemy bolts, edge threat pips.
 3. Death-retry loop (death card works from every path: REPLAY and SKIP).
-4. Controls that FEEL right: WASD thrust visibly moves the ship in frame; Space boost rushes the field.
+4. Controls that FEEL right: W accelerates, S brakes, A/D turn the nose, mouse steers — the ship flies where it points (story-004); Space boost rushes the field.
 5. Meta: high score persist + arm-confirm reset; sound toggle.
 6. Pro title screen (panels, chrome) and honest HUD.
 7. Evidence harness: CDP smokes + death-card click matrix + flow-check (paths never regress).

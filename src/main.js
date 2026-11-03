@@ -49,8 +49,8 @@ const ui = {
 /* ---------- title panels + record reset (G) ---------- */
 const PANEL_HTML = {
   CONTROLS:
-    '<p><b>MOUSE</b> — steer / nav &nbsp;·&nbsp; <b>LMB</b> — fire guns</p>' +
-    '<p><b>W A S D</b> — thrusters &nbsp;·&nbsp; <b>SPACE / SHIFT</b> — boost</p>' +
+    '<p><b>W / S</b> — throttle &amp; brake &nbsp;·&nbsp; <b>A / D</b> — turn left / right</p>' +
+    '<p><b>MOUSE</b> — steer &nbsp;·&nbsp; <b>LMB</b> — fire guns &nbsp;·&nbsp; <b>SPACE / SHIFT</b> — boost</p>' +
     '<p><b>P / ESC</b> — pause &nbsp;·&nbsp; <b>M</b> — mute &nbsp;·&nbsp; <b>ENTER</b> — launch</p>' +
     '<p class="t-note">Drones ram. Shields regen after 3 clean seconds. The field flows faster while you boost.</p>',
   CREDITS:
@@ -451,6 +451,8 @@ function boot() {
   window.addEventListener('pointermove', onPointerMove);
   window.addEventListener('pointerdown', onPointerDown);
   window.addEventListener('pointerup', onPointerUp);
+  document.addEventListener('pointerout', onPointerGone); // cursor left the window (relatedTarget null) — full review R2-2
+  window.addEventListener('blur', onPointerGone); // alt-tab: a stale pointer position is otherwise a permanent turn command
   ui.btnLaunch?.addEventListener('click', () => onTitleAction('launch'));
   ui.btnSkip?.addEventListener('click', () => onTitleAction('skip'));
   ui.btnControls?.addEventListener('click', () => openPanel('CONTROLS'));
@@ -564,6 +566,10 @@ function onPointerDown(e) {
 }
 function onPointerUp(e) {
   if (e.button === 0) input.fire = false;
+}
+function onPointerGone(e) { // full review R2-2: the cursor is hidden during play, so a stale
+  if (e && e.relatedTarget) return; // pointer position would steer at full rate forever —
+  input.mouseActive = false; // element-to-element crossings carry a relatedTarget; window exits don't
 }
 function onTitleAction(kind) {
   if (SPIN) return; // closed viewer — a mis-oriented ship never reaches pad/combat

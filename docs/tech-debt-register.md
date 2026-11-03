@@ -19,6 +19,8 @@ lines: main.js (682); functions >50 lines: tickCombat, tickAscent, tickTransitio
 | TD-008 | Architecture | ~400 MB Edge profile litter in build/ (cdp-check profiles, gitignored) — delete on user go-ahead | build/ | S | Low | 0.3 | Accepted — awaiting user | 2026-11-03 | — |
 | TD-009 | Performance | Edge pip transform strings allocated per raider per frame (≤8/frame — acceptable; gate if pip count grows) | src/combat.js | S | Low | 0.3 | Open | 2026-11-03 | — |
 | TD-010 | Code Quality | transition.js tunnel canvas texture never disposed (material is; texture leaks once per session) | src/transition.js | S | Low | 0.3 | Open | 2026-11-03 | — |
+| TD-011 | Code Quality | Heading derived from velocity (`heading = atan2(vel)`) — player never commands the nose; W flipped the view 180°. Fix: commanded yaw + throttle state (story-004) | src/combat.js | M | Critical | 3.5 | Closed — story-004 (probes red-on-old) | 2026-11-03 | — |
+| TD-012 | Architecture | Arena clamp is a hard invisible SQUARE (±80) — ship pins at full thrust over streaming ground (the repeat "stuck at the edge" class; ARENA_HALF already 3x'd once). Fix: soft circular boundary + visible rim (story-005) | src/combat.js | S | High | 2.5 | Closed — story-005 (probes red-on-old) | 2026-11-03 | — |
 
-Prioritized: TD-001 → TD-002 → TD-004 → TD-003 → TD-006 → TD-007 → TD-005/TD-008/TD-009/TD-010.
+Prioritized: TD-011 (closed) → TD-012 → TD-001 → TD-002 → TD-004 → TD-003 → TD-006 → TD-007 → TD-005/TD-008/TD-009/TD-010.
 `workflow: minimal` — no sprints; "Sprint" column uses — and next-work is the brief's build order.

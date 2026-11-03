@@ -1,6 +1,7 @@
 // STAGE TWO — COMBAT CORE (S4): chase-cam space combat around the hero rocket.
 // Owns: player ship pose (re-parents the rocket into a yaw/pitch/roll pose group),
-// mouse+keys steering (no pointer lock), soft-clamped arena, hold-fire pooled bolts,
+// throttle+turn flight (W/S throttle, A/D + pointer steer — no pointer lock),
+// soft-clamped arena, hold-fire pooled bolts,
 // shield→HP damage with regen, boost meter, derived waves (via enemies.js), death
 // slow-mo handoff. Contained state contract (§8.6): clearCombat() re-parents the
 // rocket, drains every pool and resets all flags — restarts allocate nothing new.
@@ -12,9 +13,18 @@ import { beep, sweep, noiseBurst, loopStart, loopsStopAll } from './audio.js';
 import { stageShip, combatFlow } from './launch.js';
 
 const ARENA_Y = 18;
-const ARENA_HALF = 80;       // player soft clamp (raiders spawn outside and fly in) — 3x after the "stuck at the edge" report
+// Sector boundary (story-005): a soft circular rim. Inside R_SOFT flight is untouched; from
+// R_SOFT to R_HARD the outward radial speed bleeds toward zero (tangential preserved — the ship
+// slides along the rim instead of pinning), and the rim renders as a visible ground ring. The
+// old hard ±80 square pinned the ship at full thrust over streaming ground — the "stuck at the
+// edge" report, twice (the ±80 was itself a 3x enlargement for the same symptom). Raiders spawn
+// 55 off the player, so R_HARD 80 keeps the spawn ring off-camera.
+const R_SOFT = 60, R_HARD = 80;
 const MAX_SPEED = 17;        // bumped with the arena — same crossing time as the old 26 arena at 14
 const BOOST_MULT = 1.9;
+const TURN_RATE = 2.2;       // commanded yaw (rad/s) — full circle ≈ 3 s (story-004: heading is player-owned)
+const ACCEL = 14;            // W: u/s² toward the cruise/boost ceiling
+const BRAKE = 22;            // S: u/s² down to 0 — brakes harder than W accelerates, and S wins over W
 const FIRE_INTERVAL = 1 / 8; // ~8/s hold-fire
 const BOLT_SPEED = 42;
 const BOLT_LIFE = 1.2;
@@ -26,7 +36,7 @@ const SCORE_DRONE = 100, SCORE_GUNNER = 150, SCORE_WAVE = 150;
 const C = {
   ready: false, scene: null, camera: null, rocket: null, ui: null, api: null,
   pose: null, tilt: null,
-  pos: new THREE.Vector3(), vel: new THREE.Vector3(), heading: 0, bank: 0,
+  pos: new THREE.Vector3(), vel: new THREE.Vector3(), heading: 0, bank: 0, speed: 0, // speed = throttle state (u/s along the nose); heading is player-commanded (story-004)
   hp: HP_MAX, shield: SHIELD_MAX, regenT: 0, dead: false, deathT: 0,
   fireT: 0, boost: 1, boosting: false,
   wave: 0, waveGapT: 0, score: 0, kills: 0,
@@ -34,6 +44,7 @@ const C = {
   tmp: new THREE.Vector3(), tmp2: new THREE.Vector3(),
   ndc: new THREE.Vector3(), // hoisted unproject scratch (feel: no per-frame allocation)
   flow: 0, // smoothed boost → field-flow factor (0 idle drift, 1 rush)
+  rim: null, // story-005: the visible sector-edge ring (created once, opacity driven by proximity)
   pips: [], pipDir: new THREE.Vector3(), pipFwd: new THREE.Vector3(), pipInv: new THREE.Quaternion(),
   retX: -1, retY: -1, lastBars: null, lastScore: null, // change-gates for DOM writes
 };
@@ -99,58 +110,66 @@ function forward(out) {
   return out.set(Math.sin(C.heading), 0, Math.cos(C.heading));
 }
 
-/* ---------- input → steering ---------- */
+/* ---------- input → steering (story-004: throttle + turn) ---------- */
 function steer(dt) {
   const input = C.api.input;
   const keys = input.keys;
-  const kb = C.tmp.set(0, 0, 0);
-  if (keys.has('KeyW') || keys.has('ArrowUp')) kb.z -= 1;
-  if (keys.has('KeyS') || keys.has('ArrowDown')) kb.z += 1;
-  if (keys.has('KeyA') || keys.has('ArrowLeft')) kb.x -= 1;
-  if (keys.has('KeyD') || keys.has('ArrowRight')) kb.x += 1;
 
-  const kbOn = kb.lengthSq() > 0;
-  let target = null;
-  if (kbOn) {
-    target = C.tmp2.copy(C.pos).addScaledVector(kb.normalize(), 6); // direction only — length is set below
-  } else if (input.mouseActive) {
-    // mouse NDC → ray → intersect the arena plane y=ARENA_Y (clamp target into arena)
-    const ndc = C.ndc.set(input.mouse.x, input.mouse.y, 0.5).unproject(C.camera);
-    const dir = ndc.sub(C.camera.position).normalize();
-    if (Number.isFinite(dir.x) && Math.abs(dir.y) > 1e-4) { // parallel-to-plane guard
-      const tHit = (ARENA_Y - C.camera.position.y) / dir.y;
-      if (tHit > 0) target = C.tmp2.set(C.camera.position.x + dir.x * tHit, ARENA_Y, C.camera.position.z + dir.z * tHit);
-    }
-  }
-  if (!target) target = C.tmp2.copy(C.pos);
+  // turn — the nose is player-owned now. Screen-right at heading 0 is world −x (camera basis
+  // x = up × (−forward)), so left = +Δh, right = −Δh; the pointer steers the same axis and the
+  // summed command is clamped so keys+mouse together can't spin past 1.25× TURN_RATE.
+  const keyTurn = (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0) - (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0);
+  const mx = input.mouseActive && Math.abs(input.mouse.x) > 0.08 ? input.mouse.x : 0; // deadzone: a resting pointer must not creep
+  const turn = clamp(keyTurn - mx, -1.25, 1.25);
+  C.heading += turn * TURN_RATE * dt;
 
-  target.x = clamp(target.x, -ARENA_HALF, ARENA_HALF);
-  target.z = clamp(target.z, -ARENA_HALF, ARENA_HALF);
-
-  const boostWant = (input.boost || keys.has('ShiftLeft') || keys.has('ShiftRight')) && C.boost > 0.12 && target.distanceTo(C.pos) > 1.5;
+  // throttle — W accelerates toward cruise (boost raises the ceiling), S brakes to 0 and wins
+  // over W; neither key holds speed (cruise). Space/Shift without W does nothing and doesn't
+  // drain the meter. Boost expiry bleeds back down at brake rate even with W held (review R2:
+  // the old else-if order snap-clamped 32→17 in one frame via Math.min).
+  const wHeld = keys.has('KeyW') || keys.has('ArrowUp');
+  const sHeld = keys.has('KeyS') || keys.has('ArrowDown');
+  const boostWant = wHeld && !sHeld && (input.boost || keys.has('ShiftLeft') || keys.has('ShiftRight')) && C.boost > 0.12;
   C.boosting = boostWant;
   C.boost = clamp(C.boost + (boostWant ? -0.45 : 0.25) * dt, 0, 1);
-  const speed = MAX_SPEED * (boostWant ? BOOST_MULT : 1);
+  const maxSpeed = MAX_SPEED * (boostWant ? BOOST_MULT : 1);
+  if (sHeld) C.speed = Math.max(0, C.speed - BRAKE * dt);
+  else if (C.speed > maxSpeed) C.speed = Math.max(maxSpeed, C.speed - BRAKE * dt); // expiry bleed, never a snap
+  else if (wHeld) C.speed = Math.min(maxSpeed, C.speed + ACCEL * dt);
 
-  const desired = C.tmp.copy(target).sub(C.pos);
-  if (kbOn || desired.lengthSq() > speed * speed) desired.setLength(speed); // keyboard thrust = FULL speed (story-002: was capped at 6 — the 'WASD dead' feel)
-  const k = 1 - Math.exp(-7.5 * dt); // feel: snappier pursuit (was 6)
-  C.vel.lerp(desired, k);
+  // the ship flies where the nose points — vel is derived from heading, never the reverse
+  // (the old velocity-derived heading is what made W flip the camera 180°)
+  C.vel.copy(forward(C.tmp)).multiplyScalar(C.speed);
+
+  // soft circular rim (story-005): past R_SOFT the outward radial component bleeds toward zero
+  // (tangential preserved — the ship slides along the rim instead of pinning against a wall)
+  let r = Math.hypot(C.pos.x, C.pos.z);
+  if (r > R_SOFT) {
+    const nx = C.pos.x / r, nz = C.pos.z / r; // outward unit normal
+    const radial = C.vel.x * nx + C.vel.z * nz;
+    const cap = Math.max(3, MAX_SPEED * (R_HARD - r) / (R_HARD - R_SOFT)); // floor 3: bounded arrival — the linear cap alone is asymptotic (dr/dt ∝ (R_HARD−r)), which reads as mud at the rim
+    if (radial > cap) {
+      const excess = radial - cap;
+      C.vel.x -= excess * nx; C.vel.z -= excess * nz;
+    }
+  }
   C.pos.addScaledVector(C.vel, dt);
 
-  // soft arena clamp + warning
-  const out = Math.abs(C.pos.x) > ARENA_HALF || Math.abs(C.pos.z) > ARENA_HALF;
-  C.pos.x = clamp(C.pos.x, -ARENA_HALF, ARENA_HALF);
-  C.pos.z = clamp(C.pos.z, -ARENA_HALF, ARENA_HALF);
-  if (C.ui.warn) {
-    C.ui.warn.hidden = !out || C.dead;
-    C.ui.warn.textContent = 'RETURNING TO SECTOR';
+  // hard circular clamp — safety net for the one frame the bleed cap allows
+  r = Math.hypot(C.pos.x, C.pos.z);
+  if (r > R_HARD) {
+    const s = R_HARD / r;
+    C.pos.x *= s; C.pos.z *= s;
+    r = R_HARD;
   }
+  if (C.ui.warn) {
+    C.ui.warn.hidden = r <= R_SOFT || C.dead;
+    C.ui.warn.textContent = 'EDGE OF SECTOR';
+  }
+  if (C.rim) C.rim.material.opacity = clamp((r - R_SOFT) / (R_HARD - R_SOFT), 0, 1) * 0.55;
 
-  // heading follows velocity when it means anything; bank reads the turn
-  if (C.vel.lengthSq() > 0.6) C.heading = Math.atan2(C.vel.x, C.vel.z);
-  const side = C.vel.x * Math.cos(C.heading) - C.vel.z * Math.sin(C.heading); // lateral component
-  C.bank += (clamp(-side * 0.09, -0.7, 0.7) - C.bank) * (1 - Math.exp(-7 * dt));
+  // bank reads the commanded turn — same visual sign as the old left-turn lean (right turn +)
+  C.bank += (clamp(-turn * 0.7, -0.7, 0.7) - C.bank) * (1 - Math.exp(-7 * dt));
 }
 
 /* ---------- weapons ---------- */
@@ -256,9 +275,21 @@ function scriptedKillTick(dt) {
 export function enterCombat(scene, camera, rocket, ui, api) {
   prepareCombat(scene, camera, rocket, ui, api);
   reparentRocket(true);
+  if (!C.rim) { // story-005: the sector edge is visible before you reach it
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(R_HARD - 0.8, R_HARD + 0.8, 128),
+      new THREE.MeshBasicMaterial({ color: 0x9fd8ff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = ARENA_Y + 0.5;
+    ring.renderOrder = 5;
+    scene.add(ring);
+    C.rim = ring;
+  }
+  C.rim.visible = true;
   C.pos.set(0, ARENA_Y, 0);
   C.vel.set(0, 0, 0);
-  C.heading = 0; C.bank = 0;
+  C.heading = 0; C.bank = 0; C.speed = 0;
   C.hp = HP_MAX; C.shield = SHIELD_MAX; C.regenT = 0; C.dead = false; C.deathT = 0;
   C.fireT = 0; C.boost = 1; C.boosting = false;
   C.score = 0; C.kills = 0; C.wave = 1; C.waveGapT = 0;
@@ -371,7 +402,8 @@ export function clearCombat() {
   if (C.ui.warn) C.ui.warn.hidden = true;
   if (C.ui.hudBars) C.ui.hudBars.innerHTML = ''; // pad phases must not inherit combat bars
   if (C.ui.hudScore) C.ui.hudScore.textContent = '';
-  C.dead = false; C.deathT = 0;
+  C.dead = false; C.deathT = 0; C.speed = 0;
+  if (C.rim) { C.rim.material.opacity = 0; C.rim.visible = false; } // story-005: rim leaves the render list with combat (review R2-9)
 }
 
 /* ---------- probe surface (window.__stage2 reads these) ---------- */
@@ -383,6 +415,8 @@ export function combatState() {
     bolts: C.bolts ? C.bolts.live : 0,
     ebolts: ENEMIES.eboltCount(),
     boost: C.boost,
+    speed: +C.speed.toFixed(2), heading: +C.heading.toFixed(3), // probe surface — flow-check's throttle/turn asserts (story-004)
+    pos: C.pos.toArray().map((v) => +v.toFixed(2)), // probe surface — flow-check's keyboard-motion assert (story-003)
     dead: C.dead,
   };
 }

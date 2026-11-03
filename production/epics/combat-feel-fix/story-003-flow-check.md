@@ -1,7 +1,7 @@
 # Story 003: flow-check
 
 > **Epic**: combat-feel-fix
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Foundation
 > **Type**: Logic
 > **Estimate**: M
@@ -79,3 +79,11 @@
 
 - Depends on: `production/epics/combat-feel-fix/story-001-overlay-sweep.md` + `production/epics/combat-feel-fix/story-002-wasd-cam.md`
 - Unlocks: None
+
+---
+
+## Completion Notes (story-done, 2026-11-03)
+
+- `tools/flow-check.mjs` shipped and verified **17/17 PASS** on the built game (boot→title, SKIRMISH overlays, WASD probes, natural death→REPLAY→pad walk with hud-visible-at-every-phase, single combat entry, death→SKIP, `CONSOLE []`).
+- `combatState()` gained the `pos` probe field (2-decimal `[x,y,z]`) — the harness's only movement observability.
+- Note: AC #2's W/A/D axis asserts pin the *story-002 strafe scheme*. [Story 004] reworks controls to throttle+turn and rewrites those probes (red-on-old mutation run recorded there); the harness's overlay/phase asserts are unaffected.
