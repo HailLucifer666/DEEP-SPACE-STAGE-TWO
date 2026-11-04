@@ -8,6 +8,8 @@
 import { THREE } from 'stage-two-lib';
 import * as ENEMIES from './enemies.js';
 import * as DRONES from './drone.js';
+import * as BOSS from './boss.js';
+import { BOSS_WAVE } from './boss.js';
 import * as EFFECTS from './effects.js';
 import { makePool } from './pool.js';
 import { beep, sweep, noiseBurst, loopStart, musicEvict, musicSetDuck, alarmTick, proximityTick } from './audio.js';
@@ -49,6 +51,9 @@ const C = {
   // story-012 drone probe state (?droneProbe=1) — probe-only fields, untouched by normal play
   dpT: -1, dpDrone: null, dpWin: 0, dpDone: false,
   dpTele: false, dpDive: false, dpContact: false, dpSamples: 0, dpMM: null,
+  // story-013 boss probe state (?bossProbe=1) — probe-only fields, untouched by normal play
+  bossApi: null, bpT: -1, bpStage: 'spawn', bpStageT: 0, bpFired: 0, bpHpMark: 0,
+  bpSpawnWave: 0, bpHud: false, bpCharged: false, bpRaged: false, bpRagePinned: false, bpKilled: false, bpDone: false,
   tmp: new THREE.Vector3(), tmp2: new THREE.Vector3(),
   ndc: new THREE.Vector3(), // hoisted unproject scratch (feel: no per-frame allocation)
   flow: 0, // smoothed boost → field-flow factor (0 idle drift, 1 rush)
@@ -60,6 +65,8 @@ const C = {
 const qs = new URLSearchParams(location.search);
 const SCRIPTED_KILL = qs.get('scriptedKill') === '1';
 const DRONE_PROBE = qs.get('droneProbe') === '1'; // story-012: deterministic single-drone run
+const BOSS_PROBE = qs.get('bossProbe') === '1'; // story-013: deterministic boss walk (skips the wave-5 wait)
+const BOSS_SHOT = qs.get('bossShot') === '1'; // story-013 evidence variant: closer spawn + phase holds (screenshots)
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, Number.isFinite(v) ? v : a)); // NaN-safe (§8.9)
 const fmt = (n) => (Number.isFinite(n) ? String(Math.max(0, Math.floor(n))) : '0'); // honest HUD values (spec #16)
@@ -87,6 +94,12 @@ export function prepareCombat(scene, camera, rocket, ui, api) {
   EFFECTS.prepareEffects(scene, camera);
   ENEMIES.prepareEnemies(scene);
   DRONES.prepareDrones(scene); // story-012: orbs join the wave layer; GLB decode starts here if inlined
+  BOSS.prepareBoss(scene); // story-013: the single-entity boss joins the scene at prepare (baseline-stable mesh count)
+  C.bossApi = { // the boss's tick/death api — EFFECTS + the combat probe surfaces, drone-tick api shape extended for slow-mo + report
+    damagePlayer, explosion: (p) => EFFECTS.explosion(p), shake: (a) => EFFECTS.shake(a),
+    setTimeScale: (v) => C.api.setTimeScale(v), getTimeScale: () => C.api.getTimeScale(),
+    report: (r) => C.api.report(r),
+  };
   // edge pips (J) — off-screen raider awareness; created once, #hud hides them outside combat
   if (C.ui.hud && !C.pips.length) {
     for (let i = 0; i < 8; i++) {
@@ -235,6 +248,19 @@ function boltsTick(dt) {
         }
       }
     });
+    // bolt × boss scan (story-013) — the node zone outranks the hull band (boss.boltHit:
+    // 2 = weak node, 1 = ring hull); WEAK_MULT applies inside hitBoss. The kill launches the
+    // slow-mo death cinematic inside boss.js — no score/kills side-effects (spec is silent;
+    // story-014 owns the victory rewards).
+    if (b.userData.alive && BOSS.alive()) {
+      const zone = BOSS.boltHit(b.position);
+      if (zone) {
+        C.bolts.kill(b);
+        EFFECTS.explosion(b.position);
+        noiseBurst({ dur: 0.3, vol: zone === 2 ? 0.5 : 0.4, f0: zone === 2 ? 1200 : 800, f1: 140 });
+        if (BOSS.hitBoss(1, zone === 2, C.bossApi)) EFFECTS.shake(0.12);
+      }
+    }
   });
 }
 
@@ -262,12 +288,19 @@ function damagePlayer(n) {
 function wavesTick(dt) {
   if (C.dead) return;
   // story-012: orbs join the wave-clear condition — the wave doesn't advance while a drone
-  // orbits (ENEMIES.startWave's pure raider formula is untouched; drones ride the wave layer)
+  // orbits (ENEMIES.startWave's pure raider formula is untouched; drones ride the wave layer).
+  // story-013: the boss blocks it too while alive, and spawns ONCE instead of wave BOSS_WAVE+1
+  // (the spawn-once latch lives in boss.js — eligible(); until story-014's victory card the
+  // waves simply continue after the boss dies).
   if (ENEMIES.aliveCount() === 0 && ENEMIES.queuedCount() === 0 &&
-      DRONES.aliveCount() === 0 && DRONES.queuedCount() === 0) {
+      DRONES.aliveCount() === 0 && DRONES.queuedCount() === 0 && !BOSS.alive()) {
     if (C.waveGapT <= 0) { C.waveGapT = 1.6; if (C.wave > 0) C.score += SCORE_WAVE * C.wave; }
     C.waveGapT -= dt;
-    if (C.waveGapT <= 0) { C.waveGapT = 0; C.wave++; ENEMIES.startWave(C.wave, C.pos); DRONES.startWave(C.wave); }
+    if (C.waveGapT <= 0) {
+      C.waveGapT = 0; C.wave++;
+      if (C.wave > BOSS_WAVE && BOSS.eligible()) BOSS.spawnBoss(C.pos); // story-013: the warden arrives
+      else { ENEMIES.startWave(C.wave, C.pos); DRONES.startWave(C.wave); }
+    }
   }
 }
 
@@ -355,6 +388,111 @@ function droneProbeTick(dt) {
   }
 }
 
+/* ---------- story-013 boss probe (?bossProbe=1) ----------
+ * Deterministic single-boss walk (droneProbe pattern): spawns the boss 26 u ahead of the nose
+ * 0.4 s into combat (skips the wave-5 wait — spawnWave asserts it), then drives it end-to-end:
+ *   weak/body ratio — the boss is PINNED (probeHold) and THREE real player bolts are fired
+ *     into the weak node vs THREE into the ring hull: equal streams, damage ratio must be
+ *     WEAK_MULT (end-to-end: zone detection + multiplier through the real bolt scan).
+ *   phases — scripted damage (probeDamage) walks hp through the thresholds; the phase log
+ *     must read orbit → charge → rage, and the charge dash must launch and overshoot.
+ *   death — hp 0 → slow-mo cinematic → bossDefeated report → the entity drains.
+ * Reports window.__stage2.bossProbe = { phases, weakHits, bodyHits, weakDmg, bodyDmg, ratio,
+ * chargeDash, overshoot, deathSlowmo, spawnWave, hudLine } (+ lastReport parity via api.report).
+ * ?bossShot=1: evidence-capture variant — closer spawn + per-phase holds + bossShotPhase
+ * markers for tools/boss-shot.mjs; the drive and its asserts are unchanged. */
+function bossBolt(target, away) { // one real player bolt placed 3 u out on `away`, flying into `target`
+  const b = C.bolts.spawn();
+  b.position.copy(target).addScaledVector(away, 3.0);
+  b.userData.dir.copy(away).negate();
+  b.userData.life = BOLT_LIFE;
+  b.lookAt(C.tmp.copy(b.position).add(b.userData.dir));
+}
+function bossProbeTick(dt) {
+  if (!BOSS_PROBE || C.bpDone) return;
+  const rdt = dt / Math.max(0.05, C.api.getTimeScale()); // real-time clock — the death slow-mo must not stall the drive
+  C.bpT += rdt;
+  C.bpStageT += rdt;
+  window.__stage2.bossProbeLive = true;
+  const st = BOSS.state();
+  // HUD evidence: sample the real DOM each tick while the boss lives
+  if (st && C.ui.hudBars && C.ui.hudBars.textContent.includes('BOSS')) C.bpHud = true;
+  if (BOSS_SHOT) window.__stage2.bossShotPhase = st ? st.phase : 'dead';
+
+  if (C.bpStage === 'spawn') {
+    if (C.bpT >= 0.4) {
+      forward(C.tmp);
+      BOSS.spawnForProbe(C.tmp2.copy(C.pos).addScaledVector(C.tmp, BOSS_SHOT ? 14 : 26).setY(ARENA_Y));
+      C.bpSpawnWave = C.wave;
+      C.bpHpMark = BOSS.state().hp;
+      C.bpStage = 'weak'; C.bpStageT = 0; C.bpFired = 0;
+      BOSS.probeHold(true); // pin the boss for the deterministic ratio test
+    }
+    return;
+  }
+  if (C.bpStage === 'weak' || C.bpStage === 'body') {
+    const node = C.bpStage === 'weak';
+    if (C.bpFired < 3 && C.bpStageT >= C.bpFired * 0.35 + 0.1) {
+      const t = BOSS.probeTargets(C.pos);
+      const target = node ? t.node : t.hull;
+      bossBolt(target, C.tmp.copy(C.pos).sub(target).normalize());
+      C.bpFired++;
+    }
+    const ps = BOSS.probeStats();
+    if ((node ? ps.weakHits : ps.bodyHits) >= 3 || C.bpStageT > 3.0) {
+      C.bpHpMark = st ? st.hp : 0;
+      C.bpStage = node ? 'body' : 'charge';
+      C.bpStageT = 0; C.bpFired = 0;
+      if (!node) BOSS.probeHold(false); // behavior resumes for the charge/rage walk
+    }
+    return;
+  }
+  if (C.bpStage === 'charge') {
+    if (!C.bpCharged && st) { BOSS.probeDamage(st.hp - 34, C.api); C.bpCharged = true; } // 57% — below CHARGE_AT 0.66
+    const hold = BOSS_SHOT ? 2.2 : 0;
+    const ps = BOSS.probeStats();
+    if (ps.chargeDash && ps.overshoot) { C.bpStage = 'rage'; C.bpStageT = 0; }
+    else if (C.bpStageT > 6.0 + hold) { C.bpStage = 'rage'; C.bpStageT = 0; } // timeout — the asserts record what's missing
+    return;
+  }
+  if (C.bpStage === 'rage') {
+    if (!C.bpRaged && st) { BOSS.probeDamage(st.hp - 15, C.api); C.bpRaged = true; } // 25% — below RAGE_AT 0.33
+    if (BOSS_SHOT && st && st.phase === 'rage' && !C.bpRagePinned) {
+      // evidence framing: hold the boss 14 u ahead of the nose for the rage screenshot —
+      // the natural 20 u rage orbit carries it out of the chase-cam frame at random bearings
+      BOSS.probeHold(true);
+      forward(C.tmp);
+      BOSS.probePlace(C.tmp2.copy(C.pos).addScaledVector(C.tmp, 14).setY(ARENA_Y));
+      C.bpRagePinned = true;
+    }
+    if (st && st.phase === 'rage' && C.bpStageT >= (BOSS_SHOT ? 2.4 : 0.8)) { C.bpStage = 'death'; C.bpStageT = 0; }
+    return;
+  }
+  if (C.bpStage === 'death') {
+    if (!C.bpKilled && st) { BOSS.probeDamage(st.hp, C.api); C.bpKilled = true; }
+    const rep = window.__stage2.lastReport;
+    if ((!BOSS.alive() && rep && rep.bossDefeated) || C.bpStageT > 10) {
+      C.bpDone = true;
+      const ps = BOSS.probeStats();
+      const probe = {
+        phases: ps.phases,
+        weakHits: ps.weakHits, bodyHits: ps.bodyHits,
+        weakDmg: ps.weakDmg, bodyDmg: ps.bodyDmg,
+        ratio: ps.bodyDmg > 0 ? +(ps.weakDmg / ps.bodyDmg).toFixed(2) : 0,
+        chargeDash: ps.chargeDash, overshoot: ps.overshoot,
+        deathSlowmo: ps.deathSlowmo,
+        spawnWave: C.bpSpawnWave,
+        hudLine: C.bpHud,
+        bossDefeated: (rep && rep.bossDefeated) || null, // the death report the drive observed (lastReport is a single slot — the probe report lands after it)
+      };
+      window.__stage2.bossProbe = probe;
+      window.__stage2.bossProbeLive = false;
+      window.__stage2.bossShotPhase = null;
+      C.api.report({ bossProbe: probe }); // parity with scriptedKill/droneProbe — lands on __stage2.lastReport too
+    }
+  }
+}
+
 function scanNearest() { // full-3D distance to the closest live raider, or null (story-009 spec §5)
   let best = null;
   ENEMIES.eachAlive((d) => {
@@ -391,6 +529,13 @@ export function enterCombat(scene, camera, rocket, ui, api) {
   C.dpT = -1; C.dpDrone = null; C.dpWin = 0; C.dpDone = false; // story-012: probe state restarts clean
   C.dpTele = false; C.dpDive = false; C.dpContact = false; C.dpSamples = 0; C.dpMM = null;
   window.__stage2.droneProbeLive = false;
+  // story-013: boss + its probe state restart clean; the single entity drains with the pools (§8.6)
+  BOSS.clearBoss();
+  C.bpT = -1; C.bpStage = 'spawn'; C.bpStageT = 0; C.bpFired = 0; C.bpHpMark = 0;
+  C.bpSpawnWave = 0; C.bpHud = false; C.bpCharged = false; C.bpRaged = false; C.bpRagePinned = false; C.bpKilled = false; C.bpDone = false;
+  window.__stage2.bossProbeLive = false;
+  window.__stage2.bossShotPhase = null;
+  delete window.__stage2.bossProbe; // a fresh combat must never inherit the previous walk's report
   C.flow = 0;
   C.proxScanT = 0; C.nearest = null; // story-009: proximity scan restarts clean (§8.6)
   C.lastBars = null; C.lastScore = null; // clearCombat emptied the DOM — force one HUD rewrite
@@ -413,9 +558,11 @@ export function tickCombat(dt, t) {
   boltsTick(dt);
   ENEMIES.tickEnemies(dt, C.pos, { damagePlayer, explosion: (pos) => EFFECTS.explosion(pos) });
   DRONES.tickDrones(dt, C.pos, { damagePlayer, explosion: (pos) => EFFECTS.explosion(pos) });
+  BOSS.tickBoss(dt, C.pos, C.bossApi); // story-013: the warden — single-entity state machine
   wavesTick(dt);
   scriptedKillTick(dt);
   droneProbeTick(dt);
+  bossProbeTick(dt);
 
   // shield regen after a clean 3 s
   C.regenT += dt;
@@ -442,12 +589,16 @@ export function tickCombat(dt, t) {
   alarmTick(dt, C.hp, C.dead);
   proximityTick(dt, C.dead ? null : C.nearest);
 
-  // HUD — honest values, DOM writes only on change (feel: no per-frame innerHTML churn)
+  // HUD — honest values, DOM writes only on change (feel: no per-frame innerHTML churn).
+  // story-013: the BOSS HP line rides this same change-gated wholesale write — presentation
+  // only (state lives in combatState().boss), present while the boss lives, gone after death.
   if (C.ui.hudBars) {
+    const bossLine = BOSS.barLine();
     const bars =
       `HULL ${fmt(C.hp)}<div class="bar"><i style="width:${fmt(clamp(C.hp, 0, HP_MAX))}%"></i></div>` +
       `SHIELD ${fmt(C.shield)}<div class="bar sh"><i style="width:${fmt(clamp(C.shield, 0, SHIELD_MAX) * 2)}%"></i></div>` +
-      `BOOST ${fmt(C.boost * 100)}%`;
+      `BOOST ${fmt(C.boost * 100)}%` +
+      (bossLine ? `<div>${bossLine}</div>` : '');
     if (bars !== C.lastBars) { C.ui.hudBars.innerHTML = bars; C.lastBars = bars; }
   }
   if (C.ui.hudScore) {
@@ -502,8 +653,9 @@ export function tickCombat(dt, t) {
 export function clearCombat() {
   if (!C.ready) return;
   C.bolts.clear();
-  ENEMIES.clearEnemies();
+  ENEMIES.clearEnemies(); // also drains the boss volley's bolts — the volley rides E.bolts (story-013)
   DRONES.clearDrones(); // story-012: the orb pool rides the same §8.6 drain — restarts allocate nothing new
+  BOSS.clearBoss(); // story-013: the single entity hides + resets — spawn-once latch re-arms for the next combat
   EFFECTS.clearEffects();
   window.__stage2.droneProbeLive = false;
   musicEvict(0.25); // story-009: engine loops die, the music bags survive — the phase hooks own stopping them (spec §7)
@@ -512,6 +664,8 @@ export function clearCombat() {
   if (C.ui.warn) C.ui.warn.hidden = true;
   if (C.ui.hudBars) C.ui.hudBars.innerHTML = ''; // pad phases must not inherit combat bars
   if (C.ui.hudScore) C.ui.hudScore.textContent = '';
+  if (C.ui.tele) C.ui.tele.textContent = ''; // TD-014 (story-013): the SPD line is combat's write —
+  // it must not ride the pad until cruise rewrites (phases.js resets its lastSpd gate on combat.enter)
   C.dead = false; C.deathT = 0; C.speed = 0;
   if (C.rim) { C.rim.material.opacity = 0; C.rim.visible = false; } // story-005: rim leaves the render list with combat (review R2-9)
 }
@@ -522,7 +676,7 @@ export function combatState() {
     hp: C.hp, shield: C.shield, score: C.score, wave: C.wave, kills: C.kills,
     enemies: ENEMIES.aliveCount() + ENEMIES.queuedCount(),
     drones: DRONES.aliveCount(), // story-012: live orb count (queued orbs are the wave layer's business)
-    boss: null, // story-013 reads this shape — the boss slot is declared before the boss exists
+    boss: BOSS.state(), // story-013: { hp, maxHp, phase } while the boss lives, null otherwise
     particles: EFFECTS.particleCount(),
     bolts: C.bolts ? C.bolts.live : 0,
     ebolts: ENEMIES.eboltCount(),

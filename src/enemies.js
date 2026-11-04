@@ -197,6 +197,19 @@ export function hitDrone(d, dmg = 1) {
 }
 
 export function eachAlive(fn) { E.pool.update(0, fn); } // collision scan helper (no dt advance)
+
+// story-013 (the story's ONE pre-authorized change here): the boss volley fires through this
+// helper into the SAME dodgeable bolt pool — identical speed/spread/player-hit rule as gunner
+// fire, zero new allocation (clearEnemies already drains E.bolts on every combat exit).
+export function fireEBolt(fromPos, dir) {
+  if (!E.bolts) return false;
+  const b = E.bolts.spawn();
+  b.position.copy(fromPos);
+  b.userData.dir.copy(dir).normalize();
+  b.userData.life = E_BOLT_LIFE;
+  b.lookAt(b.position.clone().add(b.userData.dir));
+  return true;
+}
 export function aliveCount() { return E.pool ? E.pool.live : 0; } // pools are null until combat entry
 export function eboltCount() { return E.bolts ? E.bolts.live : 0; }
 export function queuedCount() { return E.queued; }

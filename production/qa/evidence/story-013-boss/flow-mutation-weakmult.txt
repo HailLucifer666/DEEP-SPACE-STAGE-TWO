@@ -1,0 +1,58 @@
+PASS  boot → title
+PASS  SKIRMISH → combat  [{"titleHidden":true,"hudHidden":false,"reticleHidden":false,"assembled":true,"playing":true}]
+PASS  SKIRMISH reticle assembled  [{"titleHidden":true,"hudHidden":false,"reticleHidden":false,"assembled":true,"playing":true}]
+PASS  SKIRMISH body.playing
+PASS  wave 1 spawns zero drones (story-012)  [drones=0]
+PASS  wave 1 raider count unchanged (4)  [enemies=4]
+PASS  boss slot null before spawn (story-013 keep-passing)  [boss=null]
+PASS  W accelerates ≥14 u/s  [speed=17.0]
+PASS  W moves ship ≥15u  [d=24.2]
+PASS  W holds the nose (|Δh|<0.2)  [Δh=0.00]
+PASS  cruise holds speed ±2  [Δs=0.0]
+PASS  S brakes to ≤3  [speed=0.0]
+PASS  A turns left in place (Δh≥+0.5, <3u)  [Δh=1.36 d=0.0]
+PASS  D turns right in place (Δh≤−0.5, <3u)  [Δh=-1.36 d=0.0]
+PASS  mouse right steers right in place (Δh≤−0.5, <3u)  [Δh=-1.08 d=0.0]
+PASS  pointer leave stops steering (|Δh|<0.15 over 0.5s)  [Δh=-0.03]
+PASS  boost expiry bleeds (drop ≤25 u/s², no snap)  [maxDropRate=14.2]
+PASS  soft rim bleeds radial speed (≤13, sampled in r 65–78)  [maxRadial=9.4 samples=8]
+PASS  boundary is a circle (r≤81)  [r=69.7]
+PASS  rim precondition (ship at the rim, r≥72)  [r=76.1]
+PASS  rim slides (carry >5u over 1.6s)  [d=10.0]
+PASS  death card appears
+PASS  REPLAY → pad: card/title hidden  [{"goHidden":true,"titleHidden":true,"hudHidden":false,"reticleHidden":true,"warnHidden":true,"teleText":""}]
+PASS  REPLAY → pad: hud visible, reticle off  [{"goHidden":true,"titleHidden":true,"hudHidden":false,"reticleHidden":true,"warnHidden":true,"teleText":""}]
+PASS  REPLAY → pad: #tele empty (TD-014)  [tele=""]
+PASS  hud visible at pad
+PASS  hud visible at countdown
+PASS  hud visible at ignition
+PASS  hud visible at ascent
+PASS  walk lands combat exactly once  [Δentries=1]
+PASS  SKIP → combat: card hidden, reticle assembled  [{"goHidden":true,"reticleHidden":false,"assembled":true}]
+PASS  droneProbe reports (story-012)  [{"yRange":4.27,"path3d":{"x":6.79,"y":4.27,"z":12.23,"samples":83},"telegraph":true,"dive":true,"contact":true,"droneBuild":"proc","meshParts":5,"waveRule":[0,0,1,2,3],"raiderRule":[4,6,7,9]}]
+PASS  drone 3D movement (yRange > 1u)  [yRange=4.27]
+PASS  drone path spans all 3 axes  [{"x":6.79,"y":4.27,"z":12.23,"samples":83}]
+PASS  drone telegraphs then dives  [tele=true dive=true]
+PASS  droneBuild matches the build token  [droneBuild=proc token=proc]
+PASS  drone wave rule (0,0,1,2,3)  [[0,0,1,2,3]]
+PASS  raider wave rule unchanged (4,6,7,9)  [[4,6,7,9]]
+PASS  bossProbe reports (story-013)  [{"phases":["orbit","charge","rage"],"weakHits":3,"bodyHits":3,"weakDmg":3,"bodyDmg":3,"ratio":1,"chargeDash":true,"overshoot":true,"deathSlowmo":true,"spawnWave":1,"hudLine":true,"bossDefeated":{"weakHits":3,"bodyHits":3,"slowmo":true}}]
+PASS  boss forces immediately (spawned at wave 1, wait skipped)  [spawnWave=1]
+PASS  boss phases entered in order orbit→charge→rage  [["orbit","charge","rage"]]
+FAIL  weak point 3× damage (3 node bolts vs 3 hull bolts)  [w=3hits/3dmg b=3hits/3dmg r=1]
+PASS  charge dash launches and overshoots (no full stop)  [dash=true over=true]
+PASS  boss death slow-mo engaged  [slowmo=true]
+PASS  bossDefeated reported via api.report  [{"weakHits":3,"bodyHits":3,"slowmo":true}]
+PASS  BOSS HP line shows in #hud-bars while alive  [probe=true sampled=true]
+PASS  BOSS HP line gone from #hud-bars after death
+PASS  combatState().boss drains to null after death  [null]
+PASS  TD-013 composer throw degrades post to 'direct'  [post=direct]
+PASS  TD-013 game keeps running after degrade  [{"post":"direct","fps":33,"phase":"combat"}]
+PASS  TD-013 one-line degrade logged once  [["error: [stage2] composer render threw — degrading to direct render permanently. reason: probe: forced composer render fault"]]
+PASS  TD-015 phase lands despite musicTo throw  [{"phase":"combat","music":"none"}]
+PASS  TD-015 musicState reflects 'none' after the fault  [music=none]
+PASS  TD-015 one-line warn logged  [["warning: [stage2] music bed failed — running silent. reason: probe: forced music bag failure"]]
+PASS  TD-015 no uncaught exception from the fault  [[]]
+PASS  CONSOLE []
+
+FLOW-CHECK FAIL — 55 passed, 1 failed

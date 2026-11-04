@@ -96,7 +96,16 @@ reason in the report):
 
 ## Test Evidence
 
-**Status**: [ ] Created — probe outputs, red-before-green + mutation records, screenshots.
+**Status**: [x] Created — probe outputs, red-before-green + mutation records, screenshots.
+> Branch `story-013-boss-fight`, 2026-11-04. RED on master (b0eff8d): flow-check **43/13**
+> (`flow-red-master.txt` — TD-014's stale `SPD 17 u/s` reproduced + 8 null-probe boss reds +
+> TD-013/015 surface reds; 3 keep-passing green by design). GREEN: **56/56, CONSOLE []**
+> (`flow-green-branch.txt` + final re-run `flow-green-final.txt`). 4 mutations recorded
+> (WEAK_MULT→1 r=1; CHARGE_AT→0 phaseLog ["orbit","rage"]; tele-clear removal;
+> post-flip removal) — full outputs + inline TD evidence in
+> `production/qa/evidence/story-013-boss/programmer-report.md`. Screenshots
+> `s13-boss-{orbit,charge,rage}.png` retained; restartProbe=3 `clean:true` (entities 31,
+> boss meshes in the baseline).
 
 ---
 

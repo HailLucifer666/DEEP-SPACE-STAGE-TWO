@@ -110,6 +110,7 @@ try {
   const cs12 = await J(`__stage2.combatState()`);
   ok('wave 1 spawns zero drones (story-012)', cs12.drones === 0, `drones=${cs12.drones}`);
   ok('wave 1 raider count unchanged (4)', cs12.enemies === 4, `enemies=${cs12.enemies}`);
+  ok('boss slot null before spawn (story-013 keep-passing)', cs12.boss === null, `boss=${JSON.stringify(cs12.boss)}`);
 
   /* --- WASD + boundary probes (story-004 throttle+turn / story-005 soft boundary) ---
      Mutation evidence 2026-11-03: this full probe set ran against the story-002 build
@@ -245,9 +246,11 @@ try {
     hudHidden: document.getElementById('hud').hidden,
     reticleHidden: document.getElementById('reticle').hidden,
     warnHidden: document.getElementById('warn').hidden,
+    teleText: document.getElementById('tele').textContent,
   })`);
   ok('REPLAY → pad: card/title hidden', rp.goHidden === true && rp.titleHidden === true, JSON.stringify(rp));
   ok('REPLAY → pad: hud visible, reticle off', rp.hudHidden === false && rp.reticleHidden === true, JSON.stringify(rp));
+  ok('REPLAY → pad: #tele empty (TD-014)', rp.teleText === '', `tele=${JSON.stringify(rp.teleText)}`);
 
   /* --- full launch walk: pad → countdown → ignition → ascent → transition (hud never orphans) --- */
   const entriesBeforeWalk = await evl(`window.__stage2.combatEntries || 0`);
@@ -319,6 +322,125 @@ try {
   ok('droneBuild matches the build token', dpX.droneBuild === tokenBuild, `droneBuild=${dpX.droneBuild} token=${tokenBuild}`);
   ok('drone wave rule (0,0,1,2,3)', JSON.stringify(dpX.waveRule) === '[0,0,1,2,3]', JSON.stringify(dpX.waveRule || null));
   ok('raider wave rule unchanged (4,6,7,9)', JSON.stringify(dpX.raiderRule) === '[4,6,7,9]', JSON.stringify(dpX.raiderRule || null));
+
+  /* --- story-013 boss probe (?bossProbe=1, second page over the SAME CDP session) ---
+     Deterministic single-boss run: ?bossProbe=1 skips the wave-5 wait and spawns the boss
+     26 u ahead 0.4 s into combat, then drives it end-to-end — 3 real bolts into the weak
+     node vs 3 into the ring hull (equal streams; damage ratio must be 3×), scripted damage
+     through the HP thresholds (orbit → charge → rage, in order), then hp 0 → slow-mo death
+     cinematic → bossDefeated report. RED record 2026-11-04 (master build @ b0eff8d, product
+     code untouched, only this harness differs): 10 of the 11 new boss asserts FAIL — no
+     boss.js exists on master, ?bossProbe=1 is unread so window.__stage2.bossProbe never
+     appears and the deadline expires (each probe assert records its red from the null
+     probe). The 11th, `boss slot null before spawn`, is GREEN on master BY DESIGN — the
+     story-012 field shape is the keep-passing guard (recorded in the entry block above).
+     MUTATIONS (branch, post-green, each: mutate → npm run build → full flow-check → restore):
+       1. boss.js WEAK_MULT 3 → 1          → RED `weak point 3× damage` (ratio 1)
+       2. boss.js CHARGE_AT 0.66 → 0       → RED `phases entered in order` (charge never
+                                             entered; phaseLog ["orbit","rage"])
+       3. combat.js TD-014 #tele clear out → RED `REPLAY → pad: #tele empty` (stale SPD line)
+       4. loop.js probs.post='direct' out  → RED `TD-013 composer throw degrades` (post
+                                             stays 'bloom'; degrade itself still runs)
+     Full outputs: production/qa/evidence/story-013-boss/flow-*.txt. */
+  await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat&bossProbe=1' });
+  let bp = null;
+  let hudBossSeen = false;
+  {
+    const t0 = Date.now();
+    for (;;) {
+      // guarded + thrown-tolerant (droneProbe pattern): across Page.navigate the old
+      // execution context dies — raw reads throw and would kill the run before the asserts
+      try {
+        const csx = await J(`(window.__stage2 && __stage2.combatState) ? __stage2.combatState() : null`);
+        if (csx && csx.boss) { // sample the HUD line while the boss lives — independent of the probe's own record
+          const hud = await evl(`document.getElementById('hud-bars').textContent`);
+          if (hud.includes('BOSS')) hudBossSeen = true;
+        }
+        bp = await J(`(window.__stage2 && window.__stage2.bossProbe) || null`);
+      } catch { bp = null; }
+      if (bp) break;
+      if (Date.now() - t0 > 90000) break; // deadline — the asserts below record the red
+      await sleep(300);
+    }
+  }
+  const bpX = bp || {};
+  ok('bossProbe reports (story-013)', !!bp, JSON.stringify(bp));
+  ok('boss forces immediately (spawned at wave 1, wait skipped)', bpX.spawnWave === 1, `spawnWave=${bpX.spawnWave}`);
+  ok('boss phases entered in order orbit→charge→rage', JSON.stringify(bpX.phases) === '["orbit","charge","rage"]', JSON.stringify(bpX.phases || null));
+  ok('weak point 3× damage (3 node bolts vs 3 hull bolts)', bpX.weakHits === 3 && bpX.bodyHits === 3 && bpX.ratio === 3,
+    `w=${bpX.weakHits}hits/${bpX.weakDmg}dmg b=${bpX.bodyHits}hits/${bpX.bodyDmg}dmg r=${bpX.ratio}`);
+  ok('charge dash launches and overshoots (no full stop)', bpX.chargeDash === true && bpX.overshoot === true,
+    `dash=${bpX.chargeDash} over=${bpX.overshoot}`);
+  ok('boss death slow-mo engaged', bpX.deathSlowmo === true, `slowmo=${bpX.deathSlowmo}`);
+  ok('bossDefeated reported via api.report', bpX.bossDefeated && bpX.bossDefeated.slowmo === true,
+    JSON.stringify(bpX.bossDefeated || null)); // the drive observed the death report (lastReport is single-slot; the probe carries what it saw)
+  ok('BOSS HP line shows in #hud-bars while alive', bpX.hudLine === true || hudBossSeen, `probe=${bpX.hudLine} sampled=${hudBossSeen}`);
+  ok('BOSS HP line gone from #hud-bars after death', !((await evl(`document.getElementById('hud-bars').textContent`)).includes('BOSS')));
+  ok('combatState().boss drains to null after death', await evl(`__stage2.combatState().boss`) === null,
+    JSON.stringify(await J(`__stage2.combatState().boss`)));
+
+  /* --- TD-013 (?composerFault=1, third page): never-crash render path ---
+     loop.js renders through the composer; the fault switch throws INSIDE the guarded render
+     call on its first attempt. Asserts: probs.post flips to 'direct' (honest probe surface),
+     the game keeps running, and exactly ONE degrade line was logged. */
+  await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat&composerFault=1' });
+  let td13 = null;
+  {
+    const t0 = Date.now();
+    for (;;) {
+      try {
+        const ph = await evl(`window.__stage2 ? __stage2.phase : 'boot'`);
+        if (ph === 'combat') { td13 = await J(`({ post: __stage2.post, fps: __stage2.fps, phase: __stage2.phase })`); break; }
+      } catch {}
+      if (Date.now() - t0 > 60000) break;
+      await sleep(300);
+    }
+  }
+  const d13 = td13 || {};
+  ok(`TD-013 composer throw degrades post to 'direct'`, d13.post === 'direct', `post=${d13.post}`);
+  ok('TD-013 game keeps running after degrade', d13.phase === 'combat' && (d13.fps || 0) > 10, JSON.stringify(d13));
+  const d13warns = errs.filter((e) => e.includes('composer render threw'));
+  ok('TD-013 one-line degrade logged once', d13warns.length === 1, JSON.stringify(d13warns));
+  errs.length = 0; // the degrade line is the DESIGNED evidence — reset before the final CONSOLE []
+
+  /* --- TD-015 (?musicFault=1, fourth page): a WebAudio throw can never abort a phase ---
+     The fault switch makes the COMBAT bed build throw once, inside combat.enter's musicTo
+     (a live phase-enter hook — audio is unlocked first with a real CDP key event so the
+     deferred flush is out of the way). Asserts: the phase still lands, musicState() reads
+     the honest 'none', one warn line, and no uncaught exception. */
+  await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&musicFault=1' });
+  let td15 = null;
+  {
+    const t0 = Date.now();
+    for (;;) {
+      try { if (await evl(`window.__stage2 ? __stage2.phase : 'boot'`) === 'title') break; } catch {}
+      if (Date.now() - t0 > 60000) break;
+      await sleep(300);
+    }
+    await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'z', code: 'KeyZ', windowsVirtualKeyCode: 90 });
+    await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'z', code: 'KeyZ', windowsVirtualKeyCode: 90 });
+    await sleep(800); // title bed builds via the deferred flush; the context is now live
+    await evl(`document.getElementById('btn-skip').click()`);
+  }
+  {
+    const t0 = Date.now();
+    for (;;) {
+      try {
+        const ph = await evl(`window.__stage2 ? __stage2.phase : 'boot'`);
+        if (ph === 'combat') { td15 = await J(`({ phase: __stage2.phase, music: __stage2.musicState() })`); break; }
+      } catch {}
+      if (Date.now() - t0 > 30000) break;
+      await sleep(200);
+    }
+  }
+  const d15 = td15 || {};
+  ok('TD-015 phase lands despite musicTo throw', d15.phase === 'combat', JSON.stringify(d15));
+  ok(`TD-015 musicState reflects 'none' after the fault`, d15.music === 'none', `music=${d15.music}`);
+  const d15warns = errs.filter((e) => e.includes('music bed failed'));
+  ok('TD-015 one-line warn logged', d15warns.length === 1, JSON.stringify(d15warns));
+  ok('TD-015 no uncaught exception from the fault', !errs.some((e) => e.startsWith('EXCEPTION')),
+    JSON.stringify(errs.filter((e) => e.startsWith('EXCEPTION'))));
+  errs.length = 0; // the warn is the DESIGNED evidence — reset before the final CONSOLE []
 
   ok('CONSOLE []', errs.length === 0, errs.join(' | '));
 } catch (e) {

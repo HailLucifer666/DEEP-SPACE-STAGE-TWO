@@ -164,6 +164,8 @@ export function loopsStopAll(fadeSec = 0.25) {
 const musicBags = { title: null, combat: null }; // max one bag per name (spec §1)
 let musicTarget = 'none'; // probe surface: current music target 'title' | 'combat' | 'none'
 let musicWanted = null; // musicTo deferred by no-context / muted — flushed on unlock / unmute
+const MUSIC_FAULT = new URLSearchParams(location.search).get('musicFault') === '1'; // TD-015 probe switch
+let musicFaultFired = false;
 
 // the spec's parameter-complete palette (§1 title pad, §2 combat variant)
 const MUSIC_PADS = {
@@ -244,20 +246,36 @@ function makeMusicBag(c, kind) { // private: persistent oscs + per-layer gains +
 }
 
 function crossfadeTo(name, c) { // OVERLAPPING crossfade — both beds run together, setTargetAtTime only (spec §2)
-  const other = name === 'title' ? 'combat' : 'title';
-  const dying = musicBags[other];
-  const overlap = !!(dying && dying.alive);
-  if (overlap) {
-    if (name === 'combat') { // title→combat: out tau 0.9, node stop at 2.9 s — overlap ≈ 2.5 s
-      dying.setVol(0.0001, 0.9); dying.stop(2.8);
-    } else { // combat→title (death→card): out tau 0.6, node stop at 1.9 s
-      dying.setVol(0.0001, 0.6); dying.stop(1.8);
+  // TD-015 (story-013): the bag-creation body is guarded — a WebAudio exception here runs
+  // inside phase-enter hooks (phases.js) and must NEVER abort a transition. One warn line,
+  // then the honest 'none' state (both bags dead — the dying bed was already stopped).
+  // ?musicFault=1 throws once inside the combat-bed build — the flow-check probe asserts
+  // the warn, the 'none' state, and that the phase still lands.
+  try {
+    if (MUSIC_FAULT && name === 'combat' && !musicFaultFired) {
+      musicFaultFired = true;
+      throw new Error('probe: forced music bag failure');
     }
-    musicBags[other] = null;
+    const other = name === 'title' ? 'combat' : 'title';
+    const dying = musicBags[other];
+    const overlap = !!(dying && dying.alive);
+    if (overlap) {
+      if (name === 'combat') { // title→combat: out tau 0.9, node stop at 2.9 s — overlap ≈ 2.5 s
+        dying.setVol(0.0001, 0.9); dying.stop(2.8);
+      } else { // combat→title (death→card): out tau 0.6, node stop at 1.9 s
+        dying.setVol(0.0001, 0.6); dying.stop(1.8);
+      }
+      musicBags[other] = null;
+    }
+    const bag = makeMusicBag(c, name);
+    musicBags[name] = bag;
+    bag.setVol(1.0, name === 'title' && overlap ? 1.5 : 1.2); // ~4.5 s dawn under the death card, else the 1.2 s entry
+  } catch (err) {
+    console.warn('[stage2] music bed failed — running silent. reason:', err && (err.message || err));
+    musicTarget = 'none';
+    musicBags.title = null;
+    musicBags.combat = null;
   }
-  const bag = makeMusicBag(c, name);
-  musicBags[name] = bag;
-  bag.setVol(1.0, name === 'title' && overlap ? 1.5 : 1.2); // ~4.5 s dawn under the death card, else the 1.2 s entry
 }
 
 export function musicTo(name) { // idempotent phase-owned switch (spec §2)

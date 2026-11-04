@@ -27,6 +27,32 @@ export function initLoop(context) {
 let last = 0, firstFrame = true;
 export const fps = { times: [], read: 60 };
 
+/* ---------- TD-013 (story-013): never-crash contract for the render path ----------
+ * The composer render call is guarded: the FIRST render-time throw logs one line and
+ * degrades to direct render PERMANENTLY (composerDead latches). probs.post stays honest:
+ * 'bloom' = chain alive · 'off' = chain never built (boot guard) · 'direct' = built but
+ * degraded at render time. ?composerFault=1 throws INSIDE the guarded call once — the
+ * flow-check probe asserts the flip, the running game, and the single log line. */
+const COMPOSER_FAULT = new URLSearchParams(location.search).get('composerFault') === '1';
+let composerDead = false, composerFaultFired = false;
+function renderFrame() {
+  if (ctx.composer && !composerDead) {
+    try {
+      if (COMPOSER_FAULT && !composerFaultFired) {
+        composerFaultFired = true;
+        throw new Error('probe: forced composer render fault');
+      }
+      ctx.composer.render();
+      return;
+    } catch (err) {
+      composerDead = true;
+      ctx.probs.post = 'direct'; // the probe surface must reflect the degraded state
+      console.error('[stage2] composer render threw — degrading to direct render permanently. reason:', err && (err.message || err));
+    }
+  }
+  ctx.renderer.render(ctx.scene, ctx.camera);
+}
+
 function tickTitle(dt, t) {
   if (ctx.rocket) { ctx.rocket.rotation.y += dt * 0.45; } // gentle roll around the long axis; the rig owns the seat
   const a = 0.55 + t * 0.09; // orbit the rig — the ship sits nose-forward at the lane origin
@@ -48,14 +74,14 @@ export function loop(ts) {
   last = ts;
   if (!Number.isFinite(dt) || dt <= 0) dt = 0; // §8.9 NaN hygiene
   if (dt > ctx.DT_CLAMP) dt = ctx.DT_CLAMP;
-  if (paused) { last = ts; ctx.composer ? ctx.composer.render() : ctx.renderer.render(ctx.scene, ctx.camera); return; } // frozen frame, clock held — post chain still applies
+  if (paused) { last = ts; renderFrame(); return; } // frozen frame, clock held — post chain still applies
   const sdt = dt * ctx.game.timeScale; // slow-mo scales the world, never the FPS meter
   ctx.game.time += sdt;
   TICKS[ctx.probs.phase]?.(sdt, ctx.game.time);
   updateFps(ts);
   dprTick(dt);
   ctx.updateDebug(dt, ts);
-  ctx.composer ? ctx.composer.render() : ctx.renderer.render(ctx.scene, ctx.camera); // story-008: post chain; direct draw is the never-crash fallback
+  renderFrame(); // story-008: post chain; TD-013: guarded — a render throw degrades to direct render permanently
 }
 
 function updateFps(ts) {
@@ -70,7 +96,9 @@ function setDpr(v) {
   dprCtl.cur = v;
   ctx.renderer.setPixelRatio(v);
   ctx.renderer.setSize(window.innerWidth, window.innerHeight); // buffer size must be reapplied after a ratio change
-  if (ctx.composer) { ctx.composer.setPixelRatio(v); ctx.composer.setSize(window.innerWidth, window.innerHeight); } // story-008: post chain follows the buffer
+  // TD-013 residual (story-013 self-review flag): a latched-dead composer must never be
+  // touched — setSize/setPixelRatio route through the same broken render path that threw.
+  if (ctx.composer && !composerDead) { ctx.composer.setPixelRatio(v); ctx.composer.setSize(window.innerWidth, window.innerHeight); } // story-008: post chain follows the buffer
 }
 function dprTick(dt) { // raw dt (unscaled) — slow-mo must not fake slowness
   const f = fps.read;
