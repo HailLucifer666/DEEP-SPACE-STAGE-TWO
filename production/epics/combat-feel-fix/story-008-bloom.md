@@ -54,8 +54,9 @@ the player's eyes are the acceptance authority.
   `renderer.setSize`; `setDpr` must also update the composer (setPixelRatio + setSize).
 - BOTH render call sites in the loop go through the composer — the main path AND the paused
   frozen-frame branch (a paused frame still shows the post chain).
-- dprTick ordering: bloom toggle at the top of the degrade ladder (cheap win first), restore at
-  the bottom of the recovery ladder. Toggle = `bloomPass.enabled`, composer path unchanged.
+- dprTick ordering: bloom toggle at the top of the degrade ladder (cheap win first), and at the
+  top of the recovery ladder — bloom re-enables BEFORE DPR climbs (shipped order; the earlier
+  "bottom of the recovery ladder" wording here was wrong — see Completion Notes). Toggle = `bloomPass.enabled`, composer path unchanged.
 - Defensive fallback per the game's never-crash contract (§8.3 style): if composer creation
   throws (old GPU), catch, keep direct `renderer.render`, `post: 'off'` — the game must never
   die to a post-processing failure.
