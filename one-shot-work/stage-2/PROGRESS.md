@@ -78,6 +78,8 @@ fixes + gate PASS). flow-check 28 → 76 asserts. Scoreboard: 4/6 stages + 14/20
 Next: Stage 3 — full 3D flight (story-015 pitch+drift → 016 spherical arena → 017 world
 goes 3D). Player verdicts owed at the next session open: drone look, boss feel, victory
 moment (screenshots retained in the evidence folders; rollback = git checkout <tag>).
+Verdicts PAID 2026-11-05 (player): drone look PASS · boss feel PASS · victory moment
+PASS — all three accepted as-shipped; no stage-2 reopen.
 
 Notes:
 - Tag chain: slice 1 (story-011) tagged `good-2026-11-04-h` @ cb66277 — merged-master
