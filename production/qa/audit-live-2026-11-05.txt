@@ -1,0 +1,45 @@
+
+===== LIVE AUDIT REPORT — Stage 2 =====
+boot: title reached in 7916 ms · final visibility visible · post bloom dpr 1 music combat muted false
+phase timeline: title → combat → gameover → combat → gameover → combat
+cycle 1: maxWave 1 · maxDrones 0 · maxEntities 51 · deaths 1 · fps min 134 / avg 142 (vis visible)
+cycle 2: maxWave 1 · maxDrones 0 · maxEntities 51 · deaths 1 · fps min 144 / avg 144 (vis visible)
+cycle 3: maxWave 1 · maxDrones 0 · maxEntities 51 · deaths 0 · fps min 144 / avg 144 (vis visible)
+droneProbe: {"yRange":4.33,"path3d":{"x":6.7,"y":4.33,"z":12.19,"samples":247},"telegraph":true,"dive":true,"contact":true,"droneBuild":"proc","meshParts":5,"waveRule":[0,0,1,2,3],"raiderRule":[4,6,7,9]}
+boss/victory: phase victory · card {"hidden":false,"score":"SCORE — 0","time":"TIME — 0:07","hs":0} · reports 1 · REPLAY→pad · second-run true · fps 144
+spin: title/glb/label=true · corruptGlb: title/fallback
+console lines (non-favicon): [
+ {
+  "page": "corruptGlb",
+  "kind": "error",
+  "text": "[stage2] GLB decode failed — using primitive fallback. reason: Invalid typed array length: 53526"
+ },
+ {
+  "page": "corruptGlb",
+  "kind": "error",
+  "text": "THREE.GLTFLoader: Couldn't load texture blob:null/8f05ebbb-c935-407d-95f2-58c8e1ea664d"
+ }
+]
+ANOMALIES: 
+  - highscore-write: hs=0
+  - console: [corruptGlb] error [stage2] GLB decode failed — using primitive fallback. reason: Invalid typed array length: 53526 | [corruptGlb] error THREE.GLTFLoader: Couldn't load texture blob:null/8f05ebbb-c935-407d-95f2-58c8e1ea664d
+fps table: {"combat(cycle 1)":[{"fps":135,"vis":"visible"},{"fps":144,"vis":"visible"},{"fps":134,"vis":"visible"},{"fps":144,"vis":"visible"},{"fps":143,"vis":"visible"},{"fps":144,"vis":"visible"},{"fps":144,"vis":"visible"},{"fps":144,"vis":"visible"},{"fps":144,"vis":"visible"},{"fps":144,"vis":"visible"},{"fps":144,"vis":"visible"},{"fps":144,"vis":"visible"}],"combat(cycle 2)":[{"fps":144,"vis":"visible"},{"fps":144,"vis":"visible"},{"fps":144,"vis":"visible"},{"fps":144,"vis":"visible"},{"fps":144,"vis":"visible"},{"fps":144,"vis":"visible"},{"fps":144,"vis":"visible"},{"fps":144,"vis":"visible"},{"fps":144,"vis":"visible"},{"fps":144,"vis":"visible"},{"fps":144,"vis":"visible"},{"fps":144,"vis":"visible"},{"fps":144,"vis":"visible"}],"combat(cycle 3)":[{"fps":144,"vis":"visible"}]}
+drone page fps 144
+
+===== ORCHESTRATOR CLASSIFICATION (2026-11-05) =====
+Flagged "highscore-write: hs=0" — NOT A DEFECT: the bossProbe drive awards no score (the
+boss grants no points; the review recorded "story-014 owns rewards"), so max(0,0)=0 is the
+honest write. SURFACED PRODUCT GAP: beating the boss shows "SCORE — 0" on the victory card —
+a boss reward value is a player decision for Stage 4 (story-019 owns balance/telemetry).
+Flagged corruptGlb console errors — DESIGNED degrade logs (kee class 6 evidence), same two
+lines documented in story-011/013 evidence; the audit's console filter should exempt the
+corruptGlb page's designed errors next run.
+Everything else GREEN: boot, title→combat→gameover→re-enter cycles ×3, fps 134-144 headed
+(vsync, no sag), entity baseline 51 across cycles (no leak), drone probe (yRange 4.33,
+telegraph+dive, proc build), boss→victory→card→REPLAY→pad→clean second run, defeat counter
+exactly 1, spin viewer, corrupt fallback. Natural play never reaches drones/boss (stationary
+ship dies at wave 1) — expected for unattended soak; probes prove those paths live.
+Harness fixes made during this audit (tmp-live-audit.mjs, deleted after use): CDP reply-shape
+read r.result.value (was r.result.result.value — always threw), per-send 10 s timeout + ws
+close detection (a closed Edge window now fails loudly instead of draining the event loop —
+the "unsettled top-level await" exit cause).
