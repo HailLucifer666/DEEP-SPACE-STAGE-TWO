@@ -524,6 +524,90 @@ try {
      call on its first attempt. Asserts: probs.post flips to 'direct' (honest probe surface),
      the game keeps running, and exactly ONE degrade line was logged. */
   ok('CONSOLE [] (bossProbe/victory page)', errs.length === 0, errs.join(' | '));
+
+  /* --- story-015 pitch+drift probe (?pitchProbe=1, next page over the SAME CDP session) ---
+     Deterministic full walk (droneProbe/bossProbe pattern): the in-page drive (combat.js
+     pitchProbeTick) synthesizes R/F into the real key set, writes the pointer NDC the same
+     object steer() reads, and measures — in order — pitch integration, pointer
+     direct/mirror/deadzone, the ±72° clamp, drift slip/magnitude/recovery, the sustained-turn
+     circle, a pitched bolt through the real spawn path, the 015 band scaffold, and the two
+     raider retunes (3D scans + altitude follow). Reports window.__stage2.pitchProbe =
+     { entryPitch, dPhi, slip, driftPath, boltRise, band, raiderScan, raiderFollow }
+     (+ lastReport parity via api.report). RED record 2026-11-05 (stage-2 close build,
+     product code untouched, only this harness differs): 21 of the 22 new asserts FAIL —
+     ?pitchProbe=1 is unread so window.__stage2.pitchProbe never appears and the deadline
+     expires (each probe assert records its red from the null probe — the exact droneProbe
+     red pattern); combatState().pitch/.velMag are undefined (typeof 'undefined'). The 22nd,
+     `CONSOLE [] (pitchProbe page)`, is GREEN on the red run BY DESIGN — the unmodified page
+     ignores the unknown query flag and dies cleanly to the wave like every other idle-combat
+     page. Full output: production/qa/evidence/story-015-pitch-drift/flow-red-story015.txt.
+     MUTATIONS (branch, post-green, each: mutate → npm run build → full flow-check → restore;
+     the mutation is VERIFIED applied by reading its red output — a silent no-op proves nothing):
+       1. combat.js PITCH_RATE 1.8 → 0.9 (2026-11-05) → RED `R 0.4s pitches 0.72 rad`
+          (Δφ ≈ 0.36). Adjacent keep-passing: `pitch and yaw independent` stays green — the
+          mutation changes rate, not axis coupling.
+       2. combat.js ALIGN_RATE 4.5 → 99 (2026-11-05) → RED `drift slip present (20-35°)`
+          (slip collapses — ≥ 99 effectively disables drift, GDD §7). Adjacent keep-passing:
+          `drift preserves magnitude` stays green (vel stays ≈ forward·speed).
+       3. enemies.js bolt×player scan back to XZ (dy² term dropped) (2026-11-05) → RED
+          `raider scans 3D` (the elevated raider's bolts hit through 20 u of pure vertical
+          separation — the exact anti-camp regression this story fixes). Adjacent
+          keep-passing: `raider altitude-follow` stays green.
+       4. enemies.js RAIDER_ALT_FOLLOW 1.2 → 0 (2026-11-05) → RED `raider altitude-follow`
+          (raiders never climb; the probe's 20 u offset never closes). Adjacent keep-passing:
+          the wave-1 raider-count entry assert stays green (spawn logic untouched).
+       5. combat.js band guards removed (soft bleed cap AND hard clamp; dY kept for #warn)
+          (2026-11-05) → RED `altitude band holds` (maxYDev 34.22) + `band vertical speed
+          ≤ 13` (maxVy 16.13). The soft cap alone cannot red assert 17 — the hard clamp is
+          absolute (maxYDev stays 20.0), so the story's expected 17-18 pair requires both.
+     Full outputs: production/qa/evidence/story-015-pitch-drift/flow-mutation-*.txt.
+     FLAGGED RE-DERIVATION (assert 14, driftPath): GDD §4.3 / story AC predicted the
+     sustained-turn radius GROWS 7.7 → 9-11 u; the approved formula traces it SHRINKING to
+     |vel|/ω = 0.898·17/2.2 ≈ 6.94 u (drift reduces |vel| to 0.898·speed in a steady turn —
+     simulated at dt 1/30, 1/60, 1/120: mean-to-centroid 7.03 u over one rev from an aligned
+     entry, flat build 7.73). The assert encodes the measured build (6.5-7.3 u), NOT the
+     predicted number — recorded in the programmer report, never a quiet edit. */
+  await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat&pitchProbe=1' });
+  let pp = null;
+  {
+    const t0 = Date.now();
+    for (;;) {
+      // guarded + thrown-tolerant (droneProbe pattern): across Page.navigate the old
+      // execution context dies — raw reads throw and would kill the run before the asserts
+      try { pp = await J(`(window.__stage2 && window.__stage2.pitchProbe) || null`); } catch { pp = null; }
+      if (pp) break;
+      if (Date.now() - t0 > 120000) break; // deadline — the asserts below record the red
+      await sleep(300);
+    }
+  }
+  const ppX = pp || {};
+  const dP = ppX.dPhi || {}, sl = ppX.slip || {}, dpth = ppX.driftPath || {}, br = ppX.boltRise || {},
+    bd = ppX.band || {}, rs = ppX.raiderScan || {}, rf = ppX.raiderFollow || {};
+  const csp = await evl(`(window.__stage2 && __stage2.combatState) ? typeof __stage2.combatState().pitch : 'none'`);
+  const csv = await evl(`(window.__stage2 && __stage2.combatState) ? typeof __stage2.combatState().velMag : 'none'`);
+  ok('pitchProbe reports (story-015)', !!pp, JSON.stringify(pp));
+  ok('combatState exposes pitch + velMag', csp === 'number' && csv === 'number', `pitch:${csp} velMag:${csv}`);
+  ok('pitch resets to 0 on entry', ppX.entryPitch === 0, `entryPitch=${ppX.entryPitch}`);
+  ok('R 0.4s pitches 0.72 rad (±0.05)', typeof dP.rHold04 === 'number' && Math.abs(dP.rHold04 - 0.72) <= 0.05, `dPhi=${dP.rHold04}`);
+  ok('pitch and yaw independent (|Δh|<0.02 during R hold)', typeof dP.headingDrift === 'number' && Math.abs(dP.headingDrift) < 0.02, `Δh=${dP.headingDrift}`);
+  ok('pointer up pitches up (direct, ≥0.5 rad/1s)', dP.ptrUp >= 0.5, `dPhi=${dP.ptrUp}`);
+  ok('pointer down mirrors (≤−0.5 rad)', dP.ptrDown <= -0.5, `dPhi=${dP.ptrDown}`);
+  ok('pointer deadzone holds (|Δφ|<0.02 over 1s)', typeof dP.deadzone === 'number' && Math.abs(dP.deadzone) < 0.02, `dPhi=${dP.deadzone}`);
+  ok('pitch envelope clamps at 72° (end ±2°, never above)', typeof dP.clampEnd === 'number' && Math.abs(dP.clampEnd - 1.2566) <= 0.035 && dP.clampMax <= 1.2567, `end=${dP.clampEnd} max=${dP.clampMax}`);
+  ok('F pitches down (−0.72 ±0.05)', typeof dP.fHold04 === 'number' && Math.abs(dP.fHold04 + 0.72) <= 0.05, `dPhi=${dP.fHold04}`);
+  ok('drift slip present (20-35° at 1s full yaw)', typeof sl.deg === 'number' && sl.deg >= 20 && sl.deg <= 35, `slip=${sl.deg}`);
+  ok('drift preserves magnitude (velMag ≥ 0.9·speed)', typeof sl.velMag === 'number' && typeof sl.speed === 'number' && sl.velMag >= 0.9 * sl.speed, `velMag=${sl.velMag} speed=${sl.speed}`);
+  ok('drift recovers (<8° at 0.8s after release)', typeof sl.recoveredDeg === 'number' && sl.recoveredDeg < 8, `slip=${sl.recoveredDeg}`);
+  ok('full-turn circle radius 6.5-7.3 u (FLAGGED: GDD predicted 8.5-11.5, formula traces 6.94 — see block comment + report)', typeof dpth.radius === 'number' && dpth.radius >= 6.5 && dpth.radius <= 7.3, `r=${dpth.radius} max=${dpth.radiusMax}`);
+  ok('pitched bolt climbs (>5u over 0.5s)', br.dy > 5, `dy=${br.dy}`);
+  ok('pitched bolt xz-speed honest (±10% of BOLT_SPEED·cosφ)', typeof br.xzSpeed === 'number' && typeof br.phi === 'number' && Math.abs(br.xzSpeed - 42 * Math.cos(br.phi)) <= 0.1 * 42 * Math.cos(br.phi), `xz=${br.xzSpeed} φ=${br.phi}`);
+  ok('altitude band holds (|y−18| ≤ 20.5)', typeof bd.maxYDev === 'number' && bd.maxYDev <= 20.5, `maxYDev=${bd.maxYDev}`);
+  ok('band vertical speed ≤ 13 u/s (18-20 layer, 2+ inside the soft edge)', typeof bd.maxVyInLayer === 'number' && bd.maxVyInLayer <= 13, `maxVy=${bd.maxVyInLayer}`);
+  ok('#warn fires outside the band', bd.warnSeen === true, `warnSeen=${bd.warnSeen}`);
+  ok('raider scans 3D (20u above: no ram, no bolt hit)', rs.ramContact === false && rs.boltHit === false, JSON.stringify(rs));
+  ok('raider altitude-follow (mean Δy ≤ 12 over 3s)', typeof rf.meanDelta === 'number' && rf.meanDelta <= 12, `meanΔ=${rf.meanDelta} offset0=${rf.offset0}`);
+  ok('CONSOLE [] (pitchProbe page)', errs.length === 0, errs.join(' | '));
+
   await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat&composerFault=1' });
   let td13 = null;
   {
