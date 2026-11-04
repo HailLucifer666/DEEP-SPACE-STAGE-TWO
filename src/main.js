@@ -147,7 +147,11 @@ function readHighscore() {
   } catch { return 0; }
 }
 function writeHighscore(n) {
-  try { getStorage().set(HIGHSCORE_KEY, String(Math.max(0, Math.floor(Number(n) || 0)))); } catch { /* memory already holds it */ }
+  try { getStorage().set(HIGHSCORE_KEY, String(Math.max(0, Math.floor(Number(n) || 0)))); }
+  catch (e) { // stage-1 review: the memory fallback cannot throw — a throw here means the REAL
+    // backend refused the write (quota/private-mode edge). Never pretend it was saved.
+    console.warn('[stage2] highscore write failed — score not persisted:', e && e.message);
+  }
 }
 
 /* ============================== PHASES ============================== */

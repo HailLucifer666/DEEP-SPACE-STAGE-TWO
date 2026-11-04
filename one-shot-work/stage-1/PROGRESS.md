@@ -1,4 +1,4 @@
-Skill: one-shot | Rigor: LEAN | Output type: game | Gate: not run
+Skill: one-shot | Rigor: LEAN | Output type: game | Gate: PASS (2026-11-04, see GATE.md)
 
 # PROGRESS — Stage 1 (stories 007–010)
 
@@ -15,7 +15,9 @@ TRUE wait 5.79 s). Setup branch `stage-1-setup` carries the story files + this l
       incl. the transition.js site the audit missed; player ears verdict green)
 - [x] Slice 4: story-010 — COMPLETE (SPD readout merged; sag verdict: headed artifact, pinned
       143.2 vs 144.0 fps at vsync)
-- [ ] Stage close: code-review pass, smoke-check, GATE.md, changelog — pending
+- [x] Stage close: independent review (Approved with fixes; 1 IMPORTANT fixed same-day, 3
+      advisories → TD-013/014/015), smoke record (production/qa/smoke-2026-11-04.md), changelog
+      entry, GATE.md PASS. Stage 1 DONE.
 
 Notes:
 - The one-shot self-review (4 hats) runs per slice before each story-done close.
