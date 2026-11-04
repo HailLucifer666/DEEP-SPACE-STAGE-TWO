@@ -19,8 +19,11 @@
 | 010 | speed-readout | UI | S | Complete |
 | 011 | mainjs-split | Logic (refactor) | M | Complete |
 | 012 | vi3w-drone | Logic | M | Complete |
-| 013 | boss-fight | Logic/Feel | L | Pending |
-| 014 | victory-card | UI/Logic | M | Pending |
+| 013 | boss-fight | Logic/Feel | L | Complete |
+| 014 | victory-card | UI/Logic | M | Complete |
+| 015 | pitch-drift | Logic/Feel | L | Pending |
+| 016 | spherical-arena | Logic/Feel | M | Pending |
+| 017 | world-3d | Visual/Feel | M | Pending |
 
 ## Notes
 
@@ -37,6 +40,10 @@
   not yet attached; add them here when they surface. Stage 0 closed at tags
   `good-2026-11-04` and `good-2026-11-04-b` (both merge results flow-checked 28/28;
   soak 2026-11-04 clean: 30 combat entries, 29 death-retry cycles, 0 console anomalies).
+- Stories 015–017 = Stage 3 — full 3D flight (added 2026-11-05): design source
+  `design/gdd/full-3d-flight.md`, ledger `one-shot-work/stage-3/`. Rows 013/014 were
+  corrected from the stale "Pending" to Complete (merged ce4f1ea / tag good-2026-11-04-j
+  and ca3c2d8 / tag good-2026-11-05).
 - **Backlog (player screenshots, 2026-11-04): title screen barely shows the hero ship** —
   small, dark, hidden behind the title text and HIGH SCORE line (pre-existing camera framing;
   tickTitle orbits at r=6.8 with the ship centered behind the UI stack). Fix rides with
