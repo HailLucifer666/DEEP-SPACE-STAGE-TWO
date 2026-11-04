@@ -96,7 +96,9 @@ function setDpr(v) {
   dprCtl.cur = v;
   ctx.renderer.setPixelRatio(v);
   ctx.renderer.setSize(window.innerWidth, window.innerHeight); // buffer size must be reapplied after a ratio change
-  if (ctx.composer) { ctx.composer.setPixelRatio(v); ctx.composer.setSize(window.innerWidth, window.innerHeight); } // story-008: post chain follows the buffer
+  // TD-013 residual (story-013 self-review flag): a latched-dead composer must never be
+  // touched — setSize/setPixelRatio route through the same broken render path that threw.
+  if (ctx.composer && !composerDead) { ctx.composer.setPixelRatio(v); ctx.composer.setSize(window.innerWidth, window.innerHeight); } // story-008: post chain follows the buffer
 }
 function dprTick(dt) { // raw dt (unscaled) — slow-mo must not fake slowness
   const f = fps.read;
