@@ -52,6 +52,7 @@ const ui = {
   hudBars: $('hud-bars'), hudScore: $('hud-score'), reticle: $('reticle'),
   gameover: $('gameover'), goScore: $('go-score'), goHs: $('go-hs'),
   goReplay: $('go-replay'), goSkip: $('go-skip'), pause: $('pause'),
+  victory: $('victory'), vicScore: $('vic-score'), vicTime: $('vic-time'), vicReplay: $('vic-replay'), // story-014 win card
   btnControls: $('btn-controls'), btnReset: $('btn-reset'), btnSound: $('btn-sound'),
   btnCredits: $('btn-credits'), panel: $('panel'), panelTitle: $('panel-title'),
   panelBody: $('panel-body'), panelClose: $('panel-close'), tRec: $('t-rec'),
@@ -109,7 +110,7 @@ function disarmReset() {
 // overlay policy (story-001): a phase change hides EVERY overlay; the entering phase
 // re-declares what it shows. Kills the stuck-layer class at the root — no phase can
 // leave a stale layer up (title-on-SKIRMISH, the old death-card hide gap, ...).
-const OVERLAY_ELMS = [ui.title, ui.hud, ui.gameover, ui.pause, ui.loading, ui.warn,
+const OVERLAY_ELMS = [ui.title, ui.hud, ui.gameover, ui.victory, ui.pause, ui.loading, ui.warn,
   $('combat-online'), $('go-logo'), $('flash')].filter(Boolean);
 
 let toastTimer = 0;
@@ -368,6 +369,7 @@ function boot() {
   ui.btnSound?.addEventListener('click', () => { setMuted(!isMuted()); refreshSoundButton(); });
   ui.panelClose?.addEventListener('click', closePanel);
   ui.goReplay?.addEventListener('click', () => setPhase('pad'));
+  ui.vicReplay?.addEventListener('click', () => setPhase('pad')); // story-014: the win card's REPLAY — same landing as the death card's
   ui.goSkip?.addEventListener('click', () => setPhase('combat'));
 
   setPhase('loading');
@@ -456,6 +458,7 @@ window.__stage2 = {
   get particles() { return LAUNCH.particleCount ? LAUNCH.particleCount() : probs.particles; },
   get highscore() { return readHighscore(); },
   combatState: () => (COMBAT.combatState ? COMBAT.combatState() : null),
+  probeDamagePlayer: (n) => COMBAT.probeDamagePlayer(n), // story-014 probe surface: the double-fire assert forces the player death INSIDE the boss's 1.2 s death cinematic
   get time() { return game.time; },
   get paused() { return paused; },
   get muted() { return isMuted(); },

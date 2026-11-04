@@ -18,6 +18,11 @@ export function initPhases(context) {
   RP.left = context.RESTART_N;
 }
 
+const fmtClock = (t) => { // story-014: the victory card's combat-clock readout — M:SS, never a raw float
+  const s = Math.max(0, Math.floor(Number.isFinite(t) ? t : 0));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+};
+
 const PHASES = {
   loading: { enter() { if (ctx.ui.title) ctx.ui.title.hidden = true; } },
   title: {
@@ -82,6 +87,29 @@ const PHASES = {
       if (ctx.RESTART_N && RP.left > 0) window.setTimeout(rpOnGameover, 400);
     },
     exit() { if (ctx.ui.gameover) ctx.ui.gameover.hidden = true; },
+  },
+  // story-014: the win card — triggered by the bossDefeated signal (combat.js's bossApi.report
+  // wrapper), mirrored on gameover's shape: title bed crossfade, real-time card, highscore
+  // write, card up. Reads the victory state: final score + the per-fight combat clock
+  // (combatState().time, M:SS) + REPLAY (same pad landing as the death card). No SKIP — the
+  // fight is won, there is no shortcut past the win. NOT in PLAYING_PHASES: it is a card
+  // phase, the cursor returns (the sweep hides the card on every phase change; enter
+  // re-declares it).
+  victory: {
+    enter() {
+      musicTo('title'); // story-009: the same dawn crossfade as gameover — the title bed lands under the win card (new music is out of scope)
+      ctx.game.timeScale = 1; // the boss cinematic restored this already; parity with gameover — the card and any restart never inherit slow-mo
+      const cs = COMBAT.combatState();
+      const finalScore = cs.score;
+      writeHighscore(Math.max(finalScore, readHighscore()));
+      if (ctx.ui.vicScore) ctx.ui.vicScore.textContent = `SCORE — ${finalScore}`;
+      if (ctx.ui.vicTime) ctx.ui.vicTime.textContent = `TIME — ${fmtClock(cs.time)}`;
+      if (ctx.ui.hud) ctx.ui.hud.hidden = true;
+      if (ctx.ui.victory) ctx.ui.victory.hidden = false;
+      if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+      window.__stage2.victoryEntries = (window.__stage2.victoryEntries || 0) + 1; // exactly-once probe surface (mirrors combatEntries)
+    },
+    exit() { if (ctx.ui.victory) ctx.ui.victory.hidden = true; },
   },
 };
 

@@ -153,18 +153,22 @@ body.playing, body.playing *{cursor:none !important;}
 #hitveil{position:fixed;inset:0;z-index:46;pointer-events:none;opacity:0;transition:opacity .14s ease;
   background:radial-gradient(ellipse at center, transparent 42%, rgba(255,42,26,.42) 100%);}
 #hitveil.on{opacity:1;}
-/* S4 combat: pause + gameover cards */
-#pause,#gameover{z-index:48;background:rgba(5,9,14,.72);backdrop-filter:blur(3px);}
-#pause h2,#gameover h2{margin:0 0 10px;letter-spacing:.3em;font-size:34px;}
-#pause p,#gameover .go-score,#gameover .go-hs{color:var(--dim);letter-spacing:.2em;font-size:13px;margin:6px 0;}
+/* S4 combat: pause + gameover + victory cards (story-014: the win card reuses the gameover
+   card discipline — same classes/backdrop/typography — with the accent shifted to the win
+   cyan (var(--accent)); the death card keeps its gold) */
+#pause,#gameover,#victory{z-index:48;background:rgba(5,9,14,.72);backdrop-filter:blur(3px);}
+#pause h2,#gameover h2,#victory h2{margin:0 0 10px;letter-spacing:.3em;font-size:34px;}
+#pause p,#gameover .go-score,#gameover .go-hs,#victory .vic-score,#victory .vic-time{color:var(--dim);letter-spacing:.2em;font-size:13px;margin:6px 0;}
 #gameover .go-score{color:#ffd88f;}
-#gameover .row{margin-top:22px;}
+#victory h2{color:var(--accent);text-shadow:0 0 26px rgba(125,215,255,.5);}
+#victory .vic-score{color:#bfe9ff;}
+#gameover .row,#victory .row{margin-top:22px;}
 
 /* downloaded fonts — the woff2 files register via the FontFace API (src/assets.js);
    these rules only route the families. System stack reads until the faces land. */
-.brand, #combat-online, #gameover h2, #pause h2, #go-logo .logo-glyph { font-family:'Orbitron','Segoe UI',system-ui,sans-serif; }
+.brand, #combat-online, #gameover h2, #pause h2, #victory h2, #go-logo .logo-glyph { font-family:'Orbitron','Segoe UI',system-ui,sans-serif; }
 .pill, .hs, .hints, #tele, #hud-bars, #hud-score, #count, #loading-note,
-#gameover .go-score, #gameover .go-hs, #webglveil h2 { font-family:'Rajdhani','Segoe UI',system-ui,sans-serif; }
+#gameover .go-score, #gameover .go-hs, #victory .vic-score, #victory .vic-time, #webglveil h2 { font-family:'Rajdhani','Segoe UI',system-ui,sans-serif; }
 </style>
 </head>
 <body>
@@ -186,6 +190,14 @@ body.playing, body.playing *{cursor:none !important;}
   <div class="row">
     <button id="go-replay" class="pill warm" type="button">[ REPLAY LAUNCH ]</button>
     <button id="go-skip" class="pill" type="button">[ SKIP TO COMBAT ]</button>
+  </div>
+</div>
+<div id="victory" class="overlay" hidden>
+  <h2>VICTORY</h2>
+  <div id="vic-score" class="vic-score">SCORE — 0</div>
+  <div id="vic-time" class="vic-time">TIME — 0:00</div>
+  <div class="row">
+    <button id="vic-replay" class="pill warm" type="button">[ REPLAY LAUNCH ]</button>
   </div>
 </div>
 <div id="flash" hidden></div>
