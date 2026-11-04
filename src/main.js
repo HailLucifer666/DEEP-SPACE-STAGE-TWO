@@ -195,6 +195,7 @@ const PHASES = {
       if (ui.hud) ui.hud.hidden = false; // gameover/title hide it; combat owns the bars
       TRANSITION.hudAssemble(true); // SKIRMISH lands without beat B2 — the reticle assembles on entry (story-001)
       COMBAT.enterCombat(scene, camera, rocket, ui, combatApi());
+      spdAccum = 0; lastSpd = null; // story-010: ascent re-froze #tele with cruise telemetry — force one SPD rewrite
       musicTo('combat'); // story-009: SKIP path crossfade; idempotent — also rebuilds if teardown killed the bed (spec §2)
       if (RESTART_N && RP.left > 0) window.setTimeout(rpOnCombat, 700);
     },
@@ -642,6 +643,25 @@ function onTitleAction(kind) {
   else setPhase('combat'); // SKIP TO COMBAT is a real path since S4
 }
 
+/* ---------- SPD readout (story-010) — the #tele block's combat writer ---------- */
+// Cruise owns #tele (launch.js writes DIST/VEL/THR at 8 Hz); combat had no writer, so the
+// frozen ascent telemetry just sat in the block through the whole fight. Same shape as
+// cruise's writer: 8 Hz cadence, DOM write only when the rounded u/s changes (TD-009 —
+// no per-frame textContent). Presentation only — the state lives in combatState().speed.
+let spdAccum = 0, lastSpd = null;
+function tickSpdReadout(dt) {
+  if (!ui.tele) return;
+  spdAccum += dt;
+  if (spdAccum < 0.125) return;
+  spdAccum = 0;
+  const s = Math.round(COMBAT.combatState().speed);
+  if (s !== lastSpd) { ui.tele.textContent = `SPD ${s} u/s`; lastSpd = s; }
+}
+function tickCombat(dt, t) { // combat core (combat.js) + the SPD line — main owns #tele in this phase
+  COMBAT.tickCombat(dt, t);
+  tickSpdReadout(dt);
+}
+
 /* ============================== LOOP ============================== */
 const TICKS = {
   title: SPIN ? tickSpin : tickTitle, // SHIP1: in SPIN nothing else writes camera/rocket
@@ -650,7 +670,7 @@ const TICKS = {
   ignition: LAUNCH.tickIgnition,
   ascent: LAUNCH.tickAscent,
   transition: TRANSITION.tickTransition,
-  combat: COMBAT.tickCombat,
+  combat: tickCombat,
 };
 let last = 0, firstFrame = true;
 const fps = { times: [], read: 60 };
