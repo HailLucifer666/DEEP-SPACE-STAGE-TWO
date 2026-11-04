@@ -123,7 +123,17 @@ export function prepareDrones(scene) {
   }
   // token present: the pool exists only once the decode settles — drones cannot spawn into a
   // half-built path (wave 3 arrives seconds later; the probe gate waits on poolReady()).
-  new GLTFLoader().parse(b64ToBuffer(b64), '', (gltf) => {
+  // review NIT 10: the base64 decode itself is inside the guard — an invalid token degrades
+  // to the proc pool like every other failure, it never aborts prepareCombat mid-enterCombat.
+  let buffer;
+  try {
+    buffer = b64ToBuffer(b64);
+  } catch (err) {
+    console.error('[stage2] drone GLB token unusable — procedural drone. reason:', err && (err.message || err));
+    D.pool = makePool(scene, makeDrone, DRONE_POOL);
+    return;
+  }
+  new GLTFLoader().parse(buffer, '', (gltf) => {
     try {
       const root = gltf && gltf.scene ? gltf.scene : null;
       if (!root) throw new Error('drone GLB parsed but scene root missing');

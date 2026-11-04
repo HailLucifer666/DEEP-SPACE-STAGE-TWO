@@ -248,9 +248,13 @@ function makeMusicBag(c, kind) { // private: persistent oscs + per-layer gains +
 function crossfadeTo(name, c) { // OVERLAPPING crossfade — both beds run together, setTargetAtTime only (spec §2)
   // TD-015 (story-013): the bag-creation body is guarded — a WebAudio exception here runs
   // inside phase-enter hooks (phases.js) and must NEVER abort a transition. One warn line,
-  // then the honest 'none' state (both bags dead — the dying bed was already stopped).
+  // then the honest 'none' state. NOTE (stage-2 review, finding 4): "the dying bed was
+  // already stopped" only holds for a makeMusicBag failure — a throw BEFORE the stop (the
+  // fault probe, a setVol failure) leaves the dying bed sounding with a lost handle, so the
+  // catch stops it best-effort (dyingBag hoisted for that; this catch must never throw).
   // ?musicFault=1 throws once inside the combat-bed build — the flow-check probe asserts
   // the warn, the 'none' state, and that the phase still lands.
+  let dyingBag = null;
   try {
     if (MUSIC_FAULT && name === 'combat' && !musicFaultFired) {
       musicFaultFired = true;
@@ -258,6 +262,7 @@ function crossfadeTo(name, c) { // OVERLAPPING crossfade — both beds run toget
     }
     const other = name === 'title' ? 'combat' : 'title';
     const dying = musicBags[other];
+    dyingBag = dying; // review (finding 4): visible to the catch — a pre-stop throw must not strand a sounding bed
     const overlap = !!(dying && dying.alive);
     if (overlap) {
       if (name === 'combat') { // title→combat: out tau 0.9, node stop at 2.9 s — overlap ≈ 2.5 s
@@ -272,6 +277,7 @@ function crossfadeTo(name, c) { // OVERLAPPING crossfade — both beds run toget
     bag.setVol(1.0, name === 'title' && overlap ? 1.5 : 1.2); // ~4.5 s dawn under the death card, else the 1.2 s entry
   } catch (err) {
     console.warn('[stage2] music bed failed — running silent. reason:', err && (err.message || err));
+    try { if (dyingBag && dyingBag.alive) dyingBag.stop(0.05); } catch {}
     musicTarget = 'none';
     musicBags.title = null;
     musicBags.combat = null;

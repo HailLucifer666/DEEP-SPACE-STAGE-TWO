@@ -35,6 +35,7 @@ export const fps = { times: [], read: 60 };
  * flow-check probe asserts the flip, the running game, and the single log line. */
 const COMPOSER_FAULT = new URLSearchParams(location.search).get('composerFault') === '1';
 let composerDead = false, composerFaultFired = false;
+export const composerIsDead = () => composerDead; // review (finding 5): onResize guards the same latch setDpr guards
 function renderFrame() {
   if (ctx.composer && !composerDead) {
     try {

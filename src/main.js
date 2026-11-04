@@ -11,7 +11,7 @@ import { loadAssets, assetReport } from './assets.js';
 import { getStorage, readHighscore, writeHighscore } from './store.js';
 import { setPhase, initPhases } from './phases.js';
 import { input, paused, attachInput, onTitleAction, initInput } from './input.js';
-import { loop, fps, dprCtl, initLoop } from './loop.js';
+import { loop, fps, dprCtl, initLoop, composerIsDead } from './loop.js';
 
 /* ============================== BOOT ============================== */
 const qs = new URLSearchParams(location.search);
@@ -405,7 +405,7 @@ function boot() {
 
 function onResize() {
   renderer.setSize(window.innerWidth, window.innerHeight);
-  if (composer) composer.setSize(window.innerWidth, window.innerHeight); // §8.5: post chain tracks the buffer (story-008)
+  if (composer && !composerIsDead()) composer.setSize(window.innerWidth, window.innerHeight); // §8.5: post chain tracks the buffer (story-008); review finding 5: the TD-013 latch guards this touch too
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
 }
