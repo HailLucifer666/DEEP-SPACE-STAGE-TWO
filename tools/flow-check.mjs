@@ -379,6 +379,128 @@ try {
   ok('combatState().boss drains to null after death', await evl(`__stage2.combatState().boss`) === null,
     JSON.stringify(await J(`__stage2.combatState().boss`)));
 
+  /* --- story-014 victory card (same page: the bossDefeated signal lands victory mid-drive) ---
+     Trigger path: combat.js's C.bossApi.report wrapper — the death cinematic's report lands
+     through the EVENT path (report first, probe parity kept), then combat.js fires
+     go('victory') guarded by !C.dead. Deliberately NOT a lastReport-slot poll: a player death
+     during the 1.2 s cinematic tears combat down before any slot poll could run, orphaning
+     the signal — the wrapper runs inside the report call itself, so nothing can orphan it.
+     The bossProbe drive completes in the same frame (its death-stage check runs after
+     BOSS.tickBoss), so the probe object and the victory card arrive together and every
+     story-013 assert above still reads true.
+     RED record 2026-11-04 (pre-victory build = story-013's committed index.html @ c916621,
+     product code untouched, only this harness differs): 58 passed / 11 failed — 11 of the 13
+     new asserts FAIL (the victory poll expires — the old build continued waves after boss
+     death — and every dependent assert records its red from victoryLanded=false /
+     padLanded=false; the freeze assert fails on df=null because combatState().time does not
+     exist pre-story-014). Keep-passing on old BY DESIGN: `player death ... lands gameover`
+     (the roaming wave-1 raiders killed the stationary player naturally inside the deadline
+     window — the mutual-exclusion keep-passing holds on BOTH builds) and `no double-fire` is
+     vacuous (no victory can exist on old).
+     MUTATIONS (branch, post-green, each: mutate → npm run build → full flow-check → restore):
+       1. combat.js bossApi.report wrapper's go('victory') removed → RED story-014 landing +
+          card + REPLAY + second-run asserts (the drive then completes without victory, as on old)
+       2. combat.js enterCombat `C.time = 0` removed → RED `second run baseline clean + clock
+          reset` (the victory run's clock rides into the fresh combat)
+       3. combat.js tickCombat freeze guard removed (`if (!C.dead)` → unconditional accrual) →
+          RED `combat clock frozen while dead` (t2 − t1 ≈ 0.15 over 0.5 s of 0.3× slow-mo)
+       4. main.js ui.victory dropped from OVERLAY_ELMS → RED `victory REPLAY → pad: cards
+          hidden` (the sweep never hides the card; the pad keeps it up)
+       5. combat.js clearCombat's edge-pip drain removed → RED `victory REPLAY → pad: edge
+          pips drained` (combat's last-frame pip state rides the pad)
+     Full outputs: production/qa/evidence/story-014-victory/flow-*.txt.
+     FOUND-DEFECT FIX (in-story): the pre-fix pad capture (s14-replay-pad-stale-pip-prefix.png)
+     shows a stale edge pip riding the pad after the victory REPLAY — combat's last-frame pip
+     state was never drained (clearCombat resets #hud-bars/#tele/#warn but not the pips;
+     pre-existing on master — the death-card REPLAY has the same leak). The natural stale pip
+     depends on raider bearings at the final combat frame (flaky), so the assert paints every
+     pip ON at the card and asserts the pad drained them — a deterministic proxy for
+     "clearCombat clears pip state". */
+  let vic = null;
+  {
+    const t0 = Date.now();
+    for (;;) {
+      try {
+        const v = await J(`({ p: (window.__stage2 && __stage2.phase) || 'boot', n: (window.__stage2 && __stage2.victoryEntries) || 0 })`);
+        if (v.p === 'victory') { vic = v; break; }
+      } catch { vic = null; }
+      if (Date.now() - t0 > 30000) break; // deadline — the asserts below record the red
+      await sleep(250);
+    }
+  }
+  const vicLanded = !!vic;
+  ok('story-014: victory phase lands exactly once', vicLanded && vic.n === 1,
+    vicLanded ? `entries=${vic.n}` : 'victory never landed (old build: waves continue after boss death)');
+  const vicDom = vicLanded ? await J(`({
+    vicHidden: document.getElementById('victory').hidden,
+    goHidden: (document.getElementById('gameover') || {hidden: true}).hidden,
+    score: document.getElementById('vic-score').textContent,
+    time: document.getElementById('vic-time').textContent,
+    clock: __stage2.combatState().time,
+  })`) : null;
+  const vx = vicDom || {};
+  ok('story-014: victory card visible (gameover stays hidden)', vicLanded && vx.vicHidden === false && vx.goHidden === true,
+    vicLanded ? JSON.stringify(vx) : 'victory never landed');
+  ok('story-014: victory score text (SCORE — N)', vicLanded && /^SCORE — \d+$/.test(vx.score || ''),
+    vicLanded ? `score=${JSON.stringify(vx.score)}` : 'victory never landed');
+  ok('story-014: victory time text (TIME — M:SS)', vicLanded && /^TIME — \d+:\d\d$/.test(vx.time || ''),
+    vicLanded ? `time=${JSON.stringify(vx.time)}` : 'victory never landed');
+  ok('story-014: combat clock accrued (combatState().time > 0)', vicLanded && (vx.clock || 0) > 0,
+    vicLanded ? `clock=${vx.clock}` : 'victory never landed');
+  if (vicLanded) {
+    // deterministic stale-pip proxy (see the block comment): paint every edge pip ON at the
+    // card — the pad must not inherit combat's pip state (clearCombat drains it)
+    await evl(`[...document.getElementById('hud').children].filter((c) => (c.style.clipPath || '').includes('polygon')).forEach((c) => { c.style.opacity = '1'; })`);
+    await evl(`document.getElementById('vic-replay').click()`);
+  }
+  let rp14 = null;
+  {
+    const t0 = Date.now();
+    for (;;) {
+      try { rp14 = await J(`({ p: (window.__stage2 && __stage2.phase) || 'boot' })`); if (rp14.p === 'pad') break; } catch { rp14 = null; }
+      if (Date.now() - t0 > 15000) break;
+      await sleep(200);
+    }
+  }
+  const padLanded = !!rp14 && rp14.p === 'pad';
+  const vd = padLanded ? await J(`({
+    vicHidden: document.getElementById('victory').hidden,
+    goHidden: (document.getElementById('gameover') || {hidden: true}).hidden,
+    titleHidden: document.getElementById('title').hidden,
+    hudHidden: document.getElementById('hud').hidden,
+    reticleHidden: document.getElementById('reticle').hidden,
+    pipCount: [...document.getElementById('hud').children].filter((c) => (c.style.clipPath || '').includes('polygon')).length,
+    pipsOn: [...document.getElementById('hud').children].filter((c) => (c.style.clipPath || '').includes('polygon')).filter((c) => c.style.opacity !== '0').length,
+  })`) : null;
+  const vdx = vd || {};
+  ok('story-014: victory REPLAY → pad (same landing as the death card)', padLanded, padLanded ? 'pad' : 'no pad landing');
+  ok('story-014: victory REPLAY → pad: cards hidden (sweep)', padLanded && vdx.vicHidden === true && vdx.goHidden === true && vdx.titleHidden === true,
+    padLanded ? JSON.stringify(vdx) : 'no pad landing');
+  ok('story-014: victory REPLAY → pad: hud visible, reticle off', padLanded && vdx.hudHidden === false && vdx.reticleHidden === true,
+    padLanded ? JSON.stringify(vdx) : 'no pad landing');
+  ok('story-014: victory REPLAY → pad: edge pips drained (no stale combat pip state)', padLanded && vdx.pipCount === 8 && vdx.pipsOn === 0,
+    padLanded ? JSON.stringify(vdx) : 'no pad landing');
+  {
+    let landed2 = false, cs14 = null, entries2 = 0;
+    if (padLanded) {
+      const t0 = Date.now();
+      while (Date.now() - t0 < 120000) { // pad auto-advances (launch.js tickPad 2.6 s) → walk to combat
+        let p = null;
+        try { p = await evl(`(window.__stage2 && __stage2.phase) || 'boot'`); } catch {}
+        if (p === 'combat') { landed2 = true; break; }
+        await sleep(250);
+      }
+      if (landed2) {
+        cs14 = await J(`__stage2.combatState()`);
+        entries2 = await evl(`window.__stage2.combatEntries || 0`);
+      }
+    }
+    ok('story-014: second run after REPLAY reaches combat', landed2,
+      landed2 ? `entries=${entries2}` : (padLanded ? 'no combat landing' : 'REPLAY never landed'));
+    ok('story-014: second run baseline clean + clock reset', !!cs14 && cs14.hp === 100 && cs14.shield === 50 &&
+      cs14.score === 0 && cs14.wave === 1 && cs14.boss === null && cs14.time < 2, JSON.stringify(cs14 || null));
+  }
+
   /* --- TD-013 (?composerFault=1, third page): never-crash render path ---
      loop.js renders through the composer; the fault switch throws INSIDE the guarded render
      call on its first attempt. Asserts: probs.post flips to 'direct' (honest probe surface),
@@ -441,6 +563,66 @@ try {
   ok('TD-015 no uncaught exception from the fault', !errs.some((e) => e.startsWith('EXCEPTION')),
     JSON.stringify(errs.filter((e) => e.startsWith('EXCEPTION'))));
   errs.length = 0; // the warn is the DESIGNED evidence — reset before the final CONSOLE []
+
+  /* --- story-014 edge (fifth page): double-fire — the two card paths are mutually exclusive ---
+     Deterministic drive: bossProbe runs to the death cinematic; the moment
+     combatState().boss.phase reads 'dying' (≤ ~0.2 s in — a 100 ms poll against a 1.2 s
+     window), the harness fires __stage2.probeDamagePlayer(500) INSIDE the cinematic. The
+     player's 0.7 s real-time death clock then always expires before the boss's remaining
+     cinematic, so gameover must land ALONE: the victory card never shows, victoryEntries
+     stays 0, and the combat clock reads FROZEN while dead (t2 === t1 across 0.5 s of 0.3×
+     slow-mo — an unfrozen clock would accrue ~0.15 s). On the pre-victory build these are
+     green-by-design/vacuous EXCEPT the freeze assert (combatState().time undefined on old)
+     and the gameover landing itself (probeDamagePlayer was not exposed on old, so the
+     forced-death drive could not run — page 1's natural death already proves gameover there). */
+  await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat&bossProbe=1' });
+  let df = null;
+  {
+    const t0 = Date.now();
+    let hurt = false;
+    for (;;) {
+      try {
+        const csx = await J(`(window.__stage2 && __stage2.combatState) ? __stage2.combatState() : null`);
+        if (csx && csx.boss && csx.boss.phase === 'dying' && !hurt) {
+          const fired = await evl(`(window.__stage2 && typeof __stage2.probeDamagePlayer === 'function') ? (__stage2.probeDamagePlayer(500), true) : false`);
+          if (fired) { hurt = true; continue; }
+        }
+        if (hurt && csx && csx.dead) {
+          const t1 = csx.time;
+          await sleep(500); // 0.5 s real inside the 0.3× slow-mo — a live clock accrues ~0.15
+          const t2 = await J(`__stage2.combatState().time`);
+          df = { t1, t2 };
+          break;
+        }
+      } catch {}
+      if (Date.now() - t0 > 45000) break; // deadline — the asserts below record the state
+      await sleep(100);
+    }
+  }
+  let g14 = null;
+  {
+    const t0 = Date.now();
+    for (;;) {
+      try {
+        g14 = await J(`({
+          p: (window.__stage2 && __stage2.phase) || 'boot',
+          go: !(document.getElementById('gameover') || {hidden: true}).hidden,
+          vic: !(document.getElementById('victory') || {hidden: true}).hidden,
+          n: (window.__stage2 && __stage2.victoryEntries) || 0,
+        })`);
+        if (g14.p === 'gameover') break;
+      } catch { g14 = null; }
+      if (Date.now() - t0 > 30000) break;
+      await sleep(200);
+    }
+  }
+  const gx = g14 || {};
+  ok('story-014: player death during the death cinematic lands gameover (not victory)', gx.p === 'gameover' && gx.go === true,
+    JSON.stringify(gx));
+  ok('story-014: no double-fire (victory card hidden, victoryEntries 0)', gx.vic === false && gx.n === 0,
+    `vic=${gx.vic} entries=${gx.n}`);
+  ok('story-014: combat clock frozen while dead (t2 === t1 over 0.5s slow-mo)',
+    !!df && typeof df.t1 === 'number' && df.t1 === df.t2 && df.t1 > 0, JSON.stringify(df || null));
 
   ok('CONSOLE []', errs.length === 0, errs.join(' | '));
 } catch (e) {

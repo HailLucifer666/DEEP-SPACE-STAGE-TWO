@@ -47,6 +47,8 @@ const C = {
   hp: HP_MAX, shield: SHIELD_MAX, regenT: 0, dead: false, deathT: 0,
   fireT: 0, boost: 1, boosting: false,
   wave: 0, waveGapT: 0, score: 0, kills: 0,
+  time: 0, // story-014: per-fight combat clock — scaled sdt while alive (the world's slow-mo slows it), frozen while dead; reset each enterCombat. NOT game.time (the global clock — launch phases own it)
+
   bed: null, scriptT: -1, scriptDone: false,
   // story-012 drone probe state (?droneProbe=1) — probe-only fields, untouched by normal play
   dpT: -1, dpDrone: null, dpWin: 0, dpDone: false,
@@ -98,7 +100,14 @@ export function prepareCombat(scene, camera, rocket, ui, api) {
   C.bossApi = { // the boss's tick/death api — EFFECTS + the combat probe surfaces, drone-tick api shape extended for slow-mo + report
     damagePlayer, explosion: (p) => EFFECTS.explosion(p), shake: (a) => EFFECTS.shake(a),
     setTimeScale: (v) => C.api.setTimeScale(v), getTimeScale: () => C.api.getTimeScale(),
-    report: (r) => C.api.report(r),
+    // story-014: the bossDefeated signal IS the victory trigger. Deliberately handled in this
+    // wrapper (combat.js owns the api object; boss.js stays a pure signal source) and fired on
+    // the report EVENT path — NOT a lastReport-slot poll, which a combat teardown (player death
+    // during the 1.2 s cinematic) would orphan before it ever ran. The report lands first (probe
+    // parity — the bossProbe drive reads it in the same frame), then go('victory') is guarded by
+    // !C.dead so the two card paths stay mutually exclusive: if the player is already dead the
+    // gameover path wins; if victory lands first, clearCombat cancels the death clock.
+    report: (r) => { C.api.report(r); if (r && r.bossDefeated && !C.dead) C.api.go('victory'); },
   };
   // edge pips (J) — off-screen raider awareness; created once, #hud hides them outside combat
   if (C.ui.hud && !C.pips.length) {
@@ -525,6 +534,7 @@ export function enterCombat(scene, camera, rocket, ui, api) {
   C.hp = HP_MAX; C.shield = SHIELD_MAX; C.regenT = 0; C.dead = false; C.deathT = 0;
   C.fireT = 0; C.boost = 1; C.boosting = false;
   C.score = 0; C.kills = 0; C.wave = 1; C.waveGapT = 0;
+  C.time = 0; // story-014: the clock is per-fight — every combat entry restarts it
   C.scriptT = -1; C.scriptDone = false; C.scriptDrone = null;
   C.dpT = -1; C.dpDrone = null; C.dpWin = 0; C.dpDone = false; // story-012: probe state restarts clean
   C.dpTele = false; C.dpDive = false; C.dpContact = false; C.dpSamples = 0; C.dpMM = null;
@@ -553,6 +563,7 @@ export function enterCombat(scene, camera, rocket, ui, api) {
 
 export function tickCombat(dt, t) {
   const p = C.pose;
+  if (!C.dead) C.time += dt; // story-014 combat clock — dt is already the scaled sdt (loop.js): the death slow-mo slows the world AND the clock, and the frozen clock reads 0:00-drift while dead
   steer(dt);
   fireTick(dt);
   boltsTick(dt);
@@ -666,6 +677,9 @@ export function clearCombat() {
   if (C.ui.hudScore) C.ui.hudScore.textContent = '';
   if (C.ui.tele) C.ui.tele.textContent = ''; // TD-014 (story-013): the SPD line is combat's write —
   // it must not ride the pad until cruise rewrites (phases.js resets its lastSpd gate on combat.enter)
+  for (const pip of C.pips) pip.style.opacity = '0'; // story-014 (found during evidence capture): combat's
+  // last-frame pip state must not ride the pad — the pips are combat's writes, same class as the #hud-bars
+  // clear above (pre-existing leak; the death-card REPLAY inherits this fix too)
   C.dead = false; C.deathT = 0; C.speed = 0;
   if (C.rim) { C.rim.material.opacity = 0; C.rim.visible = false; } // story-005: rim leaves the render list with combat (review R2-9)
 }
@@ -674,6 +688,7 @@ export function clearCombat() {
 export function combatState() {
   return {
     hp: C.hp, shield: C.shield, score: C.score, wave: C.wave, kills: C.kills,
+    time: +C.time.toFixed(2), // story-014: elapsed combat seconds — the victory card reads this
     enemies: ENEMIES.aliveCount() + ENEMIES.queuedCount(),
     drones: DRONES.aliveCount(), // story-012: live orb count (queued orbs are the wave layer's business)
     boss: BOSS.state(), // story-013: { hp, maxHp, phase } while the boss lives, null otherwise

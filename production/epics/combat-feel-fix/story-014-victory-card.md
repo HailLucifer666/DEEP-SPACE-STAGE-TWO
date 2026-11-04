@@ -1,7 +1,7 @@
 # Story 014: victory card — the win state
 
 > **Epic**: combat-feel-fix (Stage 2 — boss + victory)
-> **Status**: Pending
+> **Status**: Complete
 > **Layer**: UI/Logic
 > **Type**: UI
 > **Estimate**: M
@@ -36,22 +36,22 @@ close per the full-auto grant — screenshots retained).
 
 ## Acceptance Criteria
 
-- [ ] `victory` phase in `src/phases.js`: enter/exit hooks correct under the exit-before-enter
+- [x] `victory` phase in `src/phases.js`: enter/exit hooks correct under the exit-before-enter
       sweep; `PLAYING_PHASES` unchanged (victory is a card phase, cursor returns).
-- [ ] `#victory` overlay in the template (score, time, REPLAY), hidden by the sweep, shown
+- [x] `#victory` overlay in the template (score, time, REPLAY), hidden by the sweep, shown
       only by the victory phase; no hand-editing index.html — `npm run build` output.
-- [ ] `C.time` combat clock in `src/combat.js` (reset each enterCombat, frozen while dead),
+- [x] `C.time` combat clock in `src/combat.js` (reset each enterCombat, frozen while dead),
       surfaced via `combatState().time` — the card reads it.
-- [ ] flow-check GAINS asserts (written **red-on-old**, mutation recorded in the test file):
+- [x] flow-check GAINS asserts (written **red-on-old**, mutation recorded in the test file):
       1. reach boss (`?bossProbe=1`) → kill → `phase: victory` lands exactly once;
       2. victory card visible with score + time text non-empty;
       3. REPLAY → pad: card hidden, hud visible, reticle off — mirroring the death-card
          REPLAY asserts;
       4. adjacent keep-passing: player death still lands `gameover` (not victory), and a
          second run after REPLAY reaches combat with a clean baseline.
-- [ ] flow-check (28 + story-012/013 asserts + these) green on the branch; full probe set
+- [x] flow-check (28 + story-012/013 asserts + these) green on the branch; full probe set
       green; restartProbe clean; CONSOLE [].
-- [ ] Retained screenshots `production/qa/evidence/story-014-victory/s14-victory-card.png`
+- [x] Retained screenshots `production/qa/evidence/story-014-victory/s14-victory-card.png`
       + `s14-replay-pad.png` + programmer report at
       `production/qa/evidence/story-014-victory/programmer-report.md`.
 
@@ -74,7 +74,11 @@ close per the full-auto grant — screenshots retained).
 
 ## Test Evidence
 
-**Status**: [ ] Created — red-on-old record for the four new asserts, probe outputs.
+**Status**: [x] Created — red-on-old record for the new asserts (flow-red-old.txt: 58/11 on the
+story-013 build), 5 mutation runs, probe outputs, and the programmer report at
+`production/qa/evidence/story-014-victory/programmer-report.md`. Plus a found-defect fix riding
+this story: clearCombat now drains the edge pips (stale pip rode the pad after any card REPLAY —
+red recorded in flow-red-pipleak.txt, mutation 5, before/after pad screenshots retained).
 
 ---
 
