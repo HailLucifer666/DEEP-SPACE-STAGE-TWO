@@ -406,7 +406,16 @@ try {
           RED `combat clock frozen while dead` (t2 − t1 ≈ 0.15 over 0.5 s of 0.3× slow-mo)
        4. main.js ui.victory dropped from OVERLAY_ELMS → RED `victory REPLAY → pad: cards
           hidden` (the sweep never hides the card; the pad keeps it up)
-     Full outputs: production/qa/evidence/story-014-victory/flow-*.txt. */
+       5. combat.js clearCombat's edge-pip drain removed → RED `victory REPLAY → pad: edge
+          pips drained` (combat's last-frame pip state rides the pad)
+     Full outputs: production/qa/evidence/story-014-victory/flow-*.txt.
+     FOUND-DEFECT FIX (in-story): the pre-fix pad capture (s14-replay-pad-stale-pip-prefix.png)
+     shows a stale edge pip riding the pad after the victory REPLAY — combat's last-frame pip
+     state was never drained (clearCombat resets #hud-bars/#tele/#warn but not the pips;
+     pre-existing on master — the death-card REPLAY has the same leak). The natural stale pip
+     depends on raider bearings at the final combat frame (flaky), so the assert paints every
+     pip ON at the card and asserts the pad drained them — a deterministic proxy for
+     "clearCombat clears pip state". */
   let vic = null;
   {
     const t0 = Date.now();
@@ -438,7 +447,12 @@ try {
     vicLanded ? `time=${JSON.stringify(vx.time)}` : 'victory never landed');
   ok('story-014: combat clock accrued (combatState().time > 0)', vicLanded && (vx.clock || 0) > 0,
     vicLanded ? `clock=${vx.clock}` : 'victory never landed');
-  if (vicLanded) await evl(`document.getElementById('vic-replay').click()`);
+  if (vicLanded) {
+    // deterministic stale-pip proxy (see the block comment): paint every edge pip ON at the
+    // card — the pad must not inherit combat's pip state (clearCombat drains it)
+    await evl(`[...document.getElementById('hud').children].filter((c) => (c.style.clipPath || '').includes('polygon')).forEach((c) => { c.style.opacity = '1'; })`);
+    await evl(`document.getElementById('vic-replay').click()`);
+  }
   let rp14 = null;
   {
     const t0 = Date.now();
@@ -455,12 +469,16 @@ try {
     titleHidden: document.getElementById('title').hidden,
     hudHidden: document.getElementById('hud').hidden,
     reticleHidden: document.getElementById('reticle').hidden,
+    pipCount: [...document.getElementById('hud').children].filter((c) => (c.style.clipPath || '').includes('polygon')).length,
+    pipsOn: [...document.getElementById('hud').children].filter((c) => (c.style.clipPath || '').includes('polygon')).filter((c) => c.style.opacity !== '0').length,
   })`) : null;
   const vdx = vd || {};
   ok('story-014: victory REPLAY → pad (same landing as the death card)', padLanded, padLanded ? 'pad' : 'no pad landing');
   ok('story-014: victory REPLAY → pad: cards hidden (sweep)', padLanded && vdx.vicHidden === true && vdx.goHidden === true && vdx.titleHidden === true,
     padLanded ? JSON.stringify(vdx) : 'no pad landing');
   ok('story-014: victory REPLAY → pad: hud visible, reticle off', padLanded && vdx.hudHidden === false && vdx.reticleHidden === true,
+    padLanded ? JSON.stringify(vdx) : 'no pad landing');
+  ok('story-014: victory REPLAY → pad: edge pips drained (no stale combat pip state)', padLanded && vdx.pipCount === 8 && vdx.pipsOn === 0,
     padLanded ? JSON.stringify(vdx) : 'no pad landing');
   {
     let landed2 = false, cs14 = null, entries2 = 0;

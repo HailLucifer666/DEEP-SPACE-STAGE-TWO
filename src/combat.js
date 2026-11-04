@@ -677,6 +677,9 @@ export function clearCombat() {
   if (C.ui.hudScore) C.ui.hudScore.textContent = '';
   if (C.ui.tele) C.ui.tele.textContent = ''; // TD-014 (story-013): the SPD line is combat's write —
   // it must not ride the pad until cruise rewrites (phases.js resets its lastSpd gate on combat.enter)
+  for (const pip of C.pips) pip.style.opacity = '0'; // story-014 (found during evidence capture): combat's
+  // last-frame pip state must not ride the pad — the pips are combat's writes, same class as the #hud-bars
+  // clear above (pre-existing leak; the death-card REPLAY inherits this fix too)
   C.dead = false; C.deathT = 0; C.speed = 0;
   if (C.rim) { C.rim.material.opacity = 0; C.rim.visible = false; } // story-005: rim leaves the render list with combat (review R2-9)
 }
