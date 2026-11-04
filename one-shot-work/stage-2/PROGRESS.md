@@ -59,7 +59,25 @@ Merge grant: FULL AUTO, no verdict gates (player decision 2026-11-04, see ASSUMP
       REPLAY, death card included), red-recorded + mutation-tested (flow-red-pipleak.txt).
       Merged ca3c2d8, tagged good-2026-11-05 (new calendar day → new date prefix; this tag
       IS story-014's known-good point).
-- [ ] Stage close: independent review + smoke record + changelog + GATE.md
+- [x] Stage close: independent review + smoke record + changelog + GATE.md
+      Independent review (lead-programmer subagent, read-only, kee discipline): 0 CRITICAL,
+      2 IMPORTANT (bossDefeated re-fire after cinematic completion; CONSOLE gate measured only
+      the last page), 4 ADVISORY, 5 NIT — ALL dispositioned on stage-2-review-fixes with
+      red-first asserts + mutations where testable (flow-red-review.txt: card 0 vs internal
+      150 + counter absent; flow-mutation-consolepage.txt: 4 red / 72 green). One invalid
+      mutation run (perl ate the function signature) caught, repaired, re-run — recorded, not
+      counted. Merged dd6c82a, tagged good-2026-11-05-b, flow-check 76/76 on merged master.
+      Records: production/reviews/stage-2-code-review-2026-11-05.md ·
+      production/qa/smoke-2026-11-05.md · changelog Stage 2 section · GATE.md (this folder):
+      **PASS**.
+
+# STAGE 2 DONE — 2026-11-05
+Tags: good-2026-11-04-h (011) · good-2026-11-04-i (012) · good-2026-11-04-j (013) ·
+good-2026-11-05 (014 — new calendar day, new date prefix) · good-2026-11-05-b (review
+fixes + gate PASS). flow-check 28 → 76 asserts. Scoreboard: 4/6 stages + 14/20 stories.
+Next: Stage 3 — full 3D flight (story-015 pitch+drift → 016 spherical arena → 017 world
+goes 3D). Player verdicts owed at the next session open: drone look, boss feel, victory
+moment (screenshots retained in the evidence folders; rollback = git checkout <tag>).
 
 Notes:
 - Tag chain: slice 1 (story-011) tagged `good-2026-11-04-h` @ cb66277 — merged-master
