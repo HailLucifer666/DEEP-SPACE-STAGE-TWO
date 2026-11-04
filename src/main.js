@@ -1,13 +1,17 @@
-// STAGE TWO — entry, loop, phase machine. Banners: BOOT / UI / STORE / PHASES / ROCKET / SCENE / INPUT / LOOP / DEBUG.
-// Slice 1 scope: boot spike, GLB rocket (with fallback), TITLE, LOADING overlay, debug overlay.
+// STAGE TWO — entry, boot, composition root. Banners: BOOT / UI / ROCKET / SCENE / DEBUG / WIRING / GO.
+// Story-011 (TD-003): the STORE, PHASES, INPUT and LOOP banners moved verbatim into src/store.js,
+// src/phases.js, src/input.js and src/loop.js — wiring via ONE late-bound ctx object (WIRING below).
 import { THREE, GLTFLoader, EffectComposer, RenderPass, UnrealBloomPass, OutputPass } from 'stage-two-lib';
 import * as LAUNCH from './launch.js';
-import * as TRANSITION from './transition.js';
 import * as COMBAT from './combat.js';
-import { audioUnlock, isAudioLive, audioSuspend, audioResume, setMuted, isMuted,
-  musicTo, musicState, loopsCount, alarmActive } from './audio.js';
-import { adapterRows, nextNose, nextTop } from './ship-fix.js';
+import { audioUnlock, isAudioLive, setMuted, isMuted,
+  musicState, loopsCount, alarmActive } from './audio.js';
+import { adapterRows } from './ship-fix.js';
 import { loadAssets, assetReport } from './assets.js';
+import { getStorage, readHighscore, writeHighscore } from './store.js';
+import { setPhase, initPhases } from './phases.js';
+import { input, paused, attachInput, onTitleAction, initInput } from './input.js';
+import { loop, fps, dprCtl, initLoop } from './loop.js';
 
 /* ============================== BOOT ============================== */
 const qs = new URLSearchParams(location.search);
@@ -27,8 +31,7 @@ const PERF_T0 = performance.now();
 const BOOT_MARKS = window.__BOOT = { t0: 0 };
 BOOT_MARKS.navT0 = Math.round(PERF_T0); // story-006: navigation-start → module eval (HTML parse + bundled deps)
 const mark = (k) => { BOOT_MARKS[k] = Math.round(performance.now() - PERF_T0); };
-// story-007: module-scope bodyStart/storeStart/storeEnd marks removed — storage is lazy now,
-// its marks fire behind the rendered title (see STORE below)
+// story-007: storage is lazy — module-scope bodyStart/storeStart/storeEnd marks removed; the marks fire behind the rendered title (src/store.js)
 const RESTART_N = Number(qs.get('restartProbe')) || 0; // probe: die→restart ×N baseline check
 
 window.addEventListener('error', (e) => {
@@ -118,158 +121,11 @@ function toast(msg, ms = 2400) {
   toastTimer = window.setTimeout(() => ui.toast.classList.remove('on'), ms);
 }
 
-/* ============================== STORE (§8.4) ============================== */
-// story-007: storage is lazy. The first localStorage touch on a cold profile stalls the main
-// thread 3-5 s (Chromium builds its storage database synchronously), so the probe must not run
-// during module eval nor inside title.enter. getStorage() memoizes the probe; boot() warms it
-// behind the rendered title — storeStart/storeEnd fire there now, never before the 'title' mark.
-let storageImpl = null;
-function getStorage() {
-  if (storageImpl) return storageImpl;
-  try {
-    window.localStorage.setItem('__s2_probe', '1');
-    window.localStorage.removeItem('__s2_probe');
-    storageImpl = { get: (k) => window.localStorage.getItem(k), set: (k, v) => window.localStorage.setItem(k, v) };
-  } catch (e) {
-    // private mode / blocked storage — session-only memory; never crash on storage
-    const mem = new Map();
-    console.warn('[stage2] localStorage blocked; high score is session-only:', e && e.message);
-    storageImpl = { get: (k) => (mem.has(k) ? mem.get(k) : null), set: (k, v) => { mem.set(k, String(v)); } };
-  }
-  return storageImpl;
-}
-const HIGHSCORE_KEY = 'stage2.highscore';
-function readHighscore() {
-  if (!storageImpl) return 0; // story-007: pre-warm read never triggers the probe — title renders 0, warm-up re-renders the real value
-  try {
-    const n = Number(JSON.parse(storageImpl.get(HIGHSCORE_KEY) ?? '0'));
-    return Number.isFinite(n) && n >= 0 ? n : 0; // corrupt values read as 0, never NaN (§8.9)
-  } catch { return 0; }
-}
-function writeHighscore(n) {
-  try { getStorage().set(HIGHSCORE_KEY, String(Math.max(0, Math.floor(Number(n) || 0)))); }
-  catch (e) { // stage-1 review: the memory fallback cannot throw — a throw here means the REAL
-    // backend refused the write (quota/private-mode edge). Never pretend it was saved.
-    console.warn('[stage2] highscore write failed — score not persisted:', e && e.message);
-  }
-}
-
-/* ============================== PHASES ============================== */
-const PHASES = {
-  loading: { enter() { if (ui.title) ui.title.hidden = true; } },
-  title: {
-    enter() {
-      musicTo('title'); // story-009: the pad owns title — deferred until audio unlock (spec §2)
-      if (ui.loading) ui.loading.hidden = true;
-      if (ui.title) { ui.title.hidden = false; refreshRecordLine(); }
-      closePanel();
-      disarmReset();
-      refreshSoundButton();
-      if (ui.hud) ui.hud.hidden = true;
-    },
-  },
-  pad: {
-    enter() {
-      musicTo('title'); // story-009: the title bed carries through the launch phases (spec §2)
-      COMBAT.clearCombat(); // death card REPLAY lands here — re-seat the rocket from the combat pose (§8.6)
-      if (ui.gameover) ui.gameover.hidden = true; // setPhase is exit-before-enter: gameover.exit never runs on the way out
-      ui.title.hidden = true; ui.hud.hidden = false; LAUNCH.enterPad(); TRANSITION.hudAssemble(false);
-    },
-  },
-  countdown: { enter() { ui.hud.hidden = false; LAUNCH.enterCountdown(); } }, // sweep would orphan it — re-show (story-001)
-  ignition: { enter() { ui.hud.hidden = false; LAUNCH.enterIgnition(); } },
-  ascent: { enter() { ui.hud.hidden = false; LAUNCH.enterAscent(); } },
-  transition: {
-    enter() {
-      musicTo('combat'); // story-009: warp crossfade starts — tension builds across the beat (spec §2)
-      ui.hud.hidden = false; // numerals/tele/reticle live inside #hud — the sweep must not orphan it
-      TRANSITION.enterTransition(scene, camera, rocket, ui, {
-        go: (n) => setPhase(n),
-        report: (r) => { probs.sub = r; window.__stage2.lastReport = r; },
-      });
-    },
-  },
-  combat: {
-    enter() {
-      TRANSITION.clearTransition(); // central teardown — skip-mid-beat leaves nothing behind
-      probs.sub = null;
-      window.__stage2.combatEntries = (window.__stage2.combatEntries || 0) + 1;
-      if (ui.gameover) ui.gameover.hidden = true; // death-card SKIP lands here — same exit-before-enter gap as pad.enter
-      LAUNCH.ambience(true); // vacuum: stars on, dawn off
-      if (ui.hud) ui.hud.hidden = false; // gameover/title hide it; combat owns the bars
-      TRANSITION.hudAssemble(true); // SKIRMISH lands without beat B2 — the reticle assembles on entry (story-001)
-      COMBAT.enterCombat(scene, camera, rocket, ui, combatApi());
-      spdAccum = 0; lastSpd = null; // story-010: ascent re-froze #tele with cruise telemetry — force one SPD rewrite
-      musicTo('combat'); // story-009: SKIP path crossfade; idempotent — also rebuilds if teardown killed the bed (spec §2)
-      if (RESTART_N && RP.left > 0) window.setTimeout(rpOnCombat, 700);
-    },
-    exit() { COMBAT.clearCombat(); }, // any exit drains pools — no spawn-during-restart (§8.6)
-  },
-  gameover: {
-    enter() {
-      musicTo('title'); // story-009: dawn crossfade under the death card (spec §2)
-      game.timeScale = 1; // card reads in real time; restarts must never inherit slow-mo
-      const finalScore = COMBAT.combatState().score;
-      writeHighscore(Math.max(finalScore, readHighscore()));
-      if (ui.goScore) ui.goScore.textContent = `SCORE — ${finalScore}`;
-      if (ui.goHs) ui.goHs.textContent = `HIGH SCORE — ${readHighscore()}`;
-      if (ui.hud) ui.hud.hidden = true;
-      if (ui.gameover) ui.gameover.hidden = false;
-      if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
-      if (RESTART_N && RP.left > 0) window.setTimeout(rpOnGameover, 400);
-    },
-    exit() { if (ui.gameover) ui.gameover.hidden = true; },
-  },
-};
-function setPhase(name) {
-  const hook = PHASES[name];
-  if (!hook) { console.error(`[stage2] unknown phase "${name}" — refused`); return false; } // §10: a phase always lands
-  if (hook.exit) hook.exit();
-  probs.phase = name;
-  for (const elm of OVERLAY_ELMS) elm.hidden = true; // overlay sweep (story-001)
-  document.body.classList.toggle('playing', PLAYING_PHASES.has(name)); // cursor:none rides the play phases
-  hook.enter?.();
-  return true;
-}
-const PLAYING_PHASES = new Set(['pad', 'countdown', 'ignition', 'ascent', 'transition', 'combat']);
-
-/* ---------- combat API + restart probe (?restartProbe=N) ---------- */
-const RP = { left: RESTART_N, entries: [], ref: null };
-function combatApi() {
-  return {
-    go: (n) => setPhase(n),
-    report: (r) => { probs.sub = r; window.__stage2.lastReport = r; },
-    input,
-    setTimeScale: (v) => { game.timeScale = Number.isFinite(v) ? v : 1; },
-    getTimeScale: () => game.timeScale,
-  };
-}
-function rpOnCombat() { // fires 700 ms into a probed combat entry
-  if (probs.phase !== 'combat') return;
-  const cs = COMBAT.combatState();
-  RP.entries.push({ hp: cs.hp, shield: cs.shield, score: cs.score, wave: cs.wave,
-    particles: cs.particles, bolts: cs.bolts, entities: countMeshes() });
-  if (!RP.ref) RP.ref = { entities: RP.entries[0].entities }; // run 1 only primes the lazy pools
-  COMBAT.probeDamagePlayer(500); // forced death → slow-mo → gameover
-}
-function rpOnGameover() {
-  if (probs.phase !== 'gameover') return;
-  RP.left--;
-  if (RP.left > 0) { setPhase('combat'); return; }
-  const tail = RP.entries.slice(1);
-  const clean = tail.length > 0 && tail.every((s) =>
-    s.hp === 100 && s.shield === 50 && s.score === 0 && s.particles === 0 &&
-    s.bolts === 0 && s.entities === RP.ref.entities);
-  window.__stage2.restartProbe = { runs: RP.entries.length, left: RP.left, clean, entries: RP.entries };
-  document.title = 'RESTART_PROBE ' + JSON.stringify({ runs: RP.entries.length, clean });
-}
-
 /* ============================== ROCKET ============================== */
 const probs = { phase: 'boot', rocket: 'none', tex: 0, particles: 0, post: 'off' }; // post: story-008 bloom probe
 
 // SHIP1 — orientation fix table. nose/top name the RAW GLB axes; the adapter rotation
-// maps nose -> +Y and top -> -Z (combat tilt then gives +Z forward / +Y up).
-// Set via ?debug=1&spin=1 (N cycles nose, T cycles top); the confirmed pair lands here.
+// maps nose -> +Y and top -> -Z (combat tilt gives +Z forward / +Y up). ?debug=1&spin=1 cycles them.
 const MODEL_FIX = { nose: '-Z', top: '+Y', metalness: 0.3, roughness: 0.6 }; // SHIP1 guess — human confirms
 const activeFix = { ...MODEL_FIX }; // what the adapter applies right now (N/T update it)
 let shipAdapter = null; // set by prepareRocket; N/T re-applies the fix to this group
@@ -503,13 +359,7 @@ function boot() {
     console.error('[stage2] post chain disabled — direct render fallback. reason:', err && (err.message || err));
   }
 
-  window.addEventListener('keydown', onKeydown);
-  window.addEventListener('keyup', onKeyup);
-  window.addEventListener('pointermove', onPointerMove);
-  window.addEventListener('pointerdown', onPointerDown);
-  window.addEventListener('pointerup', onPointerUp);
-  document.addEventListener('pointerout', onPointerGone); // cursor left the window (relatedTarget null) — full review R2-2
-  window.addEventListener('blur', onPointerGone); // alt-tab: a stale pointer position is otherwise a permanent turn command
+  attachInput(); // story-011: the same key/pointer/blur listeners, registered in the same order
   ui.btnLaunch?.addEventListener('click', () => onTitleAction('launch'));
   ui.btnSkip?.addEventListener('click', () => onTitleAction('skip'));
   ui.btnControls?.addEventListener('click', () => openPanel('CONTROLS'));
@@ -561,160 +411,6 @@ function onResize() {
 }
 
 function countMeshes() { let n = 0; if (scene) scene.traverse((o) => { if (o.isMesh) n++; }); return n; }
-
-/* ---------- DPR auto-degrade (feel: sustained slow frames step the buffer down) ---------- */
-const dprCtl = { cap: Math.min(window.devicePixelRatio || 1, 2), cur: Math.min(window.devicePixelRatio || 1, 2), lowT: 0, highT: 0 };
-function setDpr(v) {
-  dprCtl.cur = v;
-  renderer.setPixelRatio(v);
-  renderer.setSize(window.innerWidth, window.innerHeight); // buffer size must be reapplied after a ratio change
-  if (composer) { composer.setPixelRatio(v); composer.setSize(window.innerWidth, window.innerHeight); } // story-008: post chain follows the buffer
-}
-function dprTick(dt) { // raw dt (unscaled) — slow-mo must not fake slowness
-  const f = fps.read;
-  if (f < 45) { dprCtl.lowT += dt; dprCtl.highT = 0; }
-  else if (f >= 50) { dprCtl.highT += dt; dprCtl.lowT = 0; }
-  else { dprCtl.lowT = 0; dprCtl.highT = 0; } // hold in the 45–50 band — only SUSTAINED dips degrade
-  if (dprCtl.lowT >= 2) { // degrade ladder — bloom is the cheap win, drop it before touching DPR (story-008)
-    if (bloomPass && bloomPass.enabled) { bloomPass.enabled = false; dprCtl.lowT = 0; }
-    else if (dprCtl.cur > 1) { setDpr(Math.max(1, +(dprCtl.cur - 0.5).toFixed(1))); dprCtl.lowT = 0; }
-  } else if (dprCtl.highT >= 10) { // recovery ladder — bloom re-enables before DPR climbs back (story-008)
-    if (bloomPass && !bloomPass.enabled) { bloomPass.enabled = true; dprCtl.highT = 0; }
-    else if (dprCtl.cur < dprCtl.cap) { setDpr(Math.min(dprCtl.cap, +(dprCtl.cur + 0.5).toFixed(1))); dprCtl.highT = 0; }
-  }
-}
-
-/* ============================== INPUT ============================== */
-// shared input state — combat consumes it; every listener only records, never interprets
-const input = { keys: new Set(), mouse: { x: 0, y: 0 }, mouseActive: false, fire: false, boost: false, px: { x: 0, y: 0 } };
-let paused = false;
-
-function setPaused(p) {
-  if (probs.phase !== 'combat') return;
-  paused = p;
-  if (ui.pause) ui.pause.hidden = !p;
-  if (p) audioSuspend(); else audioResume(); // pause suspends the audio clock (spec #7)
-}
-
-function onKeydown(e) {
-  input.keys.add(e.code);
-  if (SPIN && probs.phase === 'title') { // closed viewer: N/T only — Enter can never launch
-    if (e.code === 'KeyN') { Object.assign(activeFix, nextNose(activeFix.nose, activeFix.top)); applySpinFix(); }
-    else if (e.code === 'KeyT') { Object.assign(activeFix, nextTop(activeFix.nose, activeFix.top)); applySpinFix(); }
-    return;
-  }
-  if (probs.phase === 'combat') {
-    if (COMBAT.combatState().dead) { // dying: only the card-skip listens — fire/pause stay dead (gofix 2026-11-03)
-      if (e.code === 'Enter' || e.code === 'Space') { e.preventDefault(); COMBAT.deathFastForward(); }
-      return;
-    }
-    if (e.code === 'Space') { e.preventDefault(); input.boost = true; } // Space = boost (rebind 2026-11-03); fire is LMB-only
-    if (e.code === 'KeyP' || e.code === 'Escape') { e.preventDefault(); setPaused(!paused); }
-    if (e.code === 'KeyM') setMuted(!isMuted());
-    return;
-  }
-  if (probs.phase === 'transition') { e.preventDefault(); TRANSITION.transitionSkip(); return; }
-  if (probs.phase === 'gameover' && (e.code === 'Enter' || e.code === 'Space')) { e.preventDefault(); setPhase('combat'); return; }
-  if (probs.phase === 'title') {
-    if (e.code === 'Escape') { e.preventDefault(); closePanel(); return; } // panels never trap the keyboard
-    if (e.code === 'Enter' || e.code === 'Space') { e.preventDefault(); onTitleAction('launch'); }
-  }
-}
-function onKeyup(e) {
-  input.keys.delete(e.code);
-  if (e.code === 'Space') input.boost = false;
-}
-function onPointerMove(e) {
-  input.px.x = e.clientX; input.px.y = e.clientY; // client px — combat pins #reticle here (the hidden cursor's stand-in)
-  input.mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
-  input.mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
-  input.mouseActive = true;
-}
-function onPointerDown(e) {
-  if (probs.phase === 'combat' && e.button === 0) input.fire = true;
-}
-function onPointerUp(e) {
-  if (e.button === 0) input.fire = false;
-}
-function onPointerGone(e) { // full review R2-2: the cursor is hidden during play, so a stale
-  if (e && e.relatedTarget) return; // pointer position would steer at full rate forever —
-  input.mouseActive = false; // element-to-element crossings carry a relatedTarget; window exits don't
-}
-function onTitleAction(kind) {
-  if (SPIN) return; // closed viewer — a mis-oriented ship never reaches pad/combat
-  audioUnlock(); // first gesture hands the context to the world (§8.3)
-  if (kind === 'launch') setPhase('pad');
-  else setPhase('combat'); // SKIP TO COMBAT is a real path since S4
-}
-
-/* ---------- SPD readout (story-010) — the #tele block's combat writer ---------- */
-// Cruise owns #tele (launch.js writes DIST/VEL/THR at 8 Hz); combat had no writer, so the
-// frozen ascent telemetry just sat in the block through the whole fight. Same shape as
-// cruise's writer: 8 Hz cadence, DOM write only when the rounded u/s changes (TD-009 —
-// no per-frame textContent). Presentation only — the state lives in combatState().speed.
-let spdAccum = 0, lastSpd = null;
-function tickSpdReadout(dt) {
-  if (!ui.tele) return;
-  spdAccum += dt;
-  if (spdAccum < 0.125) return;
-  spdAccum = 0;
-  const s = Math.round(COMBAT.combatState().speed);
-  if (s !== lastSpd) { ui.tele.textContent = `SPD ${s} u/s`; lastSpd = s; }
-}
-function tickCombat(dt, t) { // combat core (combat.js) + the SPD line — main owns #tele in this phase
-  COMBAT.tickCombat(dt, t);
-  tickSpdReadout(dt);
-}
-
-/* ============================== LOOP ============================== */
-const TICKS = {
-  title: SPIN ? tickSpin : tickTitle, // SHIP1: in SPIN nothing else writes camera/rocket
-  pad: LAUNCH.tickPad,
-  countdown: LAUNCH.tickCountdown,
-  ignition: LAUNCH.tickIgnition,
-  ascent: LAUNCH.tickAscent,
-  transition: TRANSITION.tickTransition,
-  combat: tickCombat,
-};
-let last = 0, firstFrame = true;
-const fps = { times: [], read: 60 };
-
-function tickTitle(dt, t) {
-  if (rocket) { rocket.rotation.y += dt * 0.45; } // gentle roll around the long axis; the rig owns the seat
-  const a = 0.55 + t * 0.09; // orbit the rig — the ship sits nose-forward at the lane origin
-  camera.position.set(Math.cos(a) * 5.6, 2.25 + Math.sin(t * 0.13) * 0.3, Math.sin(a) * 5.6);
-  camera.lookAt(0, 1.35, 0); // look above the ship — it sinks into the lower third, clear of the title stack (story-008)
-}
-
-function tickSpin(dt, t) { // SHIP1: combat-view preview of the orientation under test
-  if (!spinRig) return;
-  spinRig.sway.rotation.y = 0.44 * Math.sin(t * 0.5); // ±25° yaw sway
-  camera.position.set(0, 2.1, -4.6); // behind-and-above, engine side (-Z when nose is -Z)
-  camera.lookAt(0, 0.4, 0);
-}
-
-function loop(ts) {
-  window.requestAnimationFrame(loop);
-  if (firstFrame) { last = ts; firstFrame = false; mark('firstTick'); return; } // §8.1 first-frame skip
-  let dt = (ts - last) / 1000;
-  last = ts;
-  if (!Number.isFinite(dt) || dt <= 0) dt = 0; // §8.9 NaN hygiene
-  if (dt > DT_CLAMP) dt = DT_CLAMP;
-  if (paused) { last = ts; composer ? composer.render() : renderer.render(scene, camera); return; } // frozen frame, clock held — post chain still applies
-  const sdt = dt * game.timeScale; // slow-mo scales the world, never the FPS meter
-  game.time += sdt;
-  TICKS[probs.phase]?.(sdt, game.time);
-  updateFps(ts);
-  dprTick(dt);
-  updateDebug(dt, ts);
-  composer ? composer.render() : renderer.render(scene, camera); // story-008: post chain; direct draw is the never-crash fallback
-}
-
-function updateFps(ts) {
-  fps.times.push(ts);
-  while (fps.times.length > 2 && ts - fps.times[0] > 1000) fps.times.shift();
-  if (fps.times.length > 1) fps.read = Math.round(((fps.times.length - 1) * 1000) / (ts - fps.times[0]));
-}
 
 /* ============================== DEBUG (§8.8) ============================== */
 let dbgAccum = 0;
@@ -775,6 +471,19 @@ window.__stage2 = {
     plumeAnchorY: rocket ? rocket.children.filter((c) => c.isGroup).map((c) => +c.position.y.toFixed(2)) : null,
   }),
 };
+
+/* ============================== WIRING (story-011) ============================== */
+// ONE context object, filled once here and shared by the extracted modules (store.js needs
+// none). Scene-owned values are getters: boot() assigns them asynchronously, so consumers
+// read the CURRENT bindings at call time — never a stale copy.
+const ctx = {
+  SPIN, DT_CLAMP, RESTART_N, ui, probs, game, OVERLAY_ELMS, input, mark,
+  countMeshes, closePanel, disarmReset, refreshRecordLine, refreshSoundButton, applySpinFix, updateDebug,
+  get scene() { return scene; }, get camera() { return camera; }, get rocket() { return rocket; },
+  get renderer() { return renderer; }, get composer() { return composer; },
+  get bloomPass() { return bloomPass; }, get spinRig() { return spinRig; },
+};
+initPhases(ctx); initInput(ctx); initLoop(ctx);
 
 /* ============================== GO ============================== */
 mark('preBoot'); // story-006: end of module-body evaluation

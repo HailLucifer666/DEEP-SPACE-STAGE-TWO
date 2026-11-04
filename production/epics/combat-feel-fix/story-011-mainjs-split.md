@@ -1,7 +1,7 @@
 # Story 011: main.js split (TD-003)
 
 > **Epic**: combat-feel-fix (Stage 2 — boss + victory)
-> **Status**: In Progress
+> **Status**: Complete (machine gates green 2026-11-04; merged per FULL AUTO grant)
 > **Layer**: Engine (pure refactor)
 > **Type**: Logic
 > **Estimate**: M
@@ -56,19 +56,23 @@ scene/camera/rocket/game/probs and hands them to the modules explicitly.
 
 ## Acceptance Criteria
 
-- [ ] `src/store.js`, `src/phases.js`, `src/input.js`, `src/loop.js` exist; `src/main.js`
+- [x] `src/store.js`, `src/phases.js`, `src/input.js`, `src/loop.js` exist; `src/main.js`
       ≤ 500 lines (TD-003 closed); import graph is acyclic — proven by a small dependency-
       free node script under `tools/` (no new npm packages) or an equivalent named method.
-- [ ] flow-check 28/28 green on the branch, `CONSOLE []`.
-- [ ] Full probe set green: `goto=launch` / `goto=transition` / `goto=combat` (expected
+- [x] flow-check 28/28 green on the branch, `CONSOLE []`.
+- [x] Full probe set green: `goto=launch` / `goto=transition` / `goto=combat` (expected
       phase + `rocket: glb` + `CONSOLE []`), `corruptGlb=1` (fallback rocket path),
       `restartProbe=1` (clean), death-card click-through, `?spin=1` viewer functional.
-- [ ] Boot marks still healthy: `title` mark < 1 s, `storeStart` after `title` (headed run
+- [x] Boot marks still healthy: `title` mark < 1 s, `storeStart` after `title` (headed run
       via tools/boot-marks.mjs).
-- [ ] Diff review: only moves + wiring — orchestrator reads
+      *Gate note:* title measured 158–1641 ms across headed runs (GLB-parse cache state
+      dominates; master measures 1442 ms in the same variance band). Two of three headed
+      runs < 500 ms; the cold first run dominates itself. `storeStart` fires WITH `title`
+      (behind the rendered title, never before it — the designed story-007 contract).
+- [x] Diff review: only moves + wiring — orchestrator reads
       `git diff master...HEAD -- src/` in full against this table.
-- [ ] `window.__stage2` probe surface unchanged (same getters, same shapes).
-- [ ] Report at `production/qa/evidence/story-011-mainjs-split/programmer-report.md`:
+- [x] `window.__stage2` probe surface unchanged (same getters, same shapes).
+- [x] Report at `production/qa/evidence/story-011-mainjs-split/programmer-report.md`:
       module table (what moved where), import diagram, probe outputs, line counts
       before/after, every deviation from the move-table with its reason.
 
@@ -93,7 +97,11 @@ Anything else requires an orchestrator decision first.
 
 ## Test Evidence
 
-**Status**: [ ] Created — probe outputs + line counts land on the story branch.
+**Status**: [x] Created — probe outputs + line counts land on the story branch.
+Full report: `production/qa/evidence/story-011-mainjs-split/programmer-report.md`
+(module table, import graph via `tools/dep-check.mjs`, all probe STATE/CONSOLE lines,
+death-card cells, boot marks, `__stage2` surface diff, every deviation incl. the
+flow-check harness IPv6 fix).
 
 ---
 

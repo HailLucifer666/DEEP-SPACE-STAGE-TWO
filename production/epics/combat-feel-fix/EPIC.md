@@ -17,7 +17,7 @@
 | 008 | bloom | Visual/Feel | S | Complete |
 | 009 | music-sfx | Visual/Feel | M | Complete |
 | 010 | speed-readout | UI | S | Complete |
-| 011 | mainjs-split | Logic (refactor) | M | In Progress |
+| 011 | mainjs-split | Logic (refactor) | M | Complete |
 | 012 | vi3w-drone | Logic | M | Pending |
 | 013 | boss-fight | Logic/Feel | L | Pending |
 | 014 | victory-card | UI/Logic | M | Pending |

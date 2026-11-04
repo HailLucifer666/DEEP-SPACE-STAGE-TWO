@@ -8,7 +8,7 @@ TD-003 open (main.js 791 lines), TD-013/014/015 ride Stage 2.
 Merge grant: FULL AUTO, no verdict gates (player decision 2026-11-04, see ASSUMPTIONS.md).
 
 - [x] Setup: story-011..014 files + EPIC.md rows + this ledger (branch stage-2-setup)
-- [ ] Slice 1: story-011 — main.js split (TD-003), pure refactor, zero behavior change
+- [x] Slice 1: story-011 — main.js split (TD-003), pure refactor, zero behavior change
 - [ ] Slice 2: story-012 — Vi3W drone (procedural + build-time GLB swap path, both probed)
 - [ ] Slice 3: story-013 — boss fight (multi-phase, HP bar, weak point, slow-mo death)
 - [ ] Slice 4: story-014 — victory card (victory phase + overlay + flow-check asserts)
