@@ -9,13 +9,13 @@ import { makePool } from './pool.js';
 
 const RAIDER_POOL = 24;
 const E_BOLT_POOL = 24;
-const R_RAIDER = 0.9;        // contact radius (ram kill / bolt hit, XZ circle)
+const R_RAIDER = 0.9;        // contact radius (ram kill / bolt hit — full-3D squared-distance scans, story-015)
 const E_BOLT_SPEED = 20;     // dodgeable
 const E_BOLT_LIFE = 3;
 const SEP_RADIUS = 2.4;      // raiders push apart inside this — no clumping
 const RAIDER_ALT_FOLLOW = 1.2; // 1/s — anti-camp altitude trail (story-015, GDD §5.4): raider steering is
 // XZ-only, so once the collision scans went 3D a climbing player would strand every raider below and
-// trivialize the wave. A quarter of the boss's own 3/s y-lerp (boss.js) so raiders TRAIL altitude
+// trivialize the wave. 40% of the boss's own 3/s y-lerp (boss.js — 1.2/3) so raiders TRAIL altitude
 // changes — staying mobile still buys windows of safety.
 
 // derived wave math — the only place difficulty numbers live
@@ -136,7 +136,7 @@ export function tickEnemies(dt, playerPos, api) {
     const u = d.userData;
     u.t += dt;
     // story-015 altitude-follow (GDD §5.4 anti-camp): boss.js's own altitude-lerp pattern at
-    // quarter rate — the ONE line that keeps a climbing player from stranding the wave
+    // 40% rate (1.2/3) — the ONE line that keeps a climbing player from stranding the wave
     d.position.y += (playerPos.y - d.position.y) * (1 - Math.exp(-RAIDER_ALT_FOLLOW * dt));
     const dx = playerPos.x - d.position.x, dy = playerPos.y - d.position.y, dz = playerPos.z - d.position.z;
     // dx/dz stay the STEERING basis (raider steering is XZ-only by design, GDD §5.4); dy rides

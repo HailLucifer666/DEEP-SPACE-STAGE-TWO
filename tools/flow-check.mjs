@@ -560,7 +560,24 @@ try {
           (2026-11-05) → RED `altitude band holds` (maxYDev 34.22) + `band vertical speed
           ≤ 13` (maxVy 16.13). The soft cap alone cannot red assert 17 — the hard clamp is
           absolute (maxYDev stays 20.0), so the story's expected 17-18 pair requires both.
+       6. enemies.js ram-contact scan back to XZ (dy² dropped) (2026-11-05, fix pass) → RED
+          `raider scans 3D` (ramContact:true AND boltHit:true — the pinned rammer 20 u above
+          rams through pure vertical separation, and the ram damage trips the window's
+          damage signal). Adjacent keep-passing: `raider altitude-follow` green (meanΔ 5.41).
+       7. combat.js look-target y re-pinned to ARENA_Y (2026-11-05, fix pass) → RED `camera
+          look-target rides the pitched nose` (viewDirFromUp up 44.53 ≥ the 35° bound;
+          down 23.87). REVIEW-DEVIATION, mutation-proven: the prescribed ≥10° floor ALONE
+          was run against this mutation FIRST and stayed GREEN (up 44.06 / down 24.52 — the
+          re-pin swings the view AWAY from vertical: 25.4→44.1 up, 17.7→24.5 down), so the
+          shipped assert keeps the prescribed ≥10° floor in BOTH directions AND adds
+          up ≤ 35°, the bound the re-pin violates. Clean-build steady: down 17.71, up 25.42.
      Full outputs: production/qa/evidence/story-015-pitch-drift/flow-mutation-*.txt.
+     FIX PASS 2026-11-05 (quality review findings 1,2,3,6,7,11,12,14): slip speed denominator
+     now sampled at the SAME tick as velMag (combat.js stage 9) with the floor lowered 0.9 →
+     0.85 (drift-off still reads 1.0 — slip + radius remain the drift-off catchers);
+     raiderFollow.followN ≥ 1 guard (provenance comment at its assert); viewDirFromUp R1
+     camera guard + assert (comment above it); pp.scanG fireT pinned 0.5 (probe-owned
+     precondition); probe page stops cruising at the report latch. 23 asserts in this block.
      FLAGGED RE-DERIVATION (assert 14, driftPath): GDD §4.3 / story AC predicted the
      sustained-turn radius GROWS 7.7 → 9-11 u; the approved formula traces it SHRINKING to
      |vel|/ω = 0.898·17/2.2 ≈ 6.94 u (drift reduces |vel| to 0.898·speed in a steady turn —
@@ -582,7 +599,7 @@ try {
   }
   const ppX = pp || {};
   const dP = ppX.dPhi || {}, sl = ppX.slip || {}, dpth = ppX.driftPath || {}, br = ppX.boltRise || {},
-    bd = ppX.band || {}, rs = ppX.raiderScan || {}, rf = ppX.raiderFollow || {};
+    bd = ppX.band || {}, rs = ppX.raiderScan || {}, rf = ppX.raiderFollow || {}, cu = ppX.viewDirFromUp || {};
   const csp = await evl(`(window.__stage2 && __stage2.combatState) ? typeof __stage2.combatState().pitch : 'none'`);
   const csv = await evl(`(window.__stage2 && __stage2.combatState) ? typeof __stage2.combatState().velMag : 'none'`);
   ok('pitchProbe reports (story-015)', !!pp, JSON.stringify(pp));
@@ -596,7 +613,7 @@ try {
   ok('pitch envelope clamps at 72° (end ±2°, never above)', typeof dP.clampEnd === 'number' && Math.abs(dP.clampEnd - 1.2566) <= 0.035 && dP.clampMax <= 1.2567, `end=${dP.clampEnd} max=${dP.clampMax}`);
   ok('F pitches down (−0.72 ±0.05)', typeof dP.fHold04 === 'number' && Math.abs(dP.fHold04 + 0.72) <= 0.05, `dPhi=${dP.fHold04}`);
   ok('drift slip present (20-35° at 1s full yaw)', typeof sl.deg === 'number' && sl.deg >= 20 && sl.deg <= 35, `slip=${sl.deg}`);
-  ok('drift preserves magnitude (velMag ≥ 0.9·speed)', typeof sl.velMag === 'number' && typeof sl.speed === 'number' && sl.velMag >= 0.9 * sl.speed, `velMag=${sl.velMag} speed=${sl.speed}`);
+  ok('drift preserves magnitude (velMag ≥ 0.85·speed)', typeof sl.velMag === 'number' && typeof sl.speed === 'number' && sl.velMag >= 0.85 * sl.speed, `velMag=${sl.velMag} speed=${sl.speed}`);
   ok('drift recovers (<8° at 0.8s after release)', typeof sl.recoveredDeg === 'number' && sl.recoveredDeg < 8, `slip=${sl.recoveredDeg}`);
   ok('full-turn circle radius 6.5-7.3 u (FLAGGED: GDD predicted 8.5-11.5, formula traces 6.94 — see block comment + report)', typeof dpth.radius === 'number' && dpth.radius >= 6.5 && dpth.radius <= 7.3, `r=${dpth.radius} max=${dpth.radiusMax}`);
   ok('pitched bolt climbs (>5u over 0.5s)', br.dy > 5, `dy=${br.dy}`);
@@ -605,7 +622,17 @@ try {
   ok('band vertical speed ≤ 13 u/s (18-20 layer, 2+ inside the soft edge)', typeof bd.maxVyInLayer === 'number' && bd.maxVyInLayer <= 13, `maxVy=${bd.maxVyInLayer}`);
   ok('#warn fires outside the band', bd.warnSeen === true, `warnSeen=${bd.warnSeen}`);
   ok('raider scans 3D (20u above: no ram, no bolt hit)', rs.ramContact === false && rs.boltHit === false, JSON.stringify(rs));
-  ok('raider altitude-follow (mean Δy ≤ 12 over 3s)', typeof rf.meanDelta === 'number' && rf.meanDelta <= 12, `meanΔ=${rf.meanDelta} offset0=${rf.offset0}`);
+  // followN ≥ 1 (review fix 8): if BOTH probe raiders die the survivor-mean is vacuous (the ÷1 guard reads 0.00).
+  // Provenance: red-proof is the EXISTING mutation flow-mutation-altfollow0.txt (RAIDER_ALT_FOLLOW → 0 → meanΔ 20) — no new mutation run for this guard.
+  ok('raider altitude-follow (mean Δy ≤ 12 over 3s, ≥1 survivor sample)', typeof rf.meanDelta === 'number' && rf.meanDelta <= 12 && (rf.followN || 0) >= 1, `meanΔ=${rf.meanDelta} offset0=${rf.offset0} followN=${rf.followN}`);
+  // R1 regression guard (review fix 3): the chase-cam look-target must ride the pitched nose (story-015 unpin).
+  // At max pitch the view direction stays ≥10° off the vertical axis in BOTH directions (measured steady
+  // ≈15-18° down / ≈23-25° up). REVIEW-DEVIATION, mutation-proven: the prescribed ≥10° floor ALONE is
+  // blind to the re-pin — with the look-target y re-pinned to ARENA_Y the view swings AWAY from vertical
+  // (up-hold 25.4 → 44.1°, down-hold 17.7 → 24.5°; floor-only run recorded green, 2026-11-05) — so the
+  // shipped assert adds up ≤ 35°, the bound the re-pin violates (flow-mutation-camup.txt). The floor
+  // stays for the opposite-class regression (view driven TOWARD vertical).
+  ok('camera look-target rides the pitched nose (R1: view ≥10° off vertical at max pitch both ways, ≤35° up)', typeof cu.down === 'number' && typeof cu.up === 'number' && cu.down >= 10 && cu.up >= 10 && cu.up <= 35, JSON.stringify(cu));
   ok('CONSOLE [] (pitchProbe page)', errs.length === 0, errs.join(' | '));
 
   await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat&composerFault=1' });

@@ -1,6 +1,6 @@
 // STAGE TWO — COMBAT CORE (S4): chase-cam space combat around the hero rocket.
 // Owns: player ship pose (re-parents the rocket into a yaw/pitch/roll pose group),
-// throttle+turn flight (W/S throttle, A/D + pointer steer — no pointer lock),
+// throttle+turn flight + pitch/drift (story-015: W/S throttle, A/D + pointer steer, R/F + pointer-Y pitch, drift vel — no pointer lock),
 // soft-clamped arena, hold-fire pooled bolts,
 // shield→HP damage with regen, boost meter, derived waves (via enemies.js), death
 // slow-mo handoff. Contained state contract (§8.6): clearCombat() re-parents the
@@ -68,7 +68,7 @@ const C = {
   // story-013 boss probe state (?bossProbe=1) — probe-only fields, untouched by normal play
   bossApi: null, bpT: -1, bpStage: 'spawn', bpStageT: 0, bpFired: 0, bpHpMark: 0,
   bpSpawnWave: 0, bpHud: false, bpCharged: false, bpRaged: false, bpRagePinned: false, bpKilled: false, bpDone: false,
-  pp: null, // story-015 pitch probe state (?pitchProbe=1) — one probe-only object, rebuilt fresh on combat entry
+  pp: null, ppDone: false, // story-015 pitch probe state (?pitchProbe=1) — one probe-only object, rebuilt fresh on combat entry; ppDone latches the walk (§8.6 same-page re-entry, dpDone/bpDone sibling)
   tmp: new THREE.Vector3(), tmp2: new THREE.Vector3(),
   ndc: new THREE.Vector3(), // hoisted unproject scratch (feel: no per-frame allocation)
   flow: 0, // smoothed boost → field-flow factor (0 idle drift, 1 rush)
@@ -600,7 +600,7 @@ function pitchProbeTick(dt) {
   if (!PITCH_PROBE || C.ppDone) return;
   const pp = C.pp || (C.pp = {
     t: 0, stage: 0, mark: 0, entryPitch: 0, maxPhi: 0, h0: 0, hp0: 0, regenMark: 0,
-    dPhi: {}, slip: {}, driftPath: {}, boltRise: {}, band: {}, raiderScan: { ramContact: false, boltHit: false }, raiderFollow: {},
+    dPhi: {}, slip: {}, driftPath: {}, boltRise: {}, band: {}, raiderScan: { ramContact: false, boltHit: false }, raiderFollow: {}, viewDirFromUp: {},
     pts: [], scanG: null, scanR: null, bolt: null, boltP0: null, boltTries: 0, vyMax: 0,
     follow: [], followAcc: 0, followN: 0,
   });
@@ -615,6 +615,7 @@ function pitchProbeTick(dt) {
     if (pp.t >= 0.4) {
       pp.scanG = ENEMIES.spawnForProbe(C.tmp2.set(C.pos.x, C.pos.y + 20, C.pos.z));
       pp.scanG.userData.kind = 'gunner'; pp.scanG.userData.hp = 2; // gunner: its sitting bolts are the bolt-hit signal
+      pp.scanG.userData.fireT = 0.5; // probe-owned precondition (review fix 5): the live spawn's 1.2-2.2 s first-shot delay left ~20% of runs bolt-less in the 2.4 s window — pin the PROBE raider only, live spawn math untouched
       pp.scanR = ENEMIES.spawnForProbe(C.tmp2.set(C.pos.x, C.pos.y + 20, C.pos.z)); // rammer: the ram-contact signal
       pp.hp0 = C.hp + C.shield; pp.regenMark = C.regenT;
       pp.stage = 1;
@@ -662,6 +663,8 @@ function pitchProbeTick(dt) {
   if (pp.stage === 4) { // B3: pointer NDC −0.8 — mirror
     if (pp.t >= pp.mark + 1.0) {
       pp.dPhi.ptrDown = +C.pitch.toFixed(4);
+      C.camera.getWorldDirection(C.tmp); // R1 guard (review fix 3): view direction at max DOWN pitch — folded angle off the vertical axis (un-pinned steady ≈14-15°)
+      pp.viewDirFromUp.down = +(Math.acos(Math.min(1, Math.abs(C.tmp.y))) * 180 / Math.PI).toFixed(2);
       C.pitch = 0; mouse.y = 0.05;
       pp.mark = pp.t;
       pp.stage = 5;
@@ -683,6 +686,8 @@ function pitchProbeTick(dt) {
     if (pp.t >= pp.mark + 1.5) {
       keys.delete('KeyR');
       pp.dPhi.clampEnd = +C.pitch.toFixed(4); pp.dPhi.clampMax = +pp.maxPhi.toFixed(4);
+      C.camera.getWorldDirection(C.tmp); // R1 guard at max UP pitch (see B3; un-pinned steady ≈25°)
+      pp.viewDirFromUp.up = +(Math.acos(Math.min(1, Math.abs(C.tmp.y))) * 180 / Math.PI).toFixed(2);
       C.pitch = 0;
       keys.add('KeyF'); pp.mark = pp.t;
       pp.stage = 7;
@@ -702,7 +707,6 @@ function pitchProbeTick(dt) {
   if (pp.stage === 8) { // C0: W to cruise
     if (C.speed >= 16.5 || pp.t >= pp.mark + 2.5) {
       keys.add('KeyA'); pp.mark = pp.t;
-      pp.slip.speed = +C.speed.toFixed(2);
       pp.stage = 9;
     }
     return;
@@ -714,6 +718,7 @@ function pitchProbeTick(dt) {
       const dot = clamp(C.vel.dot(f) / Math.max(0.001, C.vel.length()), -1, 1);
       pp.slip.deg = +(Math.acos(dot) * 180 / Math.PI).toFixed(2);
       pp.slip.velMag = +C.vel.length().toFixed(3);
+      pp.slip.speed = +C.speed.toFixed(2); // review fix 2: denominator sampled at the SAME tick as velMag — the old stage-8 capture was 1.0 s stale (speed kept ramping to 17), leaving a 0.3% margin at the 0.9 floor
       pp.mark = pp.t;
       pp.stage = 10;
     }
@@ -817,14 +822,16 @@ function pitchProbeTick(dt) {
     }
     if (pp.t >= pp.mark + 3.0) {
       pp.raiderFollow.meanDelta = +(pp.followAcc / Math.max(1, pp.followN)).toFixed(2);
+      pp.raiderFollow.followN = pp.followN; // survivor samples feeding the mean (review fix 8: an all-dead pair makes the mean vacuous — ÷1 guard reads 0.00)
       pp.raiderFollow.raiders = pp.follow.length;
       pp.follow.forEach((g) => ENEMIES.hitDrone(g, 99));
       pp.follow = [];
+      keys.delete('KeyW'); // review fix 7: the cruise key must not outlive the walk — the probe page stops driving once the report latches
       C.ppDone = true;
       const probe = {
         entryPitch: +(pp.entryPitch || 0).toFixed(4),
         dPhi: pp.dPhi, slip: pp.slip, driftPath: pp.driftPath, boltRise: pp.boltRise,
-        band: pp.band, raiderScan: pp.raiderScan, raiderFollow: pp.raiderFollow,
+        band: pp.band, raiderScan: pp.raiderScan, raiderFollow: pp.raiderFollow, viewDirFromUp: pp.viewDirFromUp,
       };
       window.__stage2.pitchProbe = probe;
       window.__stage2.pitchProbeLive = false;
@@ -879,7 +886,7 @@ export function enterCombat(scene, camera, rocket, ui, api) {
   window.__stage2.bossShotPhase = null;
   delete window.__stage2.bossProbe; // a fresh combat must never inherit the previous walk's report
   delete window.__stage2.droneProbe; // review NIT 7: same hygiene for the drone walk's report
-  C.pp = null; // story-015: pitch probe restarts clean
+  C.pp = null; C.ppDone = false; // story-015: pitch probe restarts clean — ppDone too (§8.6: same-page re-entry honors the sibling dpDone/bpDone resets)
   window.__stage2.pitchProbeLive = false;
   delete window.__stage2.pitchProbe; // same hygiene for the pitch walk's report
   window.__stage2.bossDefeatedReports = 0; // review (finding 1): the exactly-once counter is per-fight
