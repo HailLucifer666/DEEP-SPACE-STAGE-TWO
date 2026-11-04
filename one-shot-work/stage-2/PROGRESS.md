@@ -25,7 +25,15 @@ Merge grant: FULL AUTO, no verdict gates (player decision 2026-11-04, see ASSUMP
       orchestrator; every gate re-run above was run by the orchestrator AFTER the fact.
       Remaining slices: dispatch attempts may fail on the same quota — fallback is inline
       implementation with identical gates.
-- [ ] Slice 2: story-012 — Vi3W drone (procedural + build-time GLB swap path, both probed)
+- [x] Slice 2: story-012 — Vi3W drone (procedural + build-time GLB swap path, both probed)
+      Orchestrator verification 2026-11-04: dep-check PASS (drone.js acyclic), build 4.35 MB,
+      flow-check 37/37 on branch AND on merged master (9 new asserts: entry keep-passing ×2 +
+      droneProbe ×7), both-path prover re-run by orchestrator (glb: 1 mesh part, proc: 5,
+      identical behavior envelope, shipped state restored), restartProbe=3 clean:true.
+      Red-on-master record verified in flow-red-master.txt (drones=undefined on old build);
+      two mutations recorded in the test file (spawn rule, Y_AMP_MAX). Merged 8797f95,
+      tagged good-2026-11-04-i. Subagent dispatch WORKED this time (story-011's quota error
+      did not recur) — report at production/qa/evidence/story-012-drone/.
 - [ ] Slice 3: story-013 — boss fight (multi-phase, HP bar, weak point, slow-mo death)
 - [ ] Slice 4: story-014 — victory card (victory phase + overlay + flow-check asserts)
 - [ ] Stage close: independent review + smoke record + changelog + GATE.md
