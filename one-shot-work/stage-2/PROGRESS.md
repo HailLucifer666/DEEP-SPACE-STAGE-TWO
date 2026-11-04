@@ -15,11 +15,16 @@ Merge grant: FULL AUTO, no verdict gates (player decision 2026-11-04, see ASSUMP
 - [ ] Stage close: independent review + smoke record + changelog + GATE.md
 
 Notes:
+- Tag chain: slice 1 (story-011) tagged `good-2026-11-04-h` @ cb66277 — merged-master
+  gates re-run green (build + dep-check 500/500 + flow-check 28/28 `CONSOLE []`,
+  raw log archived in the story-011 evidence dir).
 - Method per story: story file → ONE programmer subagent (report path under
   production/qa/evidence/<story-slug>/, SubagentStop hook checks it) → orchestrator
   re-runs gates (build + flow-check 28+story probes, verify claims on disk) →
   PLAYER VERDICT (AskUserQuestion) → merge --no-ff → flow-check on merged master →
   tag good-2026-11-04-<letter>.
+- Stage-2 grant (2026-11-04): merges/tags go on machine gates alone; player
+  look/feel review happens once at stage close.
 - kee inside every story: red-before-green probes, mutation recorded in the test file,
   adjacent keep-passing cases, never merge past red, never alter the harness.
 - TD-013 (bloom render-catch) rides story-011's render-path work or the closest Stage 2
