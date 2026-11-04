@@ -47,7 +47,18 @@ Merge grant: FULL AUTO, no verdict gates (player decision 2026-11-04, see ASSUMP
       bed's stop loses the bag handle while nodes may keep sounding under the honest 'none'
       state (rarer than the original bug; record-only). Merged ce4f1ea, tagged
       good-2026-11-04-j. TD-013/014/015 CLOSED.
-- [ ] Slice 4: story-014 — victory card (victory phase + overlay + flow-check asserts)
+- [x] Slice 4: story-014 — victory card (victory phase + overlay + flow-check asserts)
+      Orchestrator verification 2026-11-05: dep-check PASS (main.js compacted back to 500
+      after the wiring pushed 503 — the implementer's own catch), build 4.36 MB, flow-check
+      70/70 on branch AND merged master (14 new asserts: victory lands exactly once, card
+      visible with score+time, REPLAY→pad sweep, double-fire exclusion, pip drain). Trigger
+      reviewed: bossDefeated fires go('victory') on the report EVENT path inside
+      C.bossApi.report, guarded !C.dead — not a lastReport poll (the story-013 wiring
+      warning honored). Five mutations recorded. FOUND-DEFECT FIX kept: clearCombat drains
+      the edge pips — a pre-existing master leak (stale pip rode the pad after every
+      REPLAY, death card included), red-recorded + mutation-tested (flow-red-pipleak.txt).
+      Merged ca3c2d8, tagged good-2026-11-05 (new calendar day → new date prefix; this tag
+      IS story-014's known-good point).
 - [ ] Stage close: independent review + smoke record + changelog + GATE.md
 
 Notes:
