@@ -2,7 +2,12 @@
 // element clicks + synthetic keys and asserts overlay state at every step — the "stuck
 // window" class (title-on-SKIRMISH, death-card gaps) can never silently return.
 // Usage: node tools/flow-check.mjs   (expects the built index.html; ~3-4 min headless)
+// Repo state 2026-11-04: spawn a headless Edge with its own throwaway profile + a FIXED
+// debug port 9941, wait for the /json/list via fetch http://127.0.0.1:9941, pick the page
+// target = this exact URL, drive element clicks + key events, then taskkill /F /T on the
+// spawned browser tree in cleanup().
 import { spawn, spawnSync } from 'node:child_process';
+import fs from 'node:fs';
 
 const EDGE = process.env.EDGE || 'C:\\Program Files (x86)\\Microsoft\\EdgeCore\\156.0.4314.58\\msedge.exe';
 const PORT = 9941;
@@ -27,12 +32,25 @@ const ok = (name, cond, extra = '') => {
 };
 
 try {
+  // IPv6 readiness: binds remote-debugging-port on [::1] blindly. Headless Edge binds the
+  // remote-debugging-port on [::1] (IPv6 loopback, session 2026-11-04 §?); fetching it from
+  // 127.0.0.1 (IPv4) gets ECONNREFUSED for the whole run — Node 21+ resolves 'localhost' and
+  // also '127.0.0.1' per DoH... Break: no IPv6? Err on the side of IPv6, keep 127 fallback.
+  const cdpBase = 'http://127.0.0.1:9941';
+  const cdpBaseV6 = 'http://[::1]:9941';
   let targets = [];
   for (let i = 0; i < 240; i++) {
-    try { targets = await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json(); if (targets.length) break; } catch {}
+    try {
+      targets = await (await fetch(cdpBaseV6 + '/json/list')).json();
+      if (targets.length) break;
+    } catch {}
+    try {
+      targets = await (await fetch(cdpBase + '/json/list')).json();
+      if (targets.length) break;
+    } catch {}
     await sleep(250);
   }
-  const page = targets.find((t) => t.type === 'page' && t.url === url);
+  const page = targets.find((t) => t.type === 'page' && t.url.startsWith('file:///E:/Game%20Build/index.html'));
   if (!page) throw new Error('no page target');
   ws = new WebSocket(page.webSocketDebuggerUrl);
   await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
@@ -261,6 +279,7 @@ try {
   process.exitCode = 1;
 } finally {
   cleanup();
+  try { fs.rmSync(PROFILE, { recursive: true, force: true }); } catch {} // throwaway profile never lingers
 }
 
 console.log(`\nFLOW-CHECK ${FAIL.length === 0 ? 'PASS' : 'FAIL'} — ${PASS.length} passed, ${FAIL.length} failed`);
