@@ -125,7 +125,9 @@ C.vel += (target − C.vel) · (1 − exp(−ALIGN_RATE · dt))     ALIGN_RATE =
   boundary's radial cap every frame.
 - **The story-004 contract is retuned, explicitly**: "the ship flies where the nose points"
   becomes "the ship flies where the nose points *within a slip angle*". At full yaw command
-  the steady-state slip is β ≈ 28° (Formulas §4.3). All story-004 flow-check asserts
+  the steady-state slip is β ≈ 26° (Formulas §4.3 — GDD errata 2026-11-05 — implementation
+  measurement, designer-adjudicated: was ≈ 28° under the approximate slip form). All
+  story-004 flow-check asserts
   SURVIVE, because the turn-in-place probe runs at speed 0 (`enterCombat` resets
   `C.speed = 0`, `src/combat.js` L547; with `vel = 0` drift is inert — displacement stays
   < 3 u).
@@ -246,17 +248,31 @@ C.vel += (target − C.vel) · (1 − exp(−ALIGN_RATE · dt))     ALIGN_RATE =
 ```
 
 - **Steady-state slip angle** at sustained yaw command ω (= TURN_RATE · turnCmd):
-  `β = 2 · asin(ω / (2 · ALIGN_RATE))`.
-  Full turn (ω = 2.2): β = 2·asin(2.2/9.0) = 0.494 rad ≈ **28°** — pronounced, readable
+  `β = atan(ω / ALIGN_RATE)` — exact for the shipped vector-lerp alignment.
+  Full turn (ω = 2.2): β = atan(2.2/4.5) = 0.455 rad ≈ **26°** — pronounced, readable
   drift. Gentle pointer steer (ω ≈ 0.5): β ≈ 6°. Boost does not change β (alignment is
   rate-based, speed-independent); it scales the slip *distance*.
+  *GDD errata 2026-11-05 — implementation measurement, designer-adjudicated*: the earlier
+  form `β = 2 · asin(ω / (2 · ALIGN_RATE))` (≈ 28°) modeled a magnitude-preserving
+  direction chase; it is retained only as an approximation — it overestimates the exact
+  steady state by ≈ 2° at full command (28.3° vs 26.1°) and converges to it as
+  ω/ALIGN_RATE → 0.
 - **Recovery time**: after a full-slip release, `vel` is 95% realigned in
   `3/ALIGN_RATE ≈ 0.67 s`.
-- **Measured path radius** in a sustained full turn grows from the flat baseline
-  7.7 u (story-004 r2 review, cited in story-013) to ≈ 9-11 u — the drift tax on tight
-  turns, and the number the 015 assert enforces.
+- **Measured path radius** in a sustained full turn TIGHTENS from the flat baseline
+  7.7 u (story-004 r2 review, cited in story-013) to ≈ 6.9-7.0 u: drift scrubs speed
+  magnitude while the yaw rate is unchanged — |vel| = speed · cos β < speed, so
+  r = |vel|/ω = 0.898 · 17 / 2.2 ≈ 6.94 u. The "drift tax" is the ~10% speed scrub in
+  sustained turns (plus the wider entry swing — one-rev max 8.15-8.48 u during the
+  transient), not a wider sustained circle. *GDD errata 2026-11-05 — implementation
+  measurement, designer-adjudicated*: source is the story-015 implementation simulation
+  at dt = 1/30, 1/60, 1/120 (measured 6.92-7.01 u; the flat build at 7.73 u fails the
+  assert band), evidence at `production/qa/evidence/story-015-pitch-drift/` (report §7.1).
 - **Climbing turns tighten the ground track** (yaw rotates the horizontal component only):
-  `r_ground = speed · cos φ / TURN_RATE`. At φ = 60°, speed 17: 17·0.5/2.2 ≈ 3.9 u.
+  `r_ground = speed · cos φ / TURN_RATE`. At φ = 60°, speed 17: 17·0.5/2.2 ≈ 3.9 u
+  (flat-build form — *GDD errata 2026-11-05 — implementation measurement,
+  designer-adjudicated*: under drift at full command the same |vel| = speed·cos β scrub
+  applies, ≈ 3.5 u).
 
 ### 4.4 Soft boundary (3D, story-016; 1D band variant for 015)
 
@@ -297,7 +313,9 @@ state plainly: the ship can never loop.** Vertical maneuvering is a 144° cone (
 Accepted; revisiting requires a design-level reopen, not a tuning knob.
 
 ### 5.2 Drift vs thrust interplay
-- **Turn at speed**: ship points up to 28° inside its path (§4.3) — the swing is the feature.
+- **Turn at speed**: ship points up to ≈ 26° inside its path (§4.3 — GDD errata
+  2026-11-05, exact slip form; the ship still points inside its path, the path itself
+  tightens) — the swing is the feature.
 - **Brake mid-turn**: S drives `speed → 0`; the target velocity collapses and `vel` scrubs
   out along the old direction over ~0.7 s — a handbrake feel. BRAKE 22 (`src/combat.js`
   L30) is unchanged; alignment adds the exponential tail.
@@ -423,7 +441,7 @@ generic assets/data default for this codebase.
 | `PITCH_MAX` | 72° (1.2566) | 60-80° | feel | src/combat.js | Up-vector safety (§5.1) + keeps the horizon readable; 72° caps the basis jitter. |
 | `PITCH_INVERT` | false | bool | feel | src/combat.js | Direct matches the yaw convention and NMS default; cheap escape hatch. |
 | `PITCH_DEADZONE` | 0.08 | 0.05-0.15 | feel | src/combat.js | Mirrors the yaw deadzone (L166) exactly. |
-| `ALIGN_RATE` | 4.5 /s | 2-10 | feel | src/combat.js | Slip 28° at full turn = present drift without ice-rink. ≥ 99 effectively disables drift. |
+| `ALIGN_RATE` | 4.5 /s | 2-10 | feel | src/combat.js | Slip ≈ 26° at full turn (GDD errata 2026-11-05, exact form — was 28°) = present drift without ice-rink. ≥ 99 effectively disables drift. |
 | `BAND_H` / `BAND_HH` | 16 / 20 | 12-24 / H+4 | gate | src/combat.js | 015 scaffold only — sized so the band holds the fight near the raider plane; deleted in 016. |
 | `R_SOFT` / `R_HARD` | 60 / 80 | ±20% | curve | src/combat.js | Story-005 values kept: spawn ring 55 stays off-camera, crossing times identical. |
 | boundary floor | 3 u/s | 2-5 | feel | src/combat.js | Story-005's anti-mud floor — pinned by the rim-slide probe. |
@@ -450,9 +468,17 @@ Machine-checkable criteria are phrased for the `tools/flow-check.mjs` grammar
 - [ ] Sustained R for 1.5 s → pitch == PITCH_MAX ± 2° and never exceeds it; F mirrors.
 - [ ] Drift: after a 1.0 s full yaw command at cruise (speed 17 ± 1), the angle between
       `forward3D` and `vel` is 20°-35° (slip present), and `velMag` ≥ 0.9 · speed.
+      *GDD errata 2026-11-05 — implementation measurement, designer-adjudicated*: the
+      steady-state ratio is speed·cos β ≈ 0.898 (just under 0.9); this AC samples the
+      1.0 s transient (measured 0.926) and the shipped assert passes — do not extend the
+      sampling window toward steady state without re-deriving this threshold.
 - [ ] Drift recovery: 0.8 s after releasing the turn command, the slip angle is < 8°.
-- [ ] Sustained full-turn circle at cruise traces radius 8.5-11.5 u (flat baseline 7.7,
-      story-004 r2) — sampled from `combatState().pos` over one full revolution.
+- [ ] Sustained full-turn circle at cruise traces radius 6.5-7.3 u — sampled from
+      `combatState().pos` over one full revolution. *GDD errata 2026-11-05 — implementation
+      measurement, designer-adjudicated*: was 8.5-11.5 u ("flat baseline 7.7, story-004
+      r2"). The approved drift formula tightens the sustained circle — |vel| = speed·cos β
+      < speed, r = |vel|/ω ≈ 6.94 u, measured 6.92-7.01 u at three dt values — and the flat
+      build (7.73 u) fails this band, so the assert stays a drift-sensitive guard.
 - [ ] Keep-passing: turn-in-place displacement < 3 u; cruise-hold ± 2 u/s; S brakes ≤ 3
       u/s; boost expiry bleed ≤ 25 u/s²; pointer-leave stops steering (story-004 set).
 - [ ] Bolt fired at pitch +45° ± 5° rises: bolt y increases > 5 u over 0.5 s while xz-speed

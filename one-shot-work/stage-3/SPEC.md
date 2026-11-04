@@ -43,8 +43,11 @@ Machine-checkable items run against `tools/flow-check.mjs` (`ok(name, cond, extr
 - S15-5. Drift: after a 1.0 s full yaw command at cruise (speed 17 ± 1), the angle between
   forward3D and vel is 20°-35° (slip present), and `velMag` ≥ 0.9 · speed.
 - S15-6. Drift recovery: 0.8 s after releasing the turn command, the slip angle is < 8°.
-- S15-7. Sustained full-turn circle at cruise traces radius 8.5-11.5 u (flat baseline 7.7),
-  sampled from `combatState().pos` over one full revolution.
+- S15-7. Sustained full-turn circle at cruise traces radius 6.5-7.3 u, sampled from
+  `combatState().pos` over one full revolution. (GDD errata 2026-11-05 — implementation
+  measurement, designer-adjudicated: was 8.5-11.5 u; the approved drift formula tightens
+  the sustained circle, |vel| = speed·cos β < speed, r = |vel|/ω ≈ 6.94 u; the flat build
+  at 7.73 u fails this band — drift-sensitive guard.)
 - S15-8. Keep-passing: turn-in-place displacement < 3 u; cruise-hold ± 2 u/s; S brakes ≤ 3
   u/s; boost expiry bleed ≤ 25 u/s²; pointer-leave stops steering (the story-004 set).
 - S15-9. Bolt fired at pitch +45° ± 5° rises: bolt y increases > 5 u over 0.5 s while

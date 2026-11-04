@@ -109,11 +109,13 @@ steers full-3D, `input.mouse.y` is already recorded and unused, zero `src/input.
   `ALIGN_RATE = 4.5/s`, `RAIDER_ALT_FOLLOW = 1.2/s` (in enemies.js), `BAND_H = 16 /
   BAND_HH = 20`, band floor 3 u/s.
 - **Drift semantics**: speed stays the throttle state (`C.speed`, story-004/005 semantics);
-  steady state `vel → forward · speed` keeps cruise-hold and brake asserts meaningful. Slip
-  at full turn β = 2·asin(2.2/9.0) ≈ 28°; recovery 95% in 3/ALIGN_RATE ≈ 0.67 s; measured
-  full-turn path radius grows 7.7 u → 9-11 u — the drift tax the assert enforces. At speed 0
-  drift is inert — the story-004 turn-in-place assert survives untouched (`enterCombat`
-  resets speed to 0, L547; probe precondition, not luck).
+  with the nose not rotating the steady state is `vel → forward · speed`, keeping cruise-hold
+  and brake asserts meaningful. Slip at full turn β = atan(2.2/4.5) ≈ 26°; recovery 95% in
+  3/ALIGN_RATE ≈ 0.67 s; sustained full-turn path radius TIGHTENS 7.7 u → ≈ 6.9-7.0 u
+  (|vel| = speed·cos β < speed) — GDD errata 2026-11-05 — implementation measurement,
+  designer-adjudicated (was "grows to 9-11 u"); the AC assert encodes [6.5, 7.3], which the
+  flat build (7.73 u) fails. At speed 0 drift is inert — the story-004 turn-in-place assert
+  survives untouched (`enterCombat` resets speed to 0, L547; probe precondition, not luck).
 - **Boost expiry order survives**: the R2-1 brake → expiry-bleed → accelerate order
   (L180-182) operates on `speed`, orthogonal to drift alignment.
 - **Stale pointer**: the pointerleave/blur clears (input.js L67-70) cover pitch identically —
@@ -139,8 +141,11 @@ steers full-3D, `input.mouse.y` is already recorded and unused, zero `src/input.
 - [ ] Drift: after a 1.0 s full yaw command at cruise (speed 17 ± 1), the angle between
       forward and vel is 20°-35° (slip present) and `velMag` ≥ 0.9 × speed.
 - [ ] Drift recovery: 0.8 s after releasing the turn command, slip < 8°.
-- [ ] Sustained full-turn circle at cruise traces radius 8.5-11.5 u (flat baseline 7.7,
-      story-004 r2), sampled from `combatState().pos` over one full revolution.
+- [ ] Sustained full-turn circle at cruise traces radius 6.5-7.3 u (GDD errata 2026-11-05 —
+      implementation measurement, designer-adjudicated: was 8.5-11.5 u; the approved formula
+      tightens the sustained circle to ≈ 6.94 u — |vel| = speed·cos β < speed; the flat
+      build at 7.73 u fails the band), sampled from `combatState().pos` over one full
+      revolution.
 - [ ] Bolt fired at φ ≈ 45° ± 5° rises > 5 u over 0.5 s while xz-speed ≈
       BOLT_SPEED · cos φ.
 - [ ] Altitude band: flying straight up at full pitch + W, `|pos.y − 18|` never exceeds
@@ -188,7 +193,9 @@ page asserts its own console before the next navigate).
   11. `drift slip present` — 1.0 s full yaw command at cruise → slip 20°-35°.
   12. `drift preserves magnitude` — velMag ≥ 0.9 × speed in the same window.
   13. `drift recovers` — slip < 8° at 0.8 s after release.
-  14. `full-turn circle radius 8.5-11.5 u` — sampled from combatState().pos over one rev.
+  14. `full-turn circle radius 6.5-7.3 u` (GDD errata 2026-11-05 — implementation
+      measurement, designer-adjudicated: was 8.5-11.5 u; measured 6.92-7.01 u, flat build
+      7.73 u fails) — sampled from combatState().pos over one rev.
   15. `pitched bolt climbs` — φ ≈ 45° ± 5° → bolt y increases > 5 u over 0.5 s.
   16. `pitched bolt xz-speed honest` — ≈ BOLT_SPEED · cos φ (±10%).
   17. `altitude band holds` — sustained full-pitch climb + W → |y − 18| ≤ 20.5.
