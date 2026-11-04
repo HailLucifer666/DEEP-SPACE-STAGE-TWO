@@ -34,7 +34,19 @@ Merge grant: FULL AUTO, no verdict gates (player decision 2026-11-04, see ASSUMP
       two mutations recorded in the test file (spawn rule, Y_AMP_MAX). Merged 8797f95,
       tagged good-2026-11-04-i. Subagent dispatch WORKED this time (story-011's quota error
       did not recur) — report at production/qa/evidence/story-012-drone/.
-- [ ] Slice 3: story-013 — boss fight (multi-phase, HP bar, weak point, slow-mo death)
+- [x] Slice 3: story-013 — boss fight (multi-phase, HP bar, weak point, slow-mo death)
+      Orchestrator verification 2026-11-04: dep-check PASS, build 4.36 MB, flow-check 56/56
+      on branch AND merged master (19 new asserts incl. TD-013/014/015 probes), bossProbe
+      re-run (phases orbit→charge→rage; 3 node bolts 9 dmg vs 3 hull bolts 3 dmg — ratio
+      exactly 3; dash overshoots; slow-mo; bossDefeated reported), restartProbe=3 clean:true
+      (entities 31 — boss meshes in the baseline), boot-marks headed title 1196 ms
+      storeStart 1443 (after title — laziness contract holds; figure inside the documented
+      158–2492 ms GLB-cache variance band). ORCHESTRATOR AMENDMENT: TD-013 residual fixed
+      pre-merge (setDpr guarded against the latched-dead composer — the story self-review's
+      own flag; commit 7aeb620). TD-015 residual noted, not fixed: a throw BEFORE the dying
+      bed's stop loses the bag handle while nodes may keep sounding under the honest 'none'
+      state (rarer than the original bug; record-only). Merged ce4f1ea, tagged
+      good-2026-11-04-j. TD-013/014/015 CLOSED.
 - [ ] Slice 4: story-014 — victory card (victory phase + overlay + flow-check asserts)
 - [ ] Stage close: independent review + smoke record + changelog + GATE.md
 
