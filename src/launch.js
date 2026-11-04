@@ -181,12 +181,12 @@ export function prepareLaunch(scene, camera, rocket, ui, go) {
   L.thrPivot.position.set(0, -0.8, 0);
   L.thruster = new THREE.Mesh(
     new THREE.ConeGeometry(0.34, 2.2, 16, 1, true),
-    new THREE.MeshBasicMaterial({ color: 0xffb469, transparent: true, opacity: 0.82, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+    new THREE.MeshBasicMaterial({ color: 0xffb469, transparent: true, opacity: 0.82, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.FrontSide })); // bloom fix: was DoubleSide — both cone walls added together, saturating the core into a bloom halo
   L.thruster.rotation.x = Math.PI;
   L.thruster.position.set(0, -1.12, 0); // mouth ~0.02 below pivot ≈ nozzle lip
   L.thrPivot.add(L.thruster);
   L.thruster.visible = false;
-  L.thrLight = new THREE.PointLight(0xffb469, 0, 40, 1.6);
+  L.thrLight = new THREE.PointLight(0xffb469, 0, 14, 1.6); // bloom fix: range was 40 — the light washed the whole hull into the bloom halo
   L.thrLight.position.set(0, -0.6, 0);
   L.thrLight.visible = false;
   rocket.add(L.thrPivot, L.thrLight); // plume rides the carrier
@@ -208,7 +208,7 @@ function resetStage() { // full phase-reset contract (§8.6) — restarts alloca
   L.phaseT = 0; L.dist = 0; L.holdSeconds = 0; L.lastVelShown = 0; L.lastNumeral = null;
   if (L.shipRig) { L.shipRig.position.set(0, 0, 0); L.shipRig.rotation.set(0, 0, 0); }
   if (L.rocket) { L.rocket.position.set(0, 0, 0); L.rocket.rotation.set(0, 0, 0); }
-  if (L.thrPivot) { L.thruster.visible = false; L.thrPivot.scale.setScalar(1); L.thruster.material.opacity = 0.82; }
+  if (L.thrPivot) { L.thruster.visible = false; L.thrPivot.scale.setScalar(1); L.thruster.material.opacity = 0.6; }
   if (L.thrLight) { L.thrLight.visible = false; L.thrLight.intensity = 0; }
   if (L.streamA) { L.streamA.position.z = 0; L.streamA.rotation.z = 0; L.streamB.position.z = BAND / 2; L.streamB.rotation.z = 0; L.wreckStream.position.z = BAND / 2; }
   if (L.planet) L.planet.position.set(-95, 26, 260);
@@ -334,7 +334,7 @@ export function tickIgnition(dt, t) {
   driftCam(dt, t, true);
   const flick = 0.75 + Math.random() * 0.5;
   L.thrPivot.scale.set((0.5 + L.phaseT * 0.25) * flick, (0.4 + L.phaseT * 0.3) * flick, (0.5 + L.phaseT * 0.25) * flick);
-  L.thrLight.intensity = (26 + L.phaseT * 22) * flick;
+  L.thrLight.intensity = (4 + L.phaseT * 4) * flick; // bloom fix: was (18 + 22·t) — physical light units since three r155 made this blinding
   if (L.rumbleBag) L.rumbleBag.setVol(0.16 + L.phaseT * 0.09);
   shakeApply(0.05);
   if (L.phaseT >= IGNITION_DUR) L.go('ascent');
@@ -345,8 +345,8 @@ export function enterAscent() {
   resetStage();
   L.phaseT = 0;
   L.thruster.visible = true; L.thrLight.visible = true; L.thrPivot.scale.setScalar(1);
-  L.thruster.material.opacity = 0.62;
-  L.thrLight.intensity = 34;
+  L.thruster.material.opacity = 0.4; // bloom fix: was 0.62 — the additive cone + nozzle light saturated under bloom
+  L.thrLight.intensity = 3;
   L.ui.count.hidden = true; L.ui.tele.hidden = false;
   noiseBurst({ dur: 0.8, vol: 0.5, f0: 500, f1: 1500 });
   L.rumbleBag = loopStart({ freq: 82, vol: 0.34, playback: 0.5 });
@@ -366,8 +366,8 @@ export function tickAscent(dt, t) {
   // plume flicker — condensed so the hero reads inside the glow
   const flic = 0.9 + Math.random() * 0.2;
   L.thrPivot.scale.set(0.62 * flic, (0.72 + Math.random() * 0.16) * flic, 0.62 * flic);
-  L.thruster.material.opacity = 0.62;
-  L.thrLight.intensity = 20 + Math.random() * 9;
+  L.thruster.material.opacity = 0.4; // bloom fix: was 0.62
+  L.thrLight.intensity = 2 + Math.random(); // bloom fix: was 20 + rand*9 — the nozzle light bloomed the hull white
 
   // chase cam: lagged spring behind-and-above the stern, gentle lateral breathing
   L.tmp.set(Math.sin(t * 0.23) * 1.1, 2.3 + Math.sin(t * 0.31) * 0.2, -8.6);
