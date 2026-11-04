@@ -50,9 +50,8 @@ const ui = {
   count: $('count'), tele: $('tele'), warn: $('warn'),
   hsLine: $('hs-line'), btnLaunch: $('btn-launch'), btnSkip: $('btn-skip'),
   hudBars: $('hud-bars'), hudScore: $('hud-score'), reticle: $('reticle'),
-  gameover: $('gameover'), goScore: $('go-score'), goHs: $('go-hs'),
-  goReplay: $('go-replay'), goSkip: $('go-skip'), pause: $('pause'),
-  victory: $('victory'), vicScore: $('vic-score'), vicTime: $('vic-time'), vicReplay: $('vic-replay'), // story-014 win card
+  gameover: $('gameover'), goScore: $('go-score'), goHs: $('go-hs'), victory: $('victory'), vicScore: $('vic-score'),
+  goReplay: $('go-replay'), goSkip: $('go-skip'), pause: $('pause'), vicTime: $('vic-time'), vicReplay: $('vic-replay'), // story-014 win card
   btnControls: $('btn-controls'), btnReset: $('btn-reset'), btnSound: $('btn-sound'),
   btnCredits: $('btn-credits'), panel: $('panel'), panelTitle: $('panel-title'),
   panelBody: $('panel-body'), panelClose: $('panel-close'), tRec: $('t-rec'),
@@ -368,8 +367,7 @@ function boot() {
   ui.btnReset?.addEventListener('click', onResetClick);
   ui.btnSound?.addEventListener('click', () => { setMuted(!isMuted()); refreshSoundButton(); });
   ui.panelClose?.addEventListener('click', closePanel);
-  ui.goReplay?.addEventListener('click', () => setPhase('pad'));
-  ui.vicReplay?.addEventListener('click', () => setPhase('pad')); // story-014: the win card's REPLAY — same landing as the death card's
+  ui.goReplay?.addEventListener('click', () => setPhase('pad')); ui.vicReplay?.addEventListener('click', () => setPhase('pad')); // story-014: both cards' REPLAY — same pad landing
   ui.goSkip?.addEventListener('click', () => setPhase('combat'));
 
   setPhase('loading');
@@ -457,8 +455,7 @@ window.__stage2 = {
   get wrecks() { return LAUNCH.wreckCount ? LAUNCH.wreckCount() : 0; },
   get particles() { return LAUNCH.particleCount ? LAUNCH.particleCount() : probs.particles; },
   get highscore() { return readHighscore(); },
-  combatState: () => (COMBAT.combatState ? COMBAT.combatState() : null),
-  probeDamagePlayer: (n) => COMBAT.probeDamagePlayer(n), // story-014 probe surface: the double-fire assert forces the player death INSIDE the boss's 1.2 s death cinematic
+  combatState: () => (COMBAT.combatState ? COMBAT.combatState() : null), probeDamagePlayer: (n) => COMBAT.probeDamagePlayer(n), // story-014: forces the player death INSIDE the boss's 1.2 s death cinematic (double-fire assert)
   get time() { return game.time; },
   get paused() { return paused; },
   get muted() { return isMuted(); },
