@@ -85,7 +85,11 @@ The take-home's signature enemy. Two halves per the approved roadmap:
 
 ## Test Evidence
 
-**Status**: [ ] Created — both-path probe outputs, red-before-green record, screenshot.
+**Status**: [x] Created — both-path probe outputs, red-before-green record, screenshot.
+`production/qa/evidence/story-012-drone/programmer-report.md` (2026-11-04): flow-check
+29/8 RED on master → 37/37 GREEN on branch (×2, incl. the final shipped build); both build
+paths proved by `tools/drone-glb-probe.mjs` (`droneBuild 'glb'/1 mesh part` vs `'proc'/5`);
+mutations spawn-rule + y-amp recorded; restartProbe=3 clean:true; full probe set green.
 
 ---
 

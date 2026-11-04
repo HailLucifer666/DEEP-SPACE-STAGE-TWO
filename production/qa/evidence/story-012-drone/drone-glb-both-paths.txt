@@ -1,0 +1,13 @@
+[drone-glb-probe] staged throwaway GLB at build/drone.glb (808 bytes)
+[build] output.glb  1.33 MB → 1.20 MB  (weld+dedup+prune+quantize)
+[build] rocket-old.glb  1.50 MB → 1.38 MB  (weld+dedup+prune+quantize)
+[build] drone.glb  0.00 MB → 0.00 MB  (weld+dedup+prune+quantize)
+[build] index.html  mode=bundle  4.35 MB  (319 ms)
+RESULT {"pass":"glb","droneBuild":"glb","tokenBuild":"glb","yRange":4.48,"path3d":{"x":6.66,"y":4.48,"z":12.8,"samples":82},"telegraph":true,"dive":true,"contact":true,"meshParts":1,"waveRule":[0,0,1,2,3],"raiderRule":[4,6,7,9],"consoleErrors":[],"ok":true}
+[drone-glb-probe] build/drone.glb removed — shipped state restored
+[build] output.glb  1.33 MB → 1.20 MB  (weld+dedup+prune+quantize)
+[build] rocket-old.glb  1.50 MB → 1.38 MB  (weld+dedup+prune+quantize)
+[build] index.html  mode=bundle  4.35 MB  (310 ms)
+SHOT E:\Game Build\production\qa\evidence\story-012-drone\s12-drone.png (229771 bytes)
+RESULT {"pass":"proc","droneBuild":"proc","tokenBuild":"proc","yRange":4.27,"path3d":{"x":6.79,"y":4.27,"z":12.23,"samples":83},"telegraph":true,"dive":true,"contact":true,"meshParts":5,"waveRule":[0,0,1,2,3],"raiderRule":[4,6,7,9],"consoleErrors":[],"ok":true}
+DRONE-GLB-PROBE PASS — both paths proven (glb: glb/1 parts, proc: proc/5 parts)
