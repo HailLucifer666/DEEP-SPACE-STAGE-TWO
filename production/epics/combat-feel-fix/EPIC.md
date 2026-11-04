@@ -16,7 +16,7 @@
 | 007 | lazy-storage | Logic | M | Complete |
 | 008 | bloom | Visual/Feel | S | Complete |
 | 009 | music-sfx | Visual/Feel | M | Complete |
-| 010 | speed-readout | UI | S | TODO |
+| 010 | speed-readout | UI | S | Complete |
 
 ## Notes
 

@@ -13,7 +13,8 @@ TRUE wait 5.79 s). Setup branch `stage-1-setup` carries the story files + this l
 - [x] Slice 2: story-008 — COMPLETE (bloom + title framing; player verdicts both green)
 - [x] Slice 3: story-009 — COMPLETE (spec → implementation; musicEvict conflict found and fixed
       incl. the transition.js site the audit missed; player ears verdict green)
-- [ ] Slice 4: story-010 — pending
+- [x] Slice 4: story-010 — COMPLETE (SPD readout merged; sag verdict: headed artifact, pinned
+      143.2 vs 144.0 fps at vsync)
 - [ ] Stage close: code-review pass, smoke-check, GATE.md, changelog — pending
 
 Notes:

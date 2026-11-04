@@ -1,7 +1,7 @@
 # Story 010: speed readout + gameover sag verdict
 
 > **Epic**: combat-feel-fix (Stage 1 — impression pass)
-> **Status**: TODO
+> **Status**: Complete
 > **Layer**: UI
 > **Type**: UI
 > **Estimate**: S
@@ -29,16 +29,22 @@ the headed numbers as the pinning evidence that it is a headless-software-render
 
 ## Acceptance Criteria
 
-- [ ] `SPD` readout visible in combat HUD showing current speed in u/s (cruise 17, boost to
-      ~32, S → 0).
-- [ ] Readout updates live: W-hold probe sees ≥14 within 1 s; boost probe sees the raised
-      ceiling; brake probe sees ≤3 (flow-check-style probes against `combatState().speed`).
-- [ ] The DOM write is change-gated: unchanged speed does not touch `textContent` (code review +
-      the existing gated-write pattern).
-- [ ] Full flow-check 28/28 green, `CONSOLE []`.
-- [ ] Gameover sag verdict recorded headed: fixed (with before/after numbers) or documented
-      non-fix (headed numbers prove headless-only), written into Test Evidence.
-- [ ] Retained screenshot in `production/qa/evidence/story-010-speed-readout/`.
+- [x] `SPD` readout visible in the combat HUD (the `#tele` block, right-top) showing current
+      speed in u/s — cruise 17, boost ceiling 32.3, brake 0 (probe-asserted on BOTH the DOM
+      text and `combatState().speed`).
+- [x] Readout updates live: 13/13 speed-probe assertions (W-hold ≥14 within 1 s; boost raised
+      ceiling; brake ≤3).
+- [x] The DOM write is change-gated: proven with an instrumented setter — 0 writes at held
+      cruise, writes only on the rounded value changing; 8 Hz cadence mirrors cruise's writer
+      (TD-009 discipline).
+- [x] Full flow-check 28/28 green, `CONSOLE []` (implementer + orchestrator re-run on merged
+      master).
+- [x] Gameover sag verdict recorded headed: **artifact, pinned** — RTX 3060 (D3D11, 144 Hz):
+      combat avg 143.2 fps (min 126) vs gameover avg 144.0 fps (min 144), −0.6%, both
+      vsync-pinned; the headless 54-vs-60 gap is software-render cost of the death card's
+      `backdrop-filter` blur (CPU raster). Documented non-fix; no unapproved code entered.
+- [x] Retained screenshot `production/qa/evidence/story-010-speed-readout/s10-combat-hud.png`
+      (SPD line visible in the live HUD).
 
 ---
 
@@ -73,7 +79,35 @@ the headed numbers as the pinning evidence that it is a headless-software-render
 
 ## Test Evidence
 
-**Status**: [ ] Created — pending
+**Status**: [x] Created — `production/qa/evidence/story-010-speed-readout/`: programmer-report.md
+(with the headed fps table + two documented measurement traps), s10-combat-hud.png, stamp.txt on
+commit. Note: `tools/index.template.html` ended up unchanged — `#tele` needed no template edit
+(justified in the report); the cruise telemetry that used to sit frozen in combat is replaced by
+the live SPD line for the fight's duration.
+
+---
+
+## Dependencies
+
+- Depends on: story-008/009 merged (last slice lands on the final Stage 1 frame)
+- Unlocks: Stage 2 (the HUD language the boss HP bar joins)
+
+---
+
+## Completion Notes (story-done, 2026-11-04)
+
+- Presentation choice: `#tele` over `#hud-bars` — combat.js owns the bars block via a wholesale
+  gated `innerHTML` write, so a main.js SPD line there would be wiped on the next hull change;
+  `#tele` had no combat writer at all (the frozen ascent telemetry finding).
+- The sag verdict closes the r2 "visual/perf pass candidate" with data instead of a guess: the
+  death card is free on real GPUs. Stage-2 note if anyone re-opens it: the cost only exists on
+  CPU rasterizers.
+- Two measurement traps documented for future soaks: (1) an occluded headed Edge window freezes
+  rAF and leaves fps.read at its 60 init forever — fixed in the probe with
+  `--disable-features=CalculateNativeWinOcclusion` + visibility checks (same class as the
+  boot-marks occlusion note); (2) natural death can stall indefinitely when wave 1's surviving
+  gunner loses to shield regen — the existing `?restartProbe=1` forced-death path is the
+  deterministic gameover entry.
 
 ---
 
