@@ -1,7 +1,7 @@
 # Story 012: Vi3W drone — third enemy type, GLB-swap-ready
 
 > **Epic**: combat-feel-fix (Stage 2 — boss + victory)
-> **Status**: Pending
+> **Status**: Complete (machine gates green 2026-11-04; merged per FULL AUTO grant)
 > **Layer**: Logic/Visual
 > **Type**: Logic
 > **Estimate**: M

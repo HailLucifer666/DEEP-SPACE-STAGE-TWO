@@ -18,7 +18,7 @@
 | 009 | music-sfx | Visual/Feel | M | Complete |
 | 010 | speed-readout | UI | S | Complete |
 | 011 | mainjs-split | Logic (refactor) | M | Complete |
-| 012 | vi3w-drone | Logic | M | Pending |
+| 012 | vi3w-drone | Logic | M | Complete |
 | 013 | boss-fight | Logic/Feel | L | Pending |
 | 014 | victory-card | UI/Logic | M | Pending |
 
