@@ -104,6 +104,13 @@ try {
   ok('SKIRMISH reticle assembled', sk.reticleHidden === false && sk.assembled === true, JSON.stringify(sk));
   ok('SKIRMISH body.playing', sk.playing === true);
 
+  /* --- story-012 keep-passing (entry snapshot): raider composition untouched, zero drones ---
+     Taken the instant SKIRMISH lands combat (wave 1, before the first raider stagger ~1.02 s):
+     alive 1 + queued 3 = 4 raiders exactly, drones 0 (droneCountFor(1) = min(3, max(0, 1-2)) = 0). */
+  const cs12 = await J(`__stage2.combatState()`);
+  ok('wave 1 spawns zero drones (story-012)', cs12.drones === 0, `drones=${cs12.drones}`);
+  ok('wave 1 raider count unchanged (4)', cs12.enemies === 4, `enemies=${cs12.enemies}`);
+
   /* --- WASD + boundary probes (story-004 throttle+turn / story-005 soft boundary) ---
      Mutation evidence 2026-11-03: this full probe set ran against the story-002 build
      (world-axis strafe, velocity-derived heading) with a 2-line combatState instrument
@@ -272,6 +279,46 @@ try {
     assembled: document.getElementById('hud').classList.contains('assemble'),
   })`);
   ok('SKIP → combat: card hidden, reticle assembled', sp.goHidden === true && sp.reticleHidden === false && sp.assembled === true, JSON.stringify(sp));
+
+  /* --- story-012 drone probe (?droneProbe=1, second page over the SAME CDP session) ---
+     Page.navigate keeps the ws target; the fresh page boots with goto=combat and the probe
+     spawns one deterministic drone 12 u ahead. RED record 2026-11-04 (master build @ fe3540b,
+     product code untouched, only this harness differs): 8 of the 9 new asserts FAIL
+     (29 passed / 8 failed total) — no drone.js exists on master, combatState() has no
+     `drones` field (undefined !== 0), ?droneProbe=1 is unread so window.__stage2.droneProbe
+     never appears and the deadline expires (each probe assert records its red from the null
+     probe). The 9th, `raider count unchanged`, is GREEN on master BY DESIGN — keep-passing.
+     MUTATIONS (branch, post-green, each: mutate → npm run build → full flow-check → restore):
+       1. drone.js droneCountFor `w - 2` → `w - 1`  → RED `drone wave rule (0,0,1,2,3)`
+          (waveRule reported [0,1,2,3,3]; the keep-passing entry assert stays green because
+          wave 1 still maps to 0 — the pure-rule assert is what catches the flip).
+       2. drone.js Y_AMP_MAX 6 → 0.001 → RED `drone 3D movement (yRange > 1u)`
+          (yRange 0.08 < 1 — zeroed orbit-plane tilt flattens the ring into the XZ plane).
+     Full outputs: production/qa/evidence/story-012-drone/flow-red-master.txt,
+     flow-green-branch.txt, flow-mutation-spawnrule.txt, flow-mutation-yamp.txt. */
+  await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat&droneProbe=1' });
+  let dp = null;
+  {
+    const t0 = Date.now();
+    for (;;) {
+      // guarded + thrown-tolerant: across Page.navigate the old execution context dies and the
+      // new document has no __stage2 for its first seconds — a raw read throws and would kill
+      // the run before the asserts below get to record (first red run hit exactly this)
+      try { dp = await J(`(window.__stage2 && window.__stage2.droneProbe) || null`); } catch { dp = null; }
+      if (dp) break;
+      if (Date.now() - t0 > 90000) break; // deadline — the asserts below record the red
+      await sleep(300);
+    }
+  }
+  const dpX = dp || {};
+  const tokenBuild = await evl(`window.__DRONE_B64 ? 'glb' : 'proc'`);
+  ok('droneProbe reports (story-012)', !!dp, JSON.stringify(dp));
+  ok('drone 3D movement (yRange > 1u)', dpX.yRange > 1, `yRange=${dpX.yRange}`);
+  ok('drone path spans all 3 axes', dpX.path3d && dpX.path3d.x > 0.5 && dpX.path3d.z > 0.5, JSON.stringify(dpX.path3d || null));
+  ok('drone telegraphs then dives', dpX.telegraph === true && dpX.dive === true, `tele=${dpX.telegraph} dive=${dpX.dive}`);
+  ok('droneBuild matches the build token', dpX.droneBuild === tokenBuild, `droneBuild=${dpX.droneBuild} token=${tokenBuild}`);
+  ok('drone wave rule (0,0,1,2,3)', JSON.stringify(dpX.waveRule) === '[0,0,1,2,3]', JSON.stringify(dpX.waveRule || null));
+  ok('raider wave rule unchanged (4,6,7,9)', JSON.stringify(dpX.raiderRule) === '[4,6,7,9]', JSON.stringify(dpX.raiderRule || null));
 
   ok('CONSOLE []', errs.length === 0, errs.join(' | '));
 } catch (e) {

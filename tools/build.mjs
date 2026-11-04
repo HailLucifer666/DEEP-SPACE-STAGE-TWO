@@ -67,6 +67,12 @@ async function main() {
   // second GLB: the stage-one rocket returns as derelict props (optional — empty string if absent)
   const oldGlbPath = path.join(ROOT, 'build', 'rocket-old.glb');
   const oldGlbB64 = fs.existsSync(oldGlbPath) ? await optimizeGlb(oldGlbPath) : '';
+  // story-012: the Vi3W drone swaps at BUILD time — staging build/drone.glb inlines it (same
+  // weld/dedup/prune/quantize pipeline) into window.__DRONE_B64; an absent file leaves the
+  // token empty and the page keeps the procedural drone. A file:// page cannot probe sibling
+  // files at runtime, so the swap MUST land here — src/drone.js reads the token once at prepare.
+  const droneGlbPath = path.join(ROOT, 'build', 'drone.glb');
+  const droneB64 = fs.existsSync(droneGlbPath) ? await optimizeGlb(droneGlbPath) : '';
   const libPath = path.join(SRC, 'lib-entry.js');
   const mainPath = path.join(SRC, 'main.js');
 
@@ -93,10 +99,11 @@ async function main() {
     .replace('/*{{IMPORTMAP}}*/', importMapHtml)
     .replace('window.__GLB_B64="{{GLB_B64}}"', `window.__GLB_B64="${glbB64}"`)
     .replace('window.__ROCKET_OLD_B64="{{ROCKET_OLD_B64}}"', `window.__ROCKET_OLD_B64="${oldGlbB64}"`)
+    .replace('window.__DRONE_B64="{{DRONE_B64}}"', `window.__DRONE_B64="${droneB64}"`)
     .replace('window.__BUILD_MODE="{{MODE}}"', `window.__BUILD_MODE="${mode}"`)
     .replace('/*{{APP_JS}}*/', () => escapeScript(appJs));
 
-  const leftovers = ['{{IMPORTMAP}}', '{{APP_JS}}', '{{GLB_B64}}', '{{ROCKET_OLD_B64}}', '{{MODE}}'].filter((t) => html.includes(t));
+  const leftovers = ['{{IMPORTMAP}}', '{{APP_JS}}', '{{GLB_B64}}', '{{ROCKET_OLD_B64}}', '{{DRONE_B64}}', '{{MODE}}'].filter((t) => html.includes(t));
   if (leftovers.length) { console.error(`[build] unresolved template tokens: ${leftovers.join(', ')}`); process.exit(1); }
   fs.writeFileSync(outPath, html);
   console.log(`[build] index.html  mode=${mode}  ${(fs.statSync(outPath).size / 1024 / 1024).toFixed(2)} MB  (${Date.now() - t0} ms)`);

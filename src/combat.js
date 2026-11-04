@@ -7,6 +7,7 @@
 // rocket, drains every pool and resets all flags — restarts allocate nothing new.
 import { THREE } from 'stage-two-lib';
 import * as ENEMIES from './enemies.js';
+import * as DRONES from './drone.js';
 import * as EFFECTS from './effects.js';
 import { makePool } from './pool.js';
 import { beep, sweep, noiseBurst, loopStart, musicEvict, musicSetDuck, alarmTick, proximityTick } from './audio.js';
@@ -32,6 +33,10 @@ const BOLT_POOL = 24;
 const HP_MAX = 100, SHIELD_MAX = 50, SHIELD_REGEN_DELAY = 3, SHIELD_REGEN_RATE = 14;
 const DEATH_SLOWMO = 0.7;    // seconds of real time at timeScale 0.3 before gameover (a click lands it sooner)
 const SCORE_DRONE = 100, SCORE_GUNNER = 150, SCORE_WAVE = 150;
+// story-012: the Vi3W drone's kill score. SCORE_DRONE above is the RAIDERS' historical rammer
+// score — the name collision is pre-existing (enemies.js hitDrone/droneRadius too); those
+// names stay untouched per the story. The new enemy's kind is 'orb', its score lives here.
+const SCORE_ORB = 200;
 
 const C = {
   ready: false, scene: null, camera: null, rocket: null, ui: null, api: null,
@@ -41,6 +46,9 @@ const C = {
   fireT: 0, boost: 1, boosting: false,
   wave: 0, waveGapT: 0, score: 0, kills: 0,
   bed: null, scriptT: -1, scriptDone: false,
+  // story-012 drone probe state (?droneProbe=1) — probe-only fields, untouched by normal play
+  dpT: -1, dpDrone: null, dpWin: 0, dpDone: false,
+  dpTele: false, dpDive: false, dpContact: false, dpSamples: 0, dpMM: null,
   tmp: new THREE.Vector3(), tmp2: new THREE.Vector3(),
   ndc: new THREE.Vector3(), // hoisted unproject scratch (feel: no per-frame allocation)
   flow: 0, // smoothed boost → field-flow factor (0 idle drift, 1 rush)
@@ -51,6 +59,7 @@ const C = {
 };
 const qs = new URLSearchParams(location.search);
 const SCRIPTED_KILL = qs.get('scriptedKill') === '1';
+const DRONE_PROBE = qs.get('droneProbe') === '1'; // story-012: deterministic single-drone run
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, Number.isFinite(v) ? v : a)); // NaN-safe (§8.9)
 const fmt = (n) => (Number.isFinite(n) ? String(Math.max(0, Math.floor(n))) : '0'); // honest HUD values (spec #16)
@@ -77,6 +86,7 @@ export function prepareCombat(scene, camera, rocket, ui, api) {
   C.bolts = makePool(scene, makeBolt, BOLT_POOL);
   EFFECTS.prepareEffects(scene, camera);
   ENEMIES.prepareEnemies(scene);
+  DRONES.prepareDrones(scene); // story-012: orbs join the wave layer; GLB decode starts here if inlined
   // edge pips (J) — off-screen raider awareness; created once, #hud hides them outside combat
   if (C.ui.hud && !C.pips.length) {
     for (let i = 0; i < 8; i++) {
@@ -208,6 +218,23 @@ function boltsTick(dt) {
         }
       }
     });
+    // bolt × orb scan (story-012) — FULL 3D distance: orbs fly altitudes, so the raiders' XZ
+    // check would hit a drone a whole ring-tilt above the bolt (or miss one below it)
+    DRONES.eachAlive((o) => {
+      if (!b.userData.alive) return;
+      const dx = o.position.x - b.position.x, dy = o.position.y - b.position.y, dz = o.position.z - b.position.z;
+      if (dx * dx + dy * dy + dz * dz < DRONES.orbBoltR2()) {
+        C.bolts.kill(b);
+        EFFECTS.explosion(o.position);
+        noiseBurst({ dur: 0.28, vol: 0.4, f0: 900, f1: 140 });
+        if (DRONES.hitOrb(o, 1)) {
+          C.score += SCORE_ORB;
+          C.kills++;
+          EFFECTS.shake(0.06);
+          beep({ freq: 620, dur: 0.09, vol: 0.16, type: 'triangle' });
+        }
+      }
+    });
   });
 }
 
@@ -234,10 +261,13 @@ function damagePlayer(n) {
 /* ---------- waves ---------- */
 function wavesTick(dt) {
   if (C.dead) return;
-  if (ENEMIES.aliveCount() === 0 && ENEMIES.queuedCount() === 0) {
+  // story-012: orbs join the wave-clear condition — the wave doesn't advance while a drone
+  // orbits (ENEMIES.startWave's pure raider formula is untouched; drones ride the wave layer)
+  if (ENEMIES.aliveCount() === 0 && ENEMIES.queuedCount() === 0 &&
+      DRONES.aliveCount() === 0 && DRONES.queuedCount() === 0) {
     if (C.waveGapT <= 0) { C.waveGapT = 1.6; if (C.wave > 0) C.score += SCORE_WAVE * C.wave; }
     C.waveGapT -= dt;
-    if (C.waveGapT <= 0) { C.waveGapT = 0; C.wave++; ENEMIES.startWave(C.wave, C.pos); }
+    if (C.waveGapT <= 0) { C.waveGapT = 0; C.wave++; ENEMIES.startWave(C.wave, C.pos); DRONES.startWave(C.wave); }
   }
 }
 
@@ -269,6 +299,59 @@ function scriptedKillTick(dt) {
       particles: EFFECTS.particleCount(),
       boltsLive: C.bolts.live,
     } });
+  }
+}
+
+/* ---------- story-012 drone probe (?droneProbe=1) ----------
+ * Deterministic single-orb run: spawns 12 u ahead of the nose 0.4 s into combat (fixed knobs:
+ * r 14, yAmp 5, yaw 0, first dive 1.2 s after spawn), samples its FULL-3D path for ~3 s, then
+ * reports window.__stage2.droneProbe = { yRange, path3d, telegraph, dive, contact, droneBuild,
+ * meshParts, waveRule, raiderRule }. yRange > 1 u over the window is the 3D-movement proof
+ * (raiders never leave the XZ plane). droneBuild mirrors the build path that actually flew —
+ * flow-check compares it against the inlined __DRONE_B64 token, so both build paths prove out
+ * of the same assert. droneProbeLive is the screenshot runner's timing hook (window open). */
+function droneProbeTick(dt) {
+  if (!DRONE_PROBE || C.dpDone) return;
+  C.dpT += dt;
+  if (!C.dpDrone && C.dpT >= 0.4 && DRONES.poolReady()) {
+    forward(C.tmp);
+    C.dpDrone = DRONES.spawnForProbe(C.tmp2.copy(C.pos).addScaledVector(C.tmp, 12));
+    C.dpT = 0; C.dpWin = 0; // the measured window runs from the spawn
+    return;
+  }
+  const d = C.dpDrone;
+  if (!d) return;
+  C.dpWin += dt;
+  const u = d.userData;
+  const m = C.dpMM || (C.dpMM = {
+    minX: d.position.x, maxX: d.position.x,
+    minY: d.position.y, maxY: d.position.y,
+    minZ: d.position.z, maxZ: d.position.z,
+  });
+  m.minX = Math.min(m.minX, d.position.x); m.maxX = Math.max(m.maxX, d.position.x);
+  m.minY = Math.min(m.minY, d.position.y); m.maxY = Math.max(m.maxY, d.position.y);
+  m.minZ = Math.min(m.minZ, d.position.z); m.maxZ = Math.max(m.maxZ, d.position.z);
+  C.dpSamples++;
+  if (u.mode === 'telegraph') C.dpTele = true;
+  if (u.mode === 'dive') C.dpDive = true;
+  if (!u.alive) C.dpContact = true; // died inside the window — the dive rammed the stationary ship
+  window.__stage2.droneProbeLive = true;
+  if (C.dpWin >= 3.0 || !u.alive) {
+    C.dpDone = true;
+    let parts = 0;
+    d.traverse((o) => { if (o.isMesh) parts++; }); // GLB path has a different part count — mesh-level swap evidence
+    const probe = {
+      yRange: +(m.maxY - m.minY).toFixed(2),
+      path3d: { x: +(m.maxX - m.minX).toFixed(2), y: +(m.maxY - m.minY).toFixed(2), z: +(m.maxZ - m.minZ).toFixed(2), samples: C.dpSamples },
+      telegraph: C.dpTele, dive: C.dpDive, contact: C.dpContact,
+      droneBuild: DRONES.buildMode(),
+      meshParts: parts,
+      waveRule: [1, 2, 3, 4, 5].map((w) => DRONES.droneCountFor(w)),
+      raiderRule: [1, 2, 3, 4].map((w) => ENEMIES.waveCount(w)),
+    };
+    window.__stage2.droneProbe = probe;
+    window.__stage2.droneProbeLive = false;
+    C.api.report({ droneProbe: probe }); // parity with scriptedKill — lands on __stage2.lastReport too
   }
 }
 
@@ -305,11 +388,15 @@ export function enterCombat(scene, camera, rocket, ui, api) {
   C.fireT = 0; C.boost = 1; C.boosting = false;
   C.score = 0; C.kills = 0; C.wave = 1; C.waveGapT = 0;
   C.scriptT = -1; C.scriptDone = false; C.scriptDrone = null;
+  C.dpT = -1; C.dpDrone = null; C.dpWin = 0; C.dpDone = false; // story-012: probe state restarts clean
+  C.dpTele = false; C.dpDive = false; C.dpContact = false; C.dpSamples = 0; C.dpMM = null;
+  window.__stage2.droneProbeLive = false;
   C.flow = 0;
   C.proxScanT = 0; C.nearest = null; // story-009: proximity scan restarts clean (§8.6)
   C.lastBars = null; C.lastScore = null; // clearCombat emptied the DOM — force one HUD rewrite
   C.bolts.clear();
   ENEMIES.clearEnemies();
+  DRONES.clearDrones();
   EFFECTS.clearEffects();
   if (ui.warn) ui.warn.hidden = true;
   api.setTimeScale(1);
@@ -325,8 +412,10 @@ export function tickCombat(dt, t) {
   fireTick(dt);
   boltsTick(dt);
   ENEMIES.tickEnemies(dt, C.pos, { damagePlayer, explosion: (pos) => EFFECTS.explosion(pos) });
+  DRONES.tickDrones(dt, C.pos, { damagePlayer, explosion: (pos) => EFFECTS.explosion(pos) });
   wavesTick(dt);
   scriptedKillTick(dt);
+  droneProbeTick(dt);
 
   // shield regen after a clean 3 s
   C.regenT += dt;
@@ -414,7 +503,9 @@ export function clearCombat() {
   if (!C.ready) return;
   C.bolts.clear();
   ENEMIES.clearEnemies();
+  DRONES.clearDrones(); // story-012: the orb pool rides the same §8.6 drain — restarts allocate nothing new
   EFFECTS.clearEffects();
+  window.__stage2.droneProbeLive = false;
   musicEvict(0.25); // story-009: engine loops die, the music bags survive — the phase hooks own stopping them (spec §7)
   C.bed = null;
   reparentRocket(false);
@@ -430,6 +521,8 @@ export function combatState() {
   return {
     hp: C.hp, shield: C.shield, score: C.score, wave: C.wave, kills: C.kills,
     enemies: ENEMIES.aliveCount() + ENEMIES.queuedCount(),
+    drones: DRONES.aliveCount(), // story-012: live orb count (queued orbs are the wave layer's business)
+    boss: null, // story-013 reads this shape — the boss slot is declared before the boss exists
     particles: EFFECTS.particleCount(),
     bolts: C.bolts ? C.bolts.live : 0,
     ebolts: ENEMIES.eboltCount(),
