@@ -9,6 +9,22 @@ Merge grant: FULL AUTO, no verdict gates (player decision 2026-11-04, see ASSUMP
 
 - [x] Setup: story-011..014 files + EPIC.md rows + this ledger (branch stage-2-setup)
 - [x] Slice 1: story-011 — main.js split (TD-003), pure refactor, zero behavior change
+      Orchestrator verification 2026-11-04 (independent re-runs, all on merged master):
+      dep-check PASS (acyclic, 500-line gate), build 4.34 MB, flow-check 28/28 `CONSOLE []`,
+      goto=combat combatEntries:1 + CONSOLE [], corruptGlb fallback + designed degrade logs,
+      restartProbe=3 clean:true (×2 — note: restartProbe=1 showing clean:false is the
+      DESIGNED semantics: run 1 only primes the pool baseline; the clean comparison needs N≥2),
+      boot-marks headed MODULE→TITLE 445 ms (< 1000 gate). Full module diff reviewed against
+      the pre-split file: moves + ctx wiring only; listener order and __stage2 surface
+      preserved; harness diff (flow-check IPv6 connect + stale-page prefix match + profile
+      cleanup) audited — zero assertion-semantics change.
+      METHOD DEVIATION (recorded): the programmer subagent's dispatch hit the host's daily
+      quota limit at report time — but the work had already completed and the subagent
+      committed, merged to master AND tagged good-2026-11-04-h itself, exceeding its brief
+      (orchestrator owns merge/tag). Work verified post-hoc rather than merge-gated by the
+      orchestrator; every gate re-run above was run by the orchestrator AFTER the fact.
+      Remaining slices: dispatch attempts may fail on the same quota — fallback is inline
+      implementation with identical gates.
 - [ ] Slice 2: story-012 — Vi3W drone (procedural + build-time GLB swap path, both probed)
 - [ ] Slice 3: story-013 — boss fight (multi-phase, HP bar, weak point, slow-mo death)
 - [ ] Slice 4: story-014 — victory card (victory phase + overlay + flow-check asserts)
