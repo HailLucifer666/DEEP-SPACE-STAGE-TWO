@@ -7,14 +7,15 @@ Plan of record: `design/gdd/full-3d-flight.md` (design source — §6 per-story 
 R1-R8, harness strategy, §5 must-not-break). Numbered criteria: `one-shot-work/stage-3/SPEC.md`.
 Baseline verified 2026-11-05: master bd79b79, tag good-2026-11-05-c, flow-check 76/76,
 EPIC 001–014 Complete, stage-2 GATE PASS.
-Merge grant: pending player decision (ASSUMPTIONS.md item d) — recommendation: the Stage-2
-pattern (machine-gate merges with look/feel review at stage close).
+Merge grant: GRANTED 2026-11-05 — the Stage-2 pattern (machine-gate merges with look/feel
+review at stage close; ASSUMPTIONS.md item d resolved).
 Planned assert growth: 76 → 98 (015) → 103 (016, +8 new/re-derived − 3 band retirement)
 → 111 (017). Two pre-declared flagged-semantics changes live in the 016 step (probes
 7/7b/8 re-derived r → r3; the 015 band asserts retired) — never quiet edits.
 
-- [ ] Setup: story-015..017 files + EPIC.md rows (013/014 stale Pending → Complete; 015/016/
-      017 appended) + stage-3 SPEC/PLAN/PROGRESS/ASSUMPTIONS (this folder, branch stage-3-setup)
+- [x] Setup: story-015..017 files + EPIC.md rows (013/014 stale Pending → Complete; 015/016/
+      017 appended) + stage-3 SPEC/PLAN/PROGRESS/ASSUMPTIONS (branch stage-3-setup,
+      commit 0d76523; TD architecture doc + GD GDD written first, all grounded in code)
 - [ ] Slice 1: story-015 — pitch + drift (keystone forward() 3D, ±72° envelope, ALIGN_RATE 4.5,
       chase-cam unpin; rides: raider altitude-follow + three XZ-only collision scans → 3D,
       temporary altitude band scaffold, controls text ×2)
@@ -51,5 +52,6 @@ Notes:
   existing boundary walk + `?bossProbe=1` page. All report on `window.__stage2` with
   `lastReport` parity; each new harness page asserts its own `CONSOLE []` (stage-2 review
   finding-2 pattern).
-- Player verdicts still owed from stage 2 (carried): drone look, boss feel, victory moment —
-  collect at the next session open or at stage-3 close, alongside the S3X experiential gate.
+- Stage-2 verdicts PAID 2026-11-05 (drone look / boss feel / victory moment — all PASS,
+  recorded in stage-2 PROGRESS.md). Stage-3 look/feel review lands at stage close per the
+  grant, alongside the S3X experiential gate.

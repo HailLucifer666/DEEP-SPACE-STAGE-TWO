@@ -1,8 +1,8 @@
 # ASSUMPTIONS — Stage 3
 
-All five items below are **resolutions-pending-player**; each carries the lead-programmer
-recommendation so the stage can proceed on the recommendation unless the player overrides
-at the next session open or the stage-3 close review.
+Items (a)–(d) were **RESOLVED by the player on 2026-11-05** — resolution block at the
+bottom of this file. Item (e) rides the stage-3 close review (balance/polish, acted on only
+if the player flags it). The recommendation text below is kept for the record.
 
 - **(a) Pitch envelope: 72°, no loop** — the ship can never pitch past ±72°, so it can never
   loop; vertical maneuvering is a 144° cone in a world-up frame (GDD §5.1). Changing it
@@ -53,3 +53,13 @@ at the next session open or the stage-3 close review.
   both places the controls text lives.
 - Baseline figures (2026-11-05): master bd79b79, tag good-2026-11-05-c, flow-check 76/76,
   stage-2 GATE PASS.
+
+## RESOLVED 2026-11-05 (player, this session — AskUserQuestion)
+
+- (a) 72° no-loop pitch envelope: **CONFIRMED** as recommended.
+- (b) Pointer-Y pitch DIRECT (pointer above center = nose up): **CONFIRMED** as recommended.
+- (c) SPD keeps showing COMMANDED speed: **CONFIRMED** as recommended.
+- (d) Stage 3 merge grant: **the Stage-2 pattern granted** — machine-gate merges with
+  look/feel review collected once at stage close (revocable at any tag).
+- Stage-2 owed verdicts also paid this session: drone look PASS · boss feel PASS ·
+  victory moment PASS (recorded in stage-2 PROGRESS.md).
