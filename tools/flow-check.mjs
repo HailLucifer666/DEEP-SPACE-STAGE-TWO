@@ -299,6 +299,13 @@ try {
           (yRange 0.08 < 1 — zeroed orbit-plane tilt flattens the ring into the XZ plane).
      Full outputs: production/qa/evidence/story-012-drone/flow-red-master.txt,
      flow-green-branch.txt, flow-mutation-spawnrule.txt, flow-mutation-yamp.txt. */
+  // Stage-2 review (finding 2): the page-level CONSOLE asserts — the final "CONSOLE []" only
+  // ever saw the LAST page (the fault pages reset the buffer), so pages 1-3's console output
+  // was unchecked. Each clean page now asserts its own console before the next navigate.
+  // SENSITIVITY MUTATION (2026-11-05, recorded): a temporary console.error('[stage2] probe')
+  // injected at the top of enterCombat turned THIS assert red while everything else stayed
+  // green (flow-mutation-consolepage.txt) — the assert measures what its name claims.
+  ok('CONSOLE [] (flow page)', errs.length === 0, errs.join(' | '));
   await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat&droneProbe=1' });
   let dp = null;
   {
@@ -342,6 +349,7 @@ try {
        4. loop.js probs.post='direct' out  → RED `TD-013 composer throw degrades` (post
                                              stays 'bloom'; degrade itself still runs)
      Full outputs: production/qa/evidence/story-013-boss/flow-*.txt. */
+  ok('CONSOLE [] (droneProbe page)', errs.length === 0, errs.join(' | '));
   await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat&bossProbe=1' });
   let bp = null;
   let hudBossSeen = false;
@@ -437,6 +445,7 @@ try {
     score: document.getElementById('vic-score').textContent,
     time: document.getElementById('vic-time').textContent,
     clock: __stage2.combatState().time,
+    internal: __stage2.combatState().score,
   })`) : null;
   const vx = vicDom || {};
   ok('story-014: victory card visible (gameover stays hidden)', vicLanded && vx.vicHidden === false && vx.goHidden === true,
@@ -447,6 +456,15 @@ try {
     vicLanded ? `time=${JSON.stringify(vx.time)}` : 'victory never landed');
   ok('story-014: combat clock accrued (combatState().time > 0)', vicLanded && (vx.clock || 0) > 0,
     vicLanded ? `clock=${vx.clock}` : 'victory never landed');
+  ok('review: bossDefeated reported exactly once (victory path)', (await evl(`window.__stage2.bossDefeatedReports || 0`)) === 1,
+    `reports=${await evl(`window.__stage2.bossDefeatedReports || 0`)}`);
+  // Stage-2 review (finding 3): the card froze its score BEFORE the same tick's wavesTick
+  // granted the wave-clear bonus (+SCORE_WAVE × wave with the field now clear) — the card's
+  // "final score" was not the internal final. RED on the pre-fix build (card 0 / internal
+  // 900 with the drive's cleared field); GREEN once wavesTick yields to the victory frame.
+  ok('review: victory card score equals the internal final score',
+    vicLanded && (() => { const m = /^SCORE — (\d+)$/.exec(vx.score || ''); return !!m && Number(m[1]) === vx.internal; })(),
+    vicLanded ? `card=${JSON.stringify(vx.score)} internal=${vx.internal}` : 'victory never landed');
   if (vicLanded) {
     // deterministic stale-pip proxy (see the block comment): paint every edge pip ON at the
     // card — the pad must not inherit combat's pip state (clearCombat drains it)
@@ -505,6 +523,7 @@ try {
      loop.js renders through the composer; the fault switch throws INSIDE the guarded render
      call on its first attempt. Asserts: probs.post flips to 'direct' (honest probe surface),
      the game keeps running, and exactly ONE degrade line was logged. */
+  ok('CONSOLE [] (bossProbe/victory page)', errs.length === 0, errs.join(' | '));
   await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat&composerFault=1' });
   let td13 = null;
   {
@@ -566,24 +585,26 @@ try {
 
   /* --- story-014 edge (fifth page): double-fire — the two card paths are mutually exclusive ---
      Deterministic drive: bossProbe runs to the death cinematic; the moment
-     combatState().boss.phase reads 'dying' (≤ ~0.2 s in — a 100 ms poll against a 1.2 s
-     window), the harness fires __stage2.probeDamagePlayer(500) INSIDE the cinematic. The
-     player's 0.7 s real-time death clock then always expires before the boss's remaining
-     cinematic, so gameover must land ALONE: the victory card never shows, victoryEntries
-     stays 0, and the combat clock reads FROZEN while dead (t2 === t1 across 0.5 s of 0.3×
-     slow-mo — an unfrozen clock would accrue ~0.15 s). On the pre-victory build these are
-     green-by-design/vacuous EXCEPT the freeze assert (combatState().time undefined on old)
-     and the gameover landing itself (probeDamagePlayer was not exposed on old, so the
-     forced-death drive could not run — page 1's natural death already proves gameover there). */
+     combatState().boss.phase reads 'dying' the harness WAITS 600 ms INTO the cinematic, then
+     fires __stage2.probeDamagePlayer(500). Stage-2 review (finding 1): the early-hurt drive
+     (< 0.2 s) always landed gameover BEFORE the cinematic completed, so the completion code
+     path — and its re-fire class — was never exercised. The 600 ms delay guarantees
+     completion-before-gameover (hurt ≤0.7 s → gameover ≤1.4 s; completion ≤1.2 s), which is
+     the natural late-volley-bolt death. RED on the pre-fix build: the completion block never
+     cleared B.dying, so it re-fired (report + explosion + audio) EVERY TICK until gameover —
+     bossDefeatedReports ≈ 10-30 instead of 1. The player's 0.7 s death clock then expires:
+     gameover must land ALONE — victory card never shows, victoryEntries stays 0, and the
+     combat clock reads FROZEN while dead (t2 === t1 across 0.5 s of 0.3× slow-mo). */
   await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat&bossProbe=1' });
   let df = null;
   {
     const t0 = Date.now();
-    let hurt = false;
+    let dyingSeen = 0, hurt = false;
     for (;;) {
       try {
         const csx = await J(`(window.__stage2 && __stage2.combatState) ? __stage2.combatState() : null`);
-        if (csx && csx.boss && csx.boss.phase === 'dying' && !hurt) {
+        if (csx && csx.boss && csx.boss.phase === 'dying' && !dyingSeen) dyingSeen = Date.now();
+        if (dyingSeen && !hurt && Date.now() - dyingSeen >= 600) {
           const fired = await evl(`(window.__stage2 && typeof __stage2.probeDamagePlayer === 'function') ? (__stage2.probeDamagePlayer(500), true) : false`);
           if (fired) { hurt = true; continue; }
         }
@@ -623,6 +644,9 @@ try {
     `vic=${gx.vic} entries=${gx.n}`);
   ok('story-014: combat clock frozen while dead (t2 === t1 over 0.5s slow-mo)',
     !!df && typeof df.t1 === 'number' && df.t1 === df.t2 && df.t1 > 0, JSON.stringify(df || null));
+  ok('review: bossDefeated reported exactly once (completion re-fire class)',
+    (await evl(`window.__stage2.bossDefeatedReports || 0`)) === 1,
+    `reports=${await evl(`window.__stage2.bossDefeatedReports || 0`)}`);
 
   ok('CONSOLE []', errs.length === 0, errs.join(' | '));
 } catch (e) {

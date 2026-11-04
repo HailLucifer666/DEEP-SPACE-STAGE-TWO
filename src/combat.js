@@ -107,7 +107,18 @@ export function prepareCombat(scene, camera, rocket, ui, api) {
     // parity — the bossProbe drive reads it in the same frame), then go('victory') is guarded by
     // !C.dead so the two card paths stay mutually exclusive: if the player is already dead the
     // gameover path wins; if victory lands first, clearCombat cancels the death clock.
-    report: (r) => { C.api.report(r); if (r && r.bossDefeated && !C.dead) C.api.go('victory'); },
+    report: (r) => {
+      C.api.report(r);
+      if (r && r.bossDefeated) {
+        // stage-2 review (finding 1): the exactly-once counter — the completion block's
+        // re-fire class must be COUNTABLE by the harness, not just unobservable.
+        window.__stage2.bossDefeatedReports = (window.__stage2.bossDefeatedReports || 0) + 1;
+        // stage-2 review (finding 3): the victory frame must not continue into wavesTick —
+        // with the field now clear it grants the wave-clear bonus AFTER the card froze its
+        // score (the card's "final score" was not the internal final).
+        if (!C.dead) { C.victoryFired = true; C.api.go('victory'); }
+      }
+    },
   };
   // edge pips (J) — off-screen raider awareness; created once, #hud hides them outside combat
   if (C.ui.hud && !C.pips.length) {
@@ -295,7 +306,7 @@ function damagePlayer(n) {
 
 /* ---------- waves ---------- */
 function wavesTick(dt) {
-  if (C.dead) return;
+  if (C.dead || C.victoryFired) return; // review (finding 3): the victory frame stops here — the bonus must not land after the card froze its score
   // story-012: orbs join the wave-clear condition — the wave doesn't advance while a drone
   // orbits (ENEMIES.startWave's pure raider formula is untouched; drones ride the wave layer).
   // story-013: the boss blocks it too while alive, and spawns ONCE instead of wave BOSS_WAVE+1
@@ -432,6 +443,9 @@ function bossProbeTick(dt) {
     if (C.bpT >= 0.4) {
       forward(C.tmp);
       BOSS.spawnForProbe(C.tmp2.copy(C.pos).addScaledVector(C.tmp, BOSS_SHOT ? 14 : 26).setY(ARENA_Y));
+      ENEMIES.clearEnemies(); // stage-2 review: the drive simulates the NATURAL boss fight — the warden
+      // spawns instead of wave BOSS_WAVE+1, so the field is clear (wave-1 raiders gone). Without
+      // this, the victory card's score assert cannot reproduce the mid-tick wave-grant class.
       C.bpSpawnWave = C.wave;
       C.bpHpMark = BOSS.state().hp;
       C.bpStage = 'weak'; C.bpStageT = 0; C.bpFired = 0;
@@ -537,6 +551,7 @@ export function enterCombat(scene, camera, rocket, ui, api) {
   C.time = 0; // story-014: the clock is per-fight — every combat entry restarts it
   C.scriptT = -1; C.scriptDone = false; C.scriptDrone = null;
   C.dpT = -1; C.dpDrone = null; C.dpWin = 0; C.dpDone = false; // story-012: probe state restarts clean
+  C.victoryFired = false; // stage-2 review (finding 3): the flag is per-fight — a fresh combat grants waves again
   C.dpTele = false; C.dpDive = false; C.dpContact = false; C.dpSamples = 0; C.dpMM = null;
   window.__stage2.droneProbeLive = false;
   // story-013: boss + its probe state restart clean; the single entity drains with the pools (§8.6)
@@ -546,6 +561,8 @@ export function enterCombat(scene, camera, rocket, ui, api) {
   window.__stage2.bossProbeLive = false;
   window.__stage2.bossShotPhase = null;
   delete window.__stage2.bossProbe; // a fresh combat must never inherit the previous walk's report
+  delete window.__stage2.droneProbe; // review NIT 7: same hygiene for the drone walk's report
+  window.__stage2.bossDefeatedReports = 0; // review (finding 1): the exactly-once counter is per-fight
   C.flow = 0;
   C.proxScanT = 0; C.nearest = null; // story-009: proximity scan restarts clean (§8.6)
   C.lastBars = null; C.lastScore = null; // clearCombat emptied the DOM — force one HUD rewrite

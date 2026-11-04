@@ -167,6 +167,10 @@ function launchDash(playerPos) {
   B.ramHit = false;
   B.dashTarget.copy(playerPos);
   B.dashDir.copy(playerPos).sub(B.boss.position).normalize(); // full-3D — the CURRENT ship position
+  // stage-2 review (finding 6): a ship parked exactly on the boss center normalizes to (0,0,0)
+  // — `past` stays 0 forever and the dash never ends. Make the bad state unrepresentable: any
+  // fixed direction completes the overshoot and hands back to orbit.
+  if (!Number.isFinite(B.dashDir.x) || B.dashDir.lengthSq() < 1e-6) B.dashDir.set(0, 0, 1);
   B.teleT = -1;
   noiseBurst({ dur: 0.4, vol: 0.4, f0: 500, f1: 1200, type: 'bandpass' });
 }
@@ -216,6 +220,10 @@ function deathTick(dt, api) {
   }
   if (B.deathT >= DEATH_T) {
     B.dead = true;
+    B.dying = false; // stage-2 review (finding 1): tickBoss routes on B.dying FIRST — without
+    // clearing it, the completion block (final burst, audio, bossDefeated report) re-fired
+    // every tick until a phase change drained the boss (reachable: player dies late in the
+    // cinematic, gameover lands after completion). B.dead now terminates the route.
     B.boss.visible = false;
     api.setTimeScale(1); // restore; combat/gameover re-set the scale on their own entries
     api.explosion(B.boss.position); // final burst
@@ -235,12 +243,14 @@ function applyDamage(dmg, isWeak, counted) {
   return B.hp <= 0 ? 'dead' : 'hit';
 }
 
-// combat.js bolt scan — returns true if this hit started the death cinematic.
-// WEAK_MULT applies HERE (the caller stays ignorant of the multiplier): node hits do 3×.
+// combat.js bolt scan — returns true ONLY if this hit started the death cinematic (review
+// NIT 9: post-mortem hits during the cinematic return false — the caller's kill-shake fires
+// once, at the moment the cinematic actually starts).
 export function hitBoss(dmg, isWeak, api) {
   const r = applyDamage(dmg * (isWeak ? WEAK_MULT : 1), isWeak, true);
-  if (r === 'dead' && !B.dying && !B.dead) startDeath(api);
-  return r === 'dead';
+  const started = r === 'dead' && !B.dying && !B.dead;
+  if (started) startDeath(api);
+  return started;
 }
 
 // probe-only scripted damage (deterministic threshold walk) — excluded from the ratio counters
@@ -356,7 +366,7 @@ export function state() { // combatState().boss — the story-012-declared shape
   return { hp: B.hp, maxHp: B.maxHp, phase: B.dying ? 'dying' : B.phase };
 }
 export function barLine() { // presentation-only BOSS HP line — rides combat.js's change-gated #hud-bars write
-  if (!B.ready || !B.spawned || B.dead || !B.boss.visible) return '';
+  if (!B.ready || !B.spawned || B.dead || B.dying || !B.boss.visible) return ''; // review NIT 8: the dying window must not render "BOSS 0%"
   const f = B.hp / B.maxHp;
   return `BOSS ${'▍'.repeat(Math.round(f * 10))} ${Math.ceil(f * 100)}%`;
 }
