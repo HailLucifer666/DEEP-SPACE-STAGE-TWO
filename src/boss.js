@@ -55,6 +55,11 @@ const DEATH_SCALE = 0.3;                  // slow-mo timeScale (combat.js player
 const DEATH_T = 1.2;                      // seconds of REAL time
 const DEATH_BOOM_EVERY = 0.18;            // s between chained explosions
 const HALO_BASE = 4.4, HALO_RAGE = 5.8;   // boss halo; rage pushes the glow up (design)
+// story-016 (GDD §5.3 tuning table): the captured dash target's max 3D radius from the arena
+// center O = (0, 18, 0) — R_HARD (80, combat.js) − OVERSHOOT (10) − margin 2. The center is
+// mirrored here because boss.js must not import combat.js (dep-check: that edge is a cycle).
+const ARENA_O = new THREE.Vector3(0, 18, 0);
+const DASH_SHELL_R3 = 68;
 
 const B = {
   ready: false, scene: null, boss: null,
@@ -66,7 +71,7 @@ const B = {
   // probe/evidence counters (bossProbe reads probeStats(); bolt-stream hits only —
   // scripted probeDamage is deliberately excluded from the ratio counters)
   weakHits: 0, bodyHits: 0, weakDmg: 0, bodyDmg: 0,
-  dashLaunched: false, overshootSeen: false, slowmoSeen: false,
+  dashLaunched: false, overshootSeen: false, slowmoSeen: false, dashCapR3: null,
   hold: false, // probe pin: transitions + glow stay live, behavior freezes (deterministic ratio test)
   tmp: new THREE.Vector3(), tmp2: new THREE.Vector3(),
   axX: new THREE.Vector3(), axY: new THREE.Vector3(), axZ: new THREE.Vector3(),
@@ -117,7 +122,7 @@ function resetRun() {
   B.chargeT = CHARGE_FIRST; B.teleT = -1; B.dash = false; B.ramHit = false;
   B.dying = false; B.dead = false; B.deathT = 0; B.boomT = 0;
   B.weakHits = 0; B.bodyHits = 0; B.weakDmg = 0; B.bodyDmg = 0;
-  B.dashLaunched = false; B.overshootSeen = false; B.slowmoSeen = false;
+  B.dashLaunched = false; B.overshootSeen = false; B.slowmoSeen = false; B.dashCapR3 = null;
   B.hold = false;
   B.boss.visible = true;
 }
@@ -166,6 +171,21 @@ function launchDash(playerPos) {
   B.dashLaunched = true;
   B.ramHit = false;
   B.dashTarget.copy(playerPos);
+  // story-016 (GDD §5.3): a player hugging the shell could bait a dash whose captured target
+  // sits at r3 ≈ 78 — the 10 u overshoot would then exit the sphere. Clamp the captured
+  // dashTarget radially to DASH_SHELL_R3 from O — the ONE boss.js line story-016 adds; the
+  // overshoot stays honest (dashTick measures it from the CLAMPED target) and the state
+  // machine is otherwise untouched. Identity below the clamp radius; zero-length safe.
+  // FIX PASS (quality-review finding 1): the old chain `.sub(...).setLength(Math.min(ARENA_O
+  // .distanceTo(B.dashTarget), ...)).add(...)` MUTATED dashTarget before the setLength argument
+  // evaluated — the measured distance was |O − (P−O)|, so the clamp only worked at the equator
+  // (both 78 and 80.05 > 68) and pulled the TOP-POLE park (P = (0,96,0)) INWARD to r3 60
+  // (measured 60 < 68) instead of clamping to 68. Compute the true radius BEFORE mutating.
+  const rel = B.dashTarget.clone().sub(ARENA_O);
+  const rad = rel.length();
+  if (rad > DASH_SHELL_R3) rel.setLength(DASH_SHELL_R3);
+  B.dashTarget.copy(rel).add(ARENA_O);
+  B.dashCapR3 = Math.min(rad, DASH_SHELL_R3); // probe seam: the clamp's own computed radius (pole-park assert)
   B.dashDir.copy(playerPos).sub(B.boss.position).normalize(); // full-3D — the CURRENT ship position
   // stage-2 review (finding 6): a ship parked exactly on the boss center normalizes to (0,0,0)
   // — `past` stays 0 forever and the dash never ends. Make the bad state unrepresentable: any
@@ -371,6 +391,7 @@ export function barLine() { // presentation-only BOSS HP line — rides combat.j
   return `BOSS ${'▍'.repeat(Math.round(f * 10))} ${Math.ceil(f * 100)}%`;
 }
 export function probeHold(v) { B.hold = !!v; }
+export function probeSealDashCap() { B.dashCapR3 = null; } // re-review advisory (2026-11-05): B.dashCapR3 is set on EVERY launchDash — if the pole-launch stamp ever drops, the pole-park assert would read the equator's stale 68 and false-green. Null the seam at pole ARMING (probes.js) so a missing pole dash reads null (red by absence); a real pole launch rewrites it fresh at its launch frame.
 export function probePlace(pos) { B.boss.position.copy(pos); } // probe-only framing setter (boss-shot evidence)
 export function probeTargets(fromPos) { // probe aim points: the node (center) and the ring edge nearest the approach
   const u = B.tmp.copy(fromPos).sub(B.boss.position);
@@ -388,6 +409,7 @@ export function probeStats() {
     weakHits: B.weakHits, bodyHits: B.bodyHits,
     weakDmg: B.weakDmg, bodyDmg: B.bodyDmg,
     chargeDash: B.dashLaunched, overshoot: B.overshootSeen,
+    dashCapR3: B.dashCapR3,
     deathSlowmo: B.slowmoSeen,
   };
 }
@@ -401,7 +423,7 @@ export function clearBoss() { // §8.6 — rides clearCombat: hide + reset; rest
   B.chargeT = 0; B.teleT = -1; B.dash = false; B.ramHit = false;
   B.dying = false; B.dead = false; B.deathT = 0; B.boomT = 0;
   B.weakHits = 0; B.bodyHits = 0; B.weakDmg = 0; B.bodyDmg = 0;
-  B.dashLaunched = false; B.overshootSeen = false; B.slowmoSeen = false;
+  B.dashLaunched = false; B.overshootSeen = false; B.slowmoSeen = false; B.dashCapR3 = null;
   B.hold = false;
   B.boss.visible = false;
 }

@@ -14,32 +14,37 @@ import * as EFFECTS from './effects.js';
 import { makePool } from './pool.js';
 import { beep, sweep, noiseBurst, loopStart, musicEvict, musicSetDuck, alarmTick, proximityTick } from './audio.js';
 import { stageShip, combatFlow } from './launch.js';
+import { droneProbeTick, bossProbeTick, pitchProbeTick, resetProbes } from './probes.js'; // rider R-e: the three probe drives + their state live in probes.js — combat calls them, never the reverse (dep-check: acyclic)
 
-const ARENA_Y = 18;
-// Sector boundary (story-005): a soft circular rim. Inside R_SOFT flight is untouched; from
-// R_SOFT to R_HARD the outward radial speed bleeds toward zero (tangential preserved — the ship
-// slides along the rim instead of pinning), and the rim renders as a visible ground ring. The
-// old hard ±80 square pinned the ship at full thrust over streaming ground — the "stuck at the
-// edge" report, twice (the ±80 was itself a 3x enlargement for the same symptom). Raiders spawn
-// 55 off the player, so R_HARD 80 keeps the spawn ring off-camera.
+const ARENA_Y = 18; // story-016: re-anchored as the sphere CENTER's y — O = (0, ARENA_Y, 0) (the spawn point)
+// Sector boundary (story-005 rim → story-016 SPHERE): a soft spherical arena centered on the
+// spawn point. Inside R_SOFT flight is untouched; from R_SOFT to R_HARD the outward radial speed
+// (along the 3D normal) bleeds toward zero (tangential preserved — the ship slides along the
+// shell instead of pinning), past R_HARD the position is scaled back onto the shell, and the rim
+// renders as the visible equator ground ring (its opacity driver reads 3D proximity). The floor
+// of 3 u/s is load-bearing (story-005: the pure linear cap is asymptotic and reads as mud).
+// R_SOFT/R_HARD keep their story-005 VALUES; their meaning widens from disc radius to sphere
+// radius, so crossing times and the spawn-ring math are unchanged. Raiders spawn 55 off the
+// player, so R_HARD 80 keeps the spawn ring off-camera. The 015 altitude-band scaffold
+// (BAND_H/BAND_HH consts, band bleed block, band #warn branch) was RETIRED here — story-016
+// replaces it with this sphere (documented in the story record and the harness comment; never
+// a quiet edit).
 const R_SOFT = 60, R_HARD = 80;
 const MAX_SPEED = 17;        // bumped with the arena — same crossing time as the old 26 arena at 14
 const BOOST_MULT = 1.9;
 const TURN_RATE = 2.2;       // commanded yaw (rad/s) — full circle ≈ 3 s (story-004: heading is player-owned)
 const ACCEL = 14;            // W: u/s² toward the cruise/boost ceiling
 const BRAKE = 22;            // S: u/s² down to 0 — brakes harder than W accelerates, and S wins over W
-// story-015 (full-3d-flight GDD §3.1-§3.4): pitch + drift. Pitch mirrors the yaw grammar
+// story-015 (full-3d-flight GDD §3.1-§3.2): pitch + drift. Pitch mirrors the yaw grammar
 // exactly (deadzone 0.08, 1.25× combined clamp) inside a ±72° envelope — no loops, ever
 // (GDD §5.1: changing that is a design-level reopen, not a tuning knob). Drift makes vel a
-// PERSISTENT state realigning toward the nose (§3.2). BAND_H/BAND_HH are the 015 altitude
-// band SCAFFOLD (the boundary is still the flat disc) — story-016 deletes both consts and
-// their asserts as a documented retirement.
+// PERSISTENT state realigning toward the nose (§3.2). The 015 BAND_H/BAND_HH altitude-band
+// consts lived here as a scaffold and were retired by story-016 (the sphere is the volume).
 const PITCH_RATE = 1.8;      // rad/s commanded pitch — slightly slower than yaw: pitch is posture, yaw is aiming
 const PITCH_MAX = 1.2566;    // 72° — up-vector safety envelope (camera lateral basis ≥ 0.31 at max pitch)
 const PITCH_DEADZONE = 0.08; // NDC — mirrors the yaw deadzone exactly
 const PITCH_INVERT = false;  // flips the POINTER convention ONLY (keys unaffected) — playtest escape hatch
 const ALIGN_RATE = 4.5;      // 1/s — drift realignment toward forward·speed (slip ≈ 25° at full turn)
-const BAND_H = 16, BAND_HH = 20; // altitude band around ARENA_Y — 015 scaffold, retired by story-016
 const FIRE_INTERVAL = 1 / 8; // ~8/s hold-fire
 const BOLT_SPEED = 42;
 const BOLT_LIFE = 1.2;
@@ -62,13 +67,8 @@ const C = {
   time: 0, // story-014: per-fight combat clock — scaled sdt while alive (the world's slow-mo slows it), frozen while dead; reset each enterCombat. NOT game.time (the global clock — launch phases own it)
 
   bed: null, scriptT: -1, scriptDone: false,
-  // story-012 drone probe state (?droneProbe=1) — probe-only fields, untouched by normal play
-  dpT: -1, dpDrone: null, dpWin: 0, dpDone: false,
-  dpTele: false, dpDive: false, dpContact: false, dpSamples: 0, dpMM: null,
-  // story-013 boss probe state (?bossProbe=1) — probe-only fields, untouched by normal play
-  bossApi: null, bpT: -1, bpStage: 'spawn', bpStageT: 0, bpFired: 0, bpHpMark: 0,
-  bpSpawnWave: 0, bpHud: false, bpCharged: false, bpRaged: false, bpRagePinned: false, bpKilled: false, bpDone: false,
-  pp: null, ppDone: false, // story-015 pitch probe state (?pitchProbe=1) — one probe-only object, rebuilt fresh on combat entry; ppDone latches the walk (§8.6 same-page re-entry, dpDone/bpDone sibling)
+  bossApi: null, // the boss's tick/death api (built in prepareCombat; boss.js stays a pure signal source)
+  // probe state for the three probe drives (drone/boss/pitch) moved to src/probes.js (rider R-e)
   tmp: new THREE.Vector3(), tmp2: new THREE.Vector3(),
   ndc: new THREE.Vector3(), // hoisted unproject scratch (feel: no per-frame allocation)
   flow: 0, // smoothed boost → field-flow factor (0 idle drift, 1 rush)
@@ -79,10 +79,7 @@ const C = {
 };
 const qs = new URLSearchParams(location.search);
 const SCRIPTED_KILL = qs.get('scriptedKill') === '1';
-const DRONE_PROBE = qs.get('droneProbe') === '1'; // story-012: deterministic single-drone run
-const BOSS_PROBE = qs.get('bossProbe') === '1'; // story-013: deterministic boss walk (skips the wave-5 wait)
-const BOSS_SHOT = qs.get('bossShot') === '1'; // story-013 evidence variant: closer spawn + phase holds (screenshots)
-const PITCH_PROBE = qs.get('pitchProbe') === '1'; // story-015: deterministic pitch+drift walk
+// the probe query flags (/droneProbe, ?bossProbe, ?bossShot, ?pitchProbe) moved to src/probes.js (rider R-e)
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, Number.isFinite(v) ? v : a)); // NaN-safe (§8.9)
 const fmt = (n) => (Number.isFinite(n) ? String(Math.max(0, Math.floor(n))) : '0'); // honest HUD values (spec #16)
@@ -172,6 +169,10 @@ function forward(out) {
   return out.set(Math.sin(C.heading) * cp, Math.sin(C.pitch), Math.cos(C.heading) * cp);
 }
 
+/* rider R-e: the pure helpers + constants handed to src/probes.js (the probe drives may not
+ * import combat.js — house dep-check). Same values the ticks closed over before the extraction. */
+const probeEnv = { forward, noseWorld, clamp, ARENA_Y, BOLT_LIFE, TURN_RATE, HP_MAX, SHIELD_MAX };
+
 /* ---------- input → steering (story-004: throttle + turn) ---------- */
 function steer(dt) {
   const input = C.api.input;
@@ -219,49 +220,42 @@ function steer(dt) {
   // velocity-derived heading is what made W flip the camera 180°).
   C.vel.lerp(forward(C.tmp).multiplyScalar(C.speed), 1 - Math.exp(-ALIGN_RATE * dt));
 
-  // soft circular rim (story-005): past R_SOFT the outward radial component bleeds toward zero
-  // (tangential preserved — the ship slides along the rim instead of pinning against a wall)
-  let r = Math.hypot(C.pos.x, C.pos.z);
-  if (r > R_SOFT) {
-    const nx = C.pos.x / r, nz = C.pos.z / r; // outward unit normal
-    const radial = C.vel.x * nx + C.vel.z * nz;
-    const cap = Math.max(3, MAX_SPEED * (R_HARD - r) / (R_HARD - R_SOFT)); // floor 3: bounded arrival — the linear cap alone is asymptotic (dr/dt ∝ (R_HARD−r)), which reads as mud at the rim
+  // soft spherical arena (story-016, GDD §3.5/§4.4): past R_SOFT the outward radial component
+  // (along the 3D normal n = (pos − O)/r3) bleeds toward zero — story-005's formula with the
+  // 3D normal; tangential preserved (the ship slides along the shell instead of pinning against
+  // a wall). Floor 3 is story-005's bounded-arrival finding carried into 3D unchanged: the pure
+  // linear cap is asymptotic (dr/dt ∝ (R_HARD−r3)) and reads as mud at the shell.
+  let r3 = Math.hypot(C.pos.x, C.pos.y - ARENA_Y, C.pos.z);
+  if (r3 > R_SOFT) {
+    const nx = C.pos.x / r3, ny = (C.pos.y - ARENA_Y) / r3, nz = C.pos.z / r3; // outward unit normal
+    const radial = C.vel.x * nx + C.vel.y * ny + C.vel.z * nz;
+    const cap = Math.max(3, MAX_SPEED * (R_HARD - r3) / (R_HARD - R_SOFT));
     if (radial > cap) {
       const excess = radial - cap;
-      C.vel.x -= excess * nx; C.vel.z -= excess * nz;
+      C.vel.x -= excess * nx; C.vel.y -= excess * ny; C.vel.z -= excess * nz;
     }
-  }
-  // altitude band (story-015 SCAFFOLD, GDD §3.4 — retired by story-016): pitch exists while
-  // the boundary is still the flat disc, so the vertical component bleeds inside
-  // [ARENA_Y − BAND_H, ARENA_Y + BAND_H] with story-005's exact cap-and-floor feel (floor 3,
-  // the anti-mud floor) and a hard ±BAND_HH safety net below; #warn reuses the rim grammar.
-  let dY = Math.abs(C.pos.y - ARENA_Y);
-  if (dY > BAND_H) {
-    const ny = C.pos.y > ARENA_Y ? 1 : -1;
-    const radialY = C.vel.y * ny;
-    const capY = Math.max(3, MAX_SPEED * (BAND_HH - dY) / (BAND_HH - BAND_H));
-    if (radialY > capY) C.vel.y -= (radialY - capY) * ny;
   }
   C.pos.addScaledVector(C.vel, dt);
 
-  // hard circular clamp — safety net for the one frame the bleed cap allows
-  r = Math.hypot(C.pos.x, C.pos.z);
-  if (r > R_HARD) {
-    const s = R_HARD / r;
-    C.pos.x *= s; C.pos.z *= s;
-    r = R_HARD;
+  // hard spherical clamp — safety net for the one frame the bleed cap allows: past R_HARD the
+  // position is scaled back onto the shell (pos = O + (pos − O)·R_HARD/r3, GDD §4.4)
+  r3 = Math.hypot(C.pos.x, C.pos.y - ARENA_Y, C.pos.z);
+  if (r3 > R_HARD) {
+    const s = R_HARD / r3;
+    C.pos.x *= s;
+    C.pos.y = ARENA_Y + (C.pos.y - ARENA_Y) * s;
+    C.pos.z *= s;
+    r3 = R_HARD;
   }
-  // band hard clamp — safety net for the one frame the bleed cap allows (story-005's clamp, vertical)
-  dY = Math.abs(C.pos.y - ARENA_Y);
-  if (dY > BAND_HH) {
-    C.pos.y = ARENA_Y + (C.pos.y > ARENA_Y ? BAND_HH : -BAND_HH);
-    dY = BAND_HH;
-  }
+  // #warn ("EDGE OF SECTOR") fires entering the soft shell (r3 > 60) and clears inside it —
+  // the 015 band branch of this driver was retired with the band scaffold (story-016).
   if (C.ui.warn) {
-    C.ui.warn.hidden = (r <= R_SOFT && dY <= BAND_H) || C.dead;
+    C.ui.warn.hidden = (r3 <= R_SOFT) || C.dead;
     C.ui.warn.textContent = 'EDGE OF SECTOR';
   }
-  if (C.rim) C.rim.material.opacity = clamp((r - R_SOFT) / (R_HARD - R_SOFT), 0, 1) * 0.55;
+  // rim ring opacity: 3D proximity (was 2D hypot(x,z) — story-016; the ring stays at the
+  // equator as the ground reference, no shell visual until story-017)
+  if (C.rim) C.rim.material.opacity = clamp((r3 - R_SOFT) / (R_HARD - R_SOFT), 0, 1) * 0.55;
 
   // bank reads the commanded turn — same visual sign as the old left-turn lean (right turn +)
   C.bank += (clamp(-turn * 0.7, -0.7, 0.7) - C.bank) * (1 - Math.exp(-7 * dt));
@@ -408,437 +402,12 @@ function scriptedKillTick(dt) {
   }
 }
 
-/* ---------- story-012 drone probe (?droneProbe=1) ----------
- * Deterministic single-orb run: spawns 12 u ahead of the nose 0.4 s into combat (fixed knobs:
- * r 14, yAmp 5, yaw 0, first dive 1.2 s after spawn), samples its FULL-3D path for ~3 s, then
- * reports window.__stage2.droneProbe = { yRange, path3d, telegraph, dive, contact, droneBuild,
- * meshParts, waveRule, raiderRule }. yRange > 1 u over the window is the 3D-movement proof
- * (raiders never leave the XZ plane). droneBuild mirrors the build path that actually flew —
- * flow-check compares it against the inlined __DRONE_B64 token, so both build paths prove out
- * of the same assert. droneProbeLive is the screenshot runner's timing hook (window open). */
-function droneProbeTick(dt) {
-  if (!DRONE_PROBE || C.dpDone) return;
-  C.dpT += dt;
-  if (!C.dpDrone && C.dpT >= 0.4 && DRONES.poolReady()) {
-    forward(C.tmp);
-    C.dpDrone = DRONES.spawnForProbe(C.tmp2.copy(C.pos).addScaledVector(C.tmp, 12));
-    C.dpT = 0; C.dpWin = 0; // the measured window runs from the spawn
-    return;
-  }
-  const d = C.dpDrone;
-  if (!d) return;
-  C.dpWin += dt;
-  const u = d.userData;
-  const m = C.dpMM || (C.dpMM = {
-    minX: d.position.x, maxX: d.position.x,
-    minY: d.position.y, maxY: d.position.y,
-    minZ: d.position.z, maxZ: d.position.z,
-  });
-  m.minX = Math.min(m.minX, d.position.x); m.maxX = Math.max(m.maxX, d.position.x);
-  m.minY = Math.min(m.minY, d.position.y); m.maxY = Math.max(m.maxY, d.position.y);
-  m.minZ = Math.min(m.minZ, d.position.z); m.maxZ = Math.max(m.maxZ, d.position.z);
-  C.dpSamples++;
-  if (u.mode === 'telegraph') C.dpTele = true;
-  if (u.mode === 'dive') C.dpDive = true;
-  if (!u.alive) C.dpContact = true; // died inside the window — the dive rammed the stationary ship
-  window.__stage2.droneProbeLive = true;
-  if (C.dpWin >= 3.0 || !u.alive) {
-    C.dpDone = true;
-    let parts = 0;
-    d.traverse((o) => { if (o.isMesh) parts++; }); // GLB path has a different part count — mesh-level swap evidence
-    const probe = {
-      yRange: +(m.maxY - m.minY).toFixed(2),
-      path3d: { x: +(m.maxX - m.minX).toFixed(2), y: +(m.maxY - m.minY).toFixed(2), z: +(m.maxZ - m.minZ).toFixed(2), samples: C.dpSamples },
-      telegraph: C.dpTele, dive: C.dpDive, contact: C.dpContact,
-      droneBuild: DRONES.buildMode(),
-      meshParts: parts,
-      waveRule: [1, 2, 3, 4, 5].map((w) => DRONES.droneCountFor(w)),
-      raiderRule: [1, 2, 3, 4].map((w) => ENEMIES.waveCount(w)),
-    };
-    window.__stage2.droneProbe = probe;
-    window.__stage2.droneProbeLive = false;
-    C.api.report({ droneProbe: probe }); // parity with scriptedKill — lands on __stage2.lastReport too
-  }
-}
+/* ---------- probe drives (story-012/013/015) → src/probes.js ----------
+ * R-e extraction (story-016): droneProbeTick / bossProbeTick / pitchProbeTick + their probe
+ * state + the ?droneProbe/?bossProbe/?bossShot/?pitchProbe query-flag wiring moved VERBATIM
+ * to src/probes.js. combat.js calls them with (dt, C, probeEnv) — probes never import combat.js
+ * (house dep-check: acyclic). Behavior-neutral: the same code, the same context. */
 
-/* ---------- story-013 boss probe (?bossProbe=1) ----------
- * Deterministic single-boss walk (droneProbe pattern): spawns the boss 26 u ahead of the nose
- * 0.4 s into combat (skips the wave-5 wait — spawnWave asserts it), then drives it end-to-end:
- *   weak/body ratio — the boss is PINNED (probeHold) and THREE real player bolts are fired
- *     into the weak node vs THREE into the ring hull: equal streams, damage ratio must be
- *     WEAK_MULT (end-to-end: zone detection + multiplier through the real bolt scan).
- *   phases — scripted damage (probeDamage) walks hp through the thresholds; the phase log
- *     must read orbit → charge → rage, and the charge dash must launch and overshoot.
- *   death — hp 0 → slow-mo cinematic → bossDefeated report → the entity drains.
- * Reports window.__stage2.bossProbe = { phases, weakHits, bodyHits, weakDmg, bodyDmg, ratio,
- * chargeDash, overshoot, deathSlowmo, spawnWave, hudLine } (+ lastReport parity via api.report).
- * ?bossShot=1: evidence-capture variant — closer spawn + per-phase holds + bossShotPhase
- * markers for tools/boss-shot.mjs; the drive and its asserts are unchanged. */
-function bossBolt(target, away) { // one real player bolt placed 3 u out on `away`, flying into `target`
-  const b = C.bolts.spawn();
-  b.position.copy(target).addScaledVector(away, 3.0);
-  b.userData.dir.copy(away).negate();
-  b.userData.life = BOLT_LIFE;
-  b.lookAt(C.tmp.copy(b.position).add(b.userData.dir));
-}
-function bossProbeTick(dt) {
-  if (!BOSS_PROBE || C.bpDone) return;
-  const rdt = dt / Math.max(0.05, C.api.getTimeScale()); // real-time clock — the death slow-mo must not stall the drive
-  C.bpT += rdt;
-  C.bpStageT += rdt;
-  window.__stage2.bossProbeLive = true;
-  const st = BOSS.state();
-  // HUD evidence: sample the real DOM each tick while the boss lives
-  if (st && C.ui.hudBars && C.ui.hudBars.textContent.includes('BOSS')) C.bpHud = true;
-  if (BOSS_SHOT) window.__stage2.bossShotPhase = st ? st.phase : 'dead';
-
-  if (C.bpStage === 'spawn') {
-    if (C.bpT >= 0.4) {
-      forward(C.tmp);
-      BOSS.spawnForProbe(C.tmp2.copy(C.pos).addScaledVector(C.tmp, BOSS_SHOT ? 14 : 26).setY(ARENA_Y));
-      ENEMIES.clearEnemies(); // stage-2 review: the drive simulates the NATURAL boss fight — the warden
-      // spawns instead of wave BOSS_WAVE+1, so the field is clear (wave-1 raiders gone). Without
-      // this, the victory card's score assert cannot reproduce the mid-tick wave-grant class.
-      C.bpSpawnWave = C.wave;
-      C.bpHpMark = BOSS.state().hp;
-      C.bpStage = 'weak'; C.bpStageT = 0; C.bpFired = 0;
-      BOSS.probeHold(true); // pin the boss for the deterministic ratio test
-    }
-    return;
-  }
-  if (C.bpStage === 'weak' || C.bpStage === 'body') {
-    const node = C.bpStage === 'weak';
-    if (C.bpFired < 3 && C.bpStageT >= C.bpFired * 0.35 + 0.1) {
-      const t = BOSS.probeTargets(C.pos);
-      const target = node ? t.node : t.hull;
-      bossBolt(target, C.tmp.copy(C.pos).sub(target).normalize());
-      C.bpFired++;
-    }
-    const ps = BOSS.probeStats();
-    if ((node ? ps.weakHits : ps.bodyHits) >= 3 || C.bpStageT > 3.0) {
-      C.bpHpMark = st ? st.hp : 0;
-      C.bpStage = node ? 'body' : 'charge';
-      C.bpStageT = 0; C.bpFired = 0;
-      if (!node) BOSS.probeHold(false); // behavior resumes for the charge/rage walk
-    }
-    return;
-  }
-  if (C.bpStage === 'charge') {
-    if (!C.bpCharged && st) { BOSS.probeDamage(st.hp - 34, C.api); C.bpCharged = true; } // 57% — below CHARGE_AT 0.66
-    const hold = BOSS_SHOT ? 2.2 : 0;
-    const ps = BOSS.probeStats();
-    if (ps.chargeDash && ps.overshoot) { C.bpStage = 'rage'; C.bpStageT = 0; }
-    else if (C.bpStageT > 6.0 + hold) { C.bpStage = 'rage'; C.bpStageT = 0; } // timeout — the asserts record what's missing
-    return;
-  }
-  if (C.bpStage === 'rage') {
-    if (!C.bpRaged && st) { BOSS.probeDamage(st.hp - 15, C.api); C.bpRaged = true; } // 25% — below RAGE_AT 0.33
-    if (BOSS_SHOT && st && st.phase === 'rage' && !C.bpRagePinned) {
-      // evidence framing: hold the boss 14 u ahead of the nose for the rage screenshot —
-      // the natural 20 u rage orbit carries it out of the chase-cam frame at random bearings
-      BOSS.probeHold(true);
-      forward(C.tmp);
-      BOSS.probePlace(C.tmp2.copy(C.pos).addScaledVector(C.tmp, 14).setY(ARENA_Y));
-      C.bpRagePinned = true;
-    }
-    if (st && st.phase === 'rage' && C.bpStageT >= (BOSS_SHOT ? 2.4 : 0.8)) { C.bpStage = 'death'; C.bpStageT = 0; }
-    return;
-  }
-  if (C.bpStage === 'death') {
-    if (!C.bpKilled && st) { BOSS.probeDamage(st.hp, C.api); C.bpKilled = true; }
-    const rep = window.__stage2.lastReport;
-    if ((!BOSS.alive() && rep && rep.bossDefeated) || C.bpStageT > 10) {
-      C.bpDone = true;
-      const ps = BOSS.probeStats();
-      const probe = {
-        phases: ps.phases,
-        weakHits: ps.weakHits, bodyHits: ps.bodyHits,
-        weakDmg: ps.weakDmg, bodyDmg: ps.bodyDmg,
-        ratio: ps.bodyDmg > 0 ? +(ps.weakDmg / ps.bodyDmg).toFixed(2) : 0,
-        chargeDash: ps.chargeDash, overshoot: ps.overshoot,
-        deathSlowmo: ps.deathSlowmo,
-        spawnWave: C.bpSpawnWave,
-        hudLine: C.bpHud,
-        bossDefeated: (rep && rep.bossDefeated) || null, // the death report the drive observed (lastReport is a single slot — the probe report lands after it)
-      };
-      window.__stage2.bossProbe = probe;
-      window.__stage2.bossProbeLive = false;
-      window.__stage2.bossShotPhase = null;
-      C.api.report({ bossProbe: probe }); // parity with scriptedKill/droneProbe — lands on __stage2.lastReport too
-    }
-  }
-}
-
-/* ---------- story-015 pitch probe (?pitchProbe=1) ----------
- * Deterministic full walk of the new axes (droneProbe/bossProbe pattern). The drive
- * synthesizes R/F into the REAL key set and writes the pointer NDC into the SAME mouse
- * object steer() reads — zero input.js changes. Stages in order:
- *   scan (0.4-2.4 s) — one gunner + one rammer spawned 20 u DIRECTLY above a stationary
- *     ship; both position-pinned for the window (bossProbe probeHold precedent: their own
- *     altitude-follow would otherwise enter ram range at ~2.0 s and blur the measurement —
- *     the follow mechanic itself is measured LIVE by the follow stage below). NO healing
- *     in-window: an hp+shield drop or a regenT reset IS the hit signal (nothing else can
- *     reach the ship in 2.4 s — wave raiders are still 38 u out). XZ-only scans hit both
- *     (the story's stated red); 3D scans pass.
- *   pitch — R 0.4 s (≈0.72 rad) + yaw independence, pointer +0.8 (direct) / −0.8 (mirror),
- *     deadzone 0.05 parked, R 1.5 s clamp hold, F 0.4 s. C.pitch is reset to 0 between
- *     sub-tests (probe-owned precondition, bossProbe probeDamage precedent) so each window
- *     measures unsaturated.
- *   drift — W to cruise, 1.0 s full yaw (slip + velMag sampled at the first tick ≥ 1.0 s),
- *     0.8 s release (recovery), then a re-seated one-rev circle at full yaw (mean/max radius
- *     to the sample centroid; aligned-entry re-seat is the probe-owned precondition).
- *   bolt — C.pitch set to 45° (recorded), one bolt through the REAL spawn path (noseWorld +
- *     forward), tracked 0.5 s (rise + xz-speed; retried if an enemy scan kills it early).
- *   band — re-seated full-pitch climb + W: max |y−18|, max vy sampled in the 17-20 layer,
- *     #warn seen outside the band.
- *   follow — two probe gunners seated AT the arena plane, player teleported to the band
- *     ceiling (+20 exactly): their mean y must trail within 12 u over 3 s (offset0 recorded).
- * Reports window.__stage2.pitchProbe (pitchProbeLive is the screenshot hook; api.report
- * parity lands lastReport). Damage is healed AFTER the scan window — a ~22 s drive must not
- * die mid-walk with wave raiders orbiting the stationary ship. */
-function pitchProbeTick(dt) {
-  if (!PITCH_PROBE || C.ppDone) return;
-  const pp = C.pp || (C.pp = {
-    t: 0, stage: 0, mark: 0, entryPitch: 0, maxPhi: 0, h0: 0, hp0: 0, regenMark: 0,
-    dPhi: {}, slip: {}, driftPath: {}, boltRise: {}, band: {}, raiderScan: { ramContact: false, boltHit: false }, raiderFollow: {}, viewDirFromUp: {},
-    pts: [], scanG: null, scanR: null, bolt: null, boltP0: null, boltTries: 0, vyMax: 0,
-    follow: [], followAcc: 0, followN: 0,
-  });
-  pp.t += dt;
-  window.__stage2.pitchProbeLive = true;
-  if (pp.stage >= 2) { if (C.hp < HP_MAX) C.hp = HP_MAX; if (C.shield < SHIELD_MAX) C.shield = SHIELD_MAX; } // the scan window stays honest — heal only after it closes
-  const keys = C.api.input.keys;
-  const mouse = C.api.input.mouse;
-
-  if (pp.stage === 0) {
-    pp.entryPitch = C.pitch; // combat-entry snapshot — the replay-never-inherits-a-nose-up contract (GDD §5.6)
-    if (pp.t >= 0.4) {
-      pp.scanG = ENEMIES.spawnForProbe(C.tmp2.set(C.pos.x, C.pos.y + 20, C.pos.z));
-      pp.scanG.userData.kind = 'gunner'; pp.scanG.userData.hp = 2; // gunner: its sitting bolts are the bolt-hit signal
-      pp.scanG.userData.fireT = 0.5; // probe-owned precondition (review fix 5): the live spawn's 1.2-2.2 s first-shot delay left ~20% of runs bolt-less in the 2.4 s window — pin the PROBE raider only, live spawn math untouched
-      pp.scanR = ENEMIES.spawnForProbe(C.tmp2.set(C.pos.x, C.pos.y + 20, C.pos.z)); // rammer: the ram-contact signal
-      pp.hp0 = C.hp + C.shield; pp.regenMark = C.regenT;
-      pp.stage = 1;
-    }
-    return;
-  }
-  if (pp.stage === 1) { // elevated-raider scan window — pin BOTH probe raiders at +20
-    pp.scanG.position.set(C.pos.x, C.pos.y + 20, C.pos.z);
-    pp.scanR.position.set(C.pos.x, C.pos.y + 20, C.pos.z);
-    if (C.hp + C.shield < pp.hp0 || C.regenT < pp.regenMark) pp.raiderScan.boltHit = true; // damage landed
-    pp.regenMark = Math.max(pp.regenMark, C.regenT);
-    if (pp.t >= 2.4) {
-      pp.raiderScan.ramContact = !pp.scanR.userData.alive; // a ram kills the rammer in place
-      pp.raiderScan.windowS = 2;
-      ENEMIES.hitDrone(pp.scanG, 99); ENEMIES.hitDrone(pp.scanR, 99); // release the field for the follow stage
-      pp.scanG = null; pp.scanR = null;
-      mouse.x = 0; mouse.y = 0; C.api.input.mouseActive = false;
-      C.pitch = 0; pp.h0 = C.heading; pp.mark = pp.t;
-      keys.add('KeyR'); // B1 hold begins at the NEXT steer() — the window tolerances absorb the one-frame skew
-      pp.stage = 2;
-    }
-    return;
-  }
-  if (pp.stage === 2) { // B1: R 0.4 s → Δφ ≈ 0.72; heading must not move
-    if (pp.t >= pp.mark + 0.4) {
-      keys.delete('KeyR');
-      pp.dPhi.rHold04 = +C.pitch.toFixed(4);
-      pp.dPhi.headingDrift = +(C.heading - pp.h0).toFixed(4);
-      C.pitch = 0; // probe-owned reset between sub-tests — each window measures unsaturated
-      mouse.x = 0; mouse.y = 0.8; C.api.input.mouseActive = true;
-      pp.mark = pp.t;
-      pp.stage = 3;
-    }
-    return;
-  }
-  if (pp.stage === 3) { // B2: pointer NDC +0.8 for 1.0 s — DIRECT: up = nose up
-    if (pp.t >= pp.mark + 1.0) {
-      pp.dPhi.ptrUp = +C.pitch.toFixed(4);
-      C.pitch = 0; mouse.y = -0.8;
-      pp.mark = pp.t;
-      pp.stage = 4;
-    }
-    return;
-  }
-  if (pp.stage === 4) { // B3: pointer NDC −0.8 — mirror
-    if (pp.t >= pp.mark + 1.0) {
-      pp.dPhi.ptrDown = +C.pitch.toFixed(4);
-      C.camera.getWorldDirection(C.tmp); // R1 guard (review fix 3): view direction at max DOWN pitch — folded angle off the vertical axis (un-pinned steady ≈14-15°)
-      pp.viewDirFromUp.down = +(Math.acos(Math.min(1, Math.abs(C.tmp.y))) * 180 / Math.PI).toFixed(2);
-      C.pitch = 0; mouse.y = 0.05;
-      pp.mark = pp.t;
-      pp.stage = 5;
-    }
-    return;
-  }
-  if (pp.stage === 5) { // B4: pointer parked inside the deadzone (|y| = 0.05 < 0.08)
-    if (pp.t >= pp.mark + 1.0) {
-      pp.dPhi.deadzone = +C.pitch.toFixed(4);
-      mouse.y = 0; C.api.input.mouseActive = false;
-      C.pitch = 0; pp.maxPhi = 0;
-      keys.add('KeyR'); pp.mark = pp.t;
-      pp.stage = 6;
-    }
-    return;
-  }
-  if (pp.stage === 6) { // B5: R held 1.5 s — clamps at PITCH_MAX and STAYS (0.7 s to clamp, 0.8 s held)
-    pp.maxPhi = Math.max(pp.maxPhi, C.pitch);
-    if (pp.t >= pp.mark + 1.5) {
-      keys.delete('KeyR');
-      pp.dPhi.clampEnd = +C.pitch.toFixed(4); pp.dPhi.clampMax = +pp.maxPhi.toFixed(4);
-      C.camera.getWorldDirection(C.tmp); // R1 guard at max UP pitch (see B3; un-pinned steady ≈25°)
-      pp.viewDirFromUp.up = +(Math.acos(Math.min(1, Math.abs(C.tmp.y))) * 180 / Math.PI).toFixed(2);
-      C.pitch = 0;
-      keys.add('KeyF'); pp.mark = pp.t;
-      pp.stage = 7;
-    }
-    return;
-  }
-  if (pp.stage === 7) { // B6: F 0.4 s — mirror of B1
-    if (pp.t >= pp.mark + 0.4) {
-      keys.delete('KeyF');
-      pp.dPhi.fHold04 = +C.pitch.toFixed(4);
-      C.pitch = 0;
-      keys.add('KeyW'); pp.mark = pp.t; // cruise for the drift stages
-      pp.stage = 8;
-    }
-    return;
-  }
-  if (pp.stage === 8) { // C0: W to cruise
-    if (C.speed >= 16.5 || pp.t >= pp.mark + 2.5) {
-      keys.add('KeyA'); pp.mark = pp.t;
-      pp.stage = 9;
-    }
-    return;
-  }
-  if (pp.stage === 9) { // C1: 1.0 s full yaw — slip + magnitude sampled at the first tick ≥ 1.0 s
-    if (pp.t >= pp.mark + 1.0) {
-      keys.delete('KeyA');
-      const f = forward(C.tmp);
-      const dot = clamp(C.vel.dot(f) / Math.max(0.001, C.vel.length()), -1, 1);
-      pp.slip.deg = +(Math.acos(dot) * 180 / Math.PI).toFixed(2);
-      pp.slip.velMag = +C.vel.length().toFixed(3);
-      pp.slip.speed = +C.speed.toFixed(2); // review fix 2: denominator sampled at the SAME tick as velMag — the old stage-8 capture was 1.0 s stale (speed kept ramping to 17), leaving a 0.3% margin at the 0.9 floor
-      pp.mark = pp.t;
-      pp.stage = 10;
-    }
-    return;
-  }
-  if (pp.stage === 10) { // C2: release — 0.8 s later the slip must be < 8°
-    if (pp.t >= pp.mark + 0.8) {
-      const f = forward(C.tmp);
-      const dot = clamp(C.vel.dot(f) / Math.max(0.001, C.vel.length()), -1, 1);
-      pp.slip.recoveredDeg = +(Math.acos(dot) * 180 / Math.PI).toFixed(3);
-      // C3: re-seat (probe-owned precondition: aligned entry, arena-center safe — the circle
-      // keeps r ≤ ~10) and trace one full rev at full yaw
-      C.pos.set(0, ARENA_Y, 0); C.pitch = 0;
-      C.vel.copy(forward(C.tmp)).multiplyScalar(C.speed);
-      keys.add('KeyA'); pp.mark = pp.t; pp.pts.length = 0;
-      pp.stage = 11;
-    }
-    return;
-  }
-  if (pp.stage === 11) { // C3: sample the rev
-    pp.pts.push([C.pos.x, C.pos.z]);
-    if (pp.t >= pp.mark + 2 * Math.PI / TURN_RATE) {
-      keys.delete('KeyA');
-      const cx = pp.pts.reduce((a, p2) => a + p2[0], 0) / pp.pts.length;
-      const cz = pp.pts.reduce((a, p2) => a + p2[1], 0) / pp.pts.length;
-      let sum = 0, mx = 0;
-      for (const p2 of pp.pts) { const d2 = Math.hypot(p2[0] - cx, p2[1] - cz); sum += d2; if (d2 > mx) mx = d2; }
-      pp.driftPath.radius = +(sum / pp.pts.length).toFixed(2);
-      pp.driftPath.radiusMax = +mx.toFixed(2);
-      pp.driftPath.samples = pp.pts.length;
-      pp.driftPath.revS = +(2 * Math.PI / TURN_RATE).toFixed(3);
-      // D: pitched bolt — 45° through the REAL spawn path (noseWorld + forward), tracked 0.5 s
-      C.pitch = 0.7854;
-      pp.boltRise.phi = +C.pitch.toFixed(4);
-      const b = C.bolts.spawn();
-      noseWorld(b.position);
-      forward(b.userData.dir);
-      b.userData.life = BOLT_LIFE;
-      b.lookAt(C.tmp.copy(b.position).add(b.userData.dir));
-      pp.bolt = b; pp.boltP0 = b.position.clone(); pp.mark = pp.t; pp.boltTries = 0;
-      pp.stage = 12;
-    }
-    return;
-  }
-  if (pp.stage === 12) { // bolt tracking — an enemy-scan kill retries (≤3), else records honestly
-    if (!pp.bolt.userData.alive && pp.t < pp.mark + 0.5 && pp.boltTries < 3) {
-      pp.boltTries++;
-      const b = C.bolts.spawn();
-      noseWorld(b.position);
-      forward(b.userData.dir);
-      b.userData.life = BOLT_LIFE;
-      b.lookAt(C.tmp.copy(b.position).add(b.userData.dir));
-      pp.bolt = b; pp.boltP0 = b.position.clone(); pp.mark = pp.t;
-      return;
-    }
-    if (pp.t >= pp.mark + 0.5) {
-      pp.boltRise.dy = +(pp.bolt.position.y - pp.boltP0.y).toFixed(2);
-      pp.boltRise.xzSpeed = +(Math.hypot(pp.bolt.position.x - pp.boltP0.x, pp.bolt.position.z - pp.boltP0.z) / (pp.t - pp.mark)).toFixed(2);
-      pp.boltRise.seconds = +(pp.t - pp.mark).toFixed(3);
-      pp.boltRise.tries = pp.boltTries;
-      if (pp.bolt.userData.alive) C.bolts.kill(pp.bolt);
-      pp.bolt = null;
-      // E: band climb — re-seat, full pitch up + W (still held)
-      C.pos.set(0, ARENA_Y, 0); C.vel.set(0, 0, 0); C.pitch = 0; C.heading = 0;
-      keys.add('KeyR'); pp.mark = pp.t;
-      pp.band.maxYDev = 0; pp.vyMax = 0; pp.band.warnSeen = false;
-      pp.stage = 13;
-    }
-    return;
-  }
-  if (pp.stage === 13) { // band climb: full pitch (reached in 0.7 s) then W holds the climb into the ceiling
-    const dev = Math.abs(C.pos.y - ARENA_Y);
-    pp.band.maxYDev = Math.max(pp.band.maxYDev, +dev.toFixed(2));
-    if (dev >= 18 && dev <= 20) pp.vyMax = Math.max(pp.vyMax, C.vel.y); // the 18-20 layer — 2+ u inside the soft edge (story-005 sampled 5+ inside its 20-deep shell; the band shell is 4 deep, and a 17-layer sample still carries the pre-edge cap one climb-frame past entry)
-    if (dev > BAND_H && C.ui.warn && !C.ui.warn.hidden) pp.band.warnSeen = true;
-    if (pp.t >= pp.mark + 2.6) {
-      keys.delete('KeyR');
-      pp.band.maxVyInLayer = +pp.vyMax.toFixed(2);
-      // F: altitude-follow — two probe gunners seated AT the arena plane, player teleported
-      // to the band ceiling (+20 exactly): their mean y must trail within 12 u over 3 s
-      C.pitch = 0; // the climb left the nose clamped at 72° — level it or the ship keeps climbing
-      C.pos.y = ARENA_Y; C.vel.y = 0;
-      pp.follow = [
-        ENEMIES.spawnForProbe(C.tmp2.set(C.pos.x + 10, ARENA_Y, C.pos.z)),
-        ENEMIES.spawnForProbe(C.tmp2.set(C.pos.x - 10, ARENA_Y, C.pos.z)),
-      ];
-      pp.follow.forEach((g) => { g.userData.kind = 'gunner'; g.userData.hp = 2; });
-      C.pos.y = ARENA_Y + BAND_HH; C.vel.y = 0; // +20 offset — the band ceiling IS +20
-      pp.raiderFollow.offset0 = BAND_HH;
-      pp.mark = pp.t; pp.followAcc = 0; pp.followN = 0;
-      pp.stage = 14;
-    }
-    return;
-  }
-  if (pp.stage === 14) { // follow window: 3 s of LIVE altitude-follow (no pinning here)
-    const live = pp.follow.filter((g) => g.userData.alive);
-    if (live.length) {
-      const meanY = live.reduce((a, g) => a + g.position.y, 0) / live.length;
-      pp.followAcc += Math.abs(meanY - C.pos.y);
-      pp.followN++;
-    }
-    if (pp.t >= pp.mark + 3.0) {
-      pp.raiderFollow.meanDelta = +(pp.followAcc / Math.max(1, pp.followN)).toFixed(2);
-      pp.raiderFollow.followN = pp.followN; // survivor samples feeding the mean (review fix 8: an all-dead pair makes the mean vacuous — ÷1 guard reads 0.00)
-      pp.raiderFollow.raiders = pp.follow.length;
-      pp.follow.forEach((g) => ENEMIES.hitDrone(g, 99));
-      pp.follow = [];
-      keys.delete('KeyW'); // review fix 7: the cruise key must not outlive the walk — the probe page stops driving once the report latches
-      C.ppDone = true;
-      const probe = {
-        entryPitch: +(pp.entryPitch || 0).toFixed(4),
-        dPhi: pp.dPhi, slip: pp.slip, driftPath: pp.driftPath, boltRise: pp.boltRise,
-        band: pp.band, raiderScan: pp.raiderScan, raiderFollow: pp.raiderFollow, viewDirFromUp: pp.viewDirFromUp,
-      };
-      window.__stage2.pitchProbe = probe;
-      window.__stage2.pitchProbeLive = false;
-      C.api.report({ pitchProbe: probe }); // parity with scriptedKill/droneProbe/bossProbe — lands on __stage2.lastReport too
-    }
-  }
-}
 
 function scanNearest() { // full-3D distance to the closest live raider, or null (story-009 spec §5)
   let best = null;
@@ -874,21 +443,11 @@ export function enterCombat(scene, camera, rocket, ui, api) {
   C.score = 0; C.kills = 0; C.wave = 1; C.waveGapT = 0;
   C.time = 0; // story-014: the clock is per-fight — every combat entry restarts it
   C.scriptT = -1; C.scriptDone = false; C.scriptDrone = null;
-  C.dpT = -1; C.dpDrone = null; C.dpWin = 0; C.dpDone = false; // story-012: probe state restarts clean
   C.victoryFired = false; // stage-2 review (finding 3): the flag is per-fight — a fresh combat grants waves again
-  C.dpTele = false; C.dpDive = false; C.dpContact = false; C.dpSamples = 0; C.dpMM = null;
-  window.__stage2.droneProbeLive = false;
-  // story-013: boss + its probe state restart clean; the single entity drains with the pools (§8.6)
+  // story-013: the boss's single entity drains with the pools (§8.6); the probe states (drone/
+  // boss/pitch) live in src/probes.js and restart via resetProbes() — rider R-e extraction
   BOSS.clearBoss();
-  C.bpT = -1; C.bpStage = 'spawn'; C.bpStageT = 0; C.bpFired = 0; C.bpHpMark = 0;
-  C.bpSpawnWave = 0; C.bpHud = false; C.bpCharged = false; C.bpRaged = false; C.bpRagePinned = false; C.bpKilled = false; C.bpDone = false;
-  window.__stage2.bossProbeLive = false;
-  window.__stage2.bossShotPhase = null;
-  delete window.__stage2.bossProbe; // a fresh combat must never inherit the previous walk's report
-  delete window.__stage2.droneProbe; // review NIT 7: same hygiene for the drone walk's report
-  C.pp = null; C.ppDone = false; // story-015: pitch probe restarts clean — ppDone too (§8.6: same-page re-entry honors the sibling dpDone/bpDone resets)
-  window.__stage2.pitchProbeLive = false;
-  delete window.__stage2.pitchProbe; // same hygiene for the pitch walk's report
+  resetProbes();
   window.__stage2.bossDefeatedReports = 0; // review (finding 1): the exactly-once counter is per-fight
   C.flow = 0;
   C.proxScanT = 0; C.nearest = null; // story-009: proximity scan restarts clean (§8.6)
@@ -916,9 +475,9 @@ export function tickCombat(dt, t) {
   BOSS.tickBoss(dt, C.pos, C.bossApi); // story-013: the warden — single-entity state machine
   wavesTick(dt);
   scriptedKillTick(dt);
-  droneProbeTick(dt);
-  bossProbeTick(dt);
-  pitchProbeTick(dt); // story-015: deterministic pitch+drift walk (?pitchProbe=1)
+  droneProbeTick(dt, C, probeEnv); // rider R-e: probes receive combat state + pure helpers (probes.js never imports combat.js)
+  bossProbeTick(dt, C, probeEnv);
+  pitchProbeTick(dt, C, probeEnv); // story-015: deterministic pitch+drift walk (?pitchProbe=1)
 
   // shield regen after a clean 3 s
   C.regenT += dt;
@@ -1042,6 +601,7 @@ export function combatState() {
     bolts: C.bolts ? C.bolts.live : 0,
     ebolts: ENEMIES.eboltCount(),
     boost: C.boost,
+    rimOpacity: C.rim ? +C.rim.material.opacity.toFixed(3) : 0, // story-016: the equator ring's 3D-proximity driver, harness-visible (probe surface only)
     speed: +C.speed.toFixed(2), heading: +C.heading.toFixed(3), // probe surface — flow-check's throttle/turn asserts (story-004)
     pitch: +C.pitch.toFixed(3), velMag: +C.vel.length().toFixed(2), // story-015: pitch envelope + true speed under drift (SPD keeps showing C.speed; velMag is harness-only, §8 decision c)
     pos: C.pos.toArray().map((v) => +v.toFixed(2)), // probe surface — flow-check's keyboard-motion assert (story-003)

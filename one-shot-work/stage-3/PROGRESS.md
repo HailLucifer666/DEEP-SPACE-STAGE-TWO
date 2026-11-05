@@ -9,9 +9,9 @@ Baseline verified 2026-11-05: master bd79b79, tag good-2026-11-05-c, flow-check 
 EPIC 001–014 Complete, stage-2 GATE PASS.
 Merge grant: GRANTED 2026-11-05 — the Stage-2 pattern (machine-gate merges with look/feel
 review at stage close; ASSUMPTIONS.md item d resolved).
-Assert growth: 76 → 99 ACTUAL (015 — plan said 98; +1 camera guard from the quality review).
-Remaining estimate: → ~104 (016, +8 new/re-derived − 3 band retirement) → ~112 (017). Two
-pre-declared flagged-semantics changes live in the 016 step (probes 7/7b/8 re-derived r → r3;
+Assert growth: 76 → 99 (015) → 106 ACTUAL (016 — plan said ~104; +1 boss-pole guard and
++1 from the 015 riders landed in 016). Remaining estimate: ~113 (017). Two pre-declared
+flagged-semantics changes were executed in the 016 step (probes 7/7b/8 re-derived r → r3;
 the 015 band asserts retired) — never quiet edits.
 
 - [x] Setup: story-015..017 files + EPIC.md rows (013/014 stale Pending → Complete; 015/016/
@@ -47,8 +47,29 @@ the 015 band asserts retired) — never quiet edits.
       dy · R-g pose world-space nose sign assert (optional) · R-h report §7.1 formula-typo
       fix + review-fix numbering reconciliation note · R-i camera-assert bounds are calibrated
       to current look-target offset + camera-lag constants — any retune re-adjudicates.
-- [ ] Slice 2: story-016 — spherical arena (R_SOFT 60 / R_HARD 80 sphere at O; rides: band
+- [x] Slice 2: story-016 — spherical arena (R_SOFT 60 / R_HARD 80 sphere at O; rides: band
       scaffold deleted with flagged retirement, boss dashTarget shell clamp — one line)
+      Orchestrator verification 2026-11-05: implementer first pass cut off by quota ghost —
+      work had completed (red-first 02d1ff2 + feat a5f2270); completion agent finished the
+      protocol (6+1 mutations, report, gates). Spec review ❌ found ONE miss: R-e probes
+      extraction (combat.js 1100 > 1050 trigger) — extracted to src/probes.js (0bf6222;
+      combat.js → 614, probes.js 513, behavior-neutral 105/105 both runs) → narrow re-check ✅.
+      Quality review REJECT: CRITICAL boss dashTarget clamp operator-order bug (measure-after-
+      mutateate — silent no-op at the pole, escape exits sphere) + IMPORTANT R-f dy-guard not
+      discriminating. Fix pass 30da6a5 (clamp order per prescription + pole-park regression
+      assert red-first; R-f probe strengthened via field-clear + bounded window). Re-review
+      REJECT again: R-f claim contradicted by its own evidence (dy2 record ran on a pre-fix
+      build; maxPairDist 2.327, not 0.49). Honesty pass f9b7f66: reproduced TRUE dy-drop on
+      final tree (dy3: 105/1 maxPairDist=0.49, pole green), retired+annotated dy2, sealed
+      pole seam staleness (probeSealDashCap). Final re-review APPROVE (zero blocking).
+      Gates re-run by orchestrator: flow-check 106/106 `CONSOLE []`; dep-check PASS (main.js
+      500/500, probes.js graph acyclic); restartProbe=3 clean:true (entities 31 ×3); boot
+      clean (cold, within documented GLB variance band). Mutations 13+ verified red incl.
+      pole/floor/clamp/tangential/camceil/rhard90/ram/separation-dy2.
+      Evidence: production/qa/evidence/story-016-spherical-arena/ (report.md, flow-red, 10+
+      mutation records incl. dy3 truth, green records).
+      Commits: 02d1ff2 (red-first) · a5f2270 (feat) · 203e090 (protocol completion) ·
+      0bf6222 (R-e extraction) · 30da6a5 (quality fix pass) · f9b7f66 (record-honesty fix).
 - [ ] Slice 3: story-017 — world goes 3D (ambient field ~120 instanced + shell visual,
       rim-ring lifecycle; zero src/launch.js changes)
 - [ ] Stage close: independent review + smoke record + changelog + GATE.md (this folder);

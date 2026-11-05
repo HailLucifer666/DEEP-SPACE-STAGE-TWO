@@ -144,19 +144,25 @@ export function tickEnemies(dt, playerPos, api) {
     const dist = Math.hypot(dx, dz) || 1; // NaN guard §8.9 — never divide by 0
     const ux = dx / dist, uz = dz / dist;
 
-    // separation — pairwise push inside SEP_RADIUS (pool is small, brute force is honest)
-    let sx = 0, sz = 0;
+    // separation — pairwise push inside SEP_RADIUS (pool is small, brute force is honest).
+    // story-016 rider R-f: the metric gains the dy term (full 3D) — XZ-only separation stacks
+    // raiders vertically now that altitude-follow (015) exists, and two raiders at one XZ
+    // would grind on the same spot forever (ox=oz=0 excluded the pair from the push entirely).
+    let sx = 0, sy = 0, sz = 0;
     for (const o of E.scratch) {
       if (o === d || !o.userData.alive) continue;
-      const ox = d.position.x - o.position.x, oz = d.position.z - o.position.z;
-      const d2 = ox * ox + oz * oz;
+      const ox = d.position.x - o.position.x, oy = d.position.y - o.position.y, oz = d.position.z - o.position.z;
+      const d2 = ox * ox + oy * oy + oz * oz;
       if (d2 < SEP_RADIUS * SEP_RADIUS && d2 > 0.0001) {
         const inv = 1 / Math.sqrt(d2);
-        sx += ox * inv * (SEP_RADIUS - Math.sqrt(d2));
-        sz += oz * inv * (SEP_RADIUS - Math.sqrt(d2));
+        const push = SEP_RADIUS - Math.sqrt(d2);
+        sx += ox * inv * push;
+        sy += oy * inv * push;
+        sz += oz * inv * push;
       }
     }
     d.position.x += sx * dt * 2.2;
+    d.position.y += sy * dt * 2.2;
     d.position.z += sz * dt * 2.2;
 
     if (u.kind === 'gunner') {
