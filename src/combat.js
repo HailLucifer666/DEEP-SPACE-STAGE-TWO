@@ -1,6 +1,6 @@
 // STAGE TWO — COMBAT CORE (S4): chase-cam space combat around the hero rocket.
 // Owns: player ship pose (re-parents the rocket into a yaw/pitch/roll pose group),
-// throttle+turn flight (W/S throttle, A/D + pointer steer — no pointer lock),
+// throttle+turn flight + pitch/drift (story-015: W/S throttle, A/D + pointer steer, R/F + pointer-Y pitch, drift vel — no pointer lock),
 // soft-clamped arena, hold-fire pooled bolts,
 // shield→HP damage with regen, boost meter, derived waves (via enemies.js), death
 // slow-mo handoff. Contained state contract (§8.6): clearCombat() re-parents the
@@ -28,6 +28,18 @@ const BOOST_MULT = 1.9;
 const TURN_RATE = 2.2;       // commanded yaw (rad/s) — full circle ≈ 3 s (story-004: heading is player-owned)
 const ACCEL = 14;            // W: u/s² toward the cruise/boost ceiling
 const BRAKE = 22;            // S: u/s² down to 0 — brakes harder than W accelerates, and S wins over W
+// story-015 (full-3d-flight GDD §3.1-§3.4): pitch + drift. Pitch mirrors the yaw grammar
+// exactly (deadzone 0.08, 1.25× combined clamp) inside a ±72° envelope — no loops, ever
+// (GDD §5.1: changing that is a design-level reopen, not a tuning knob). Drift makes vel a
+// PERSISTENT state realigning toward the nose (§3.2). BAND_H/BAND_HH are the 015 altitude
+// band SCAFFOLD (the boundary is still the flat disc) — story-016 deletes both consts and
+// their asserts as a documented retirement.
+const PITCH_RATE = 1.8;      // rad/s commanded pitch — slightly slower than yaw: pitch is posture, yaw is aiming
+const PITCH_MAX = 1.2566;    // 72° — up-vector safety envelope (camera lateral basis ≥ 0.31 at max pitch)
+const PITCH_DEADZONE = 0.08; // NDC — mirrors the yaw deadzone exactly
+const PITCH_INVERT = false;  // flips the POINTER convention ONLY (keys unaffected) — playtest escape hatch
+const ALIGN_RATE = 4.5;      // 1/s — drift realignment toward forward·speed (slip ≈ 25° at full turn)
+const BAND_H = 16, BAND_HH = 20; // altitude band around ARENA_Y — 015 scaffold, retired by story-016
 const FIRE_INTERVAL = 1 / 8; // ~8/s hold-fire
 const BOLT_SPEED = 42;
 const BOLT_LIFE = 1.2;
@@ -43,7 +55,7 @@ const SCORE_ORB = 200;
 const C = {
   ready: false, scene: null, camera: null, rocket: null, ui: null, api: null,
   pose: null, tilt: null,
-  pos: new THREE.Vector3(), vel: new THREE.Vector3(), heading: 0, bank: 0, speed: 0, // speed = throttle state (u/s along the nose); heading is player-commanded (story-004)
+  pos: new THREE.Vector3(), vel: new THREE.Vector3(), heading: 0, bank: 0, speed: 0, pitch: 0, // speed = throttle state (u/s along the nose); heading/pitch are player-commanded (story-004/015); vel is drift state (persistent, story-015)
   hp: HP_MAX, shield: SHIELD_MAX, regenT: 0, dead: false, deathT: 0,
   fireT: 0, boost: 1, boosting: false,
   wave: 0, waveGapT: 0, score: 0, kills: 0,
@@ -56,6 +68,7 @@ const C = {
   // story-013 boss probe state (?bossProbe=1) — probe-only fields, untouched by normal play
   bossApi: null, bpT: -1, bpStage: 'spawn', bpStageT: 0, bpFired: 0, bpHpMark: 0,
   bpSpawnWave: 0, bpHud: false, bpCharged: false, bpRaged: false, bpRagePinned: false, bpKilled: false, bpDone: false,
+  pp: null, ppDone: false, // story-015 pitch probe state (?pitchProbe=1) — one probe-only object, rebuilt fresh on combat entry; ppDone latches the walk (§8.6 same-page re-entry, dpDone/bpDone sibling)
   tmp: new THREE.Vector3(), tmp2: new THREE.Vector3(),
   ndc: new THREE.Vector3(), // hoisted unproject scratch (feel: no per-frame allocation)
   flow: 0, // smoothed boost → field-flow factor (0 idle drift, 1 rush)
@@ -69,6 +82,7 @@ const SCRIPTED_KILL = qs.get('scriptedKill') === '1';
 const DRONE_PROBE = qs.get('droneProbe') === '1'; // story-012: deterministic single-drone run
 const BOSS_PROBE = qs.get('bossProbe') === '1'; // story-013: deterministic boss walk (skips the wave-5 wait)
 const BOSS_SHOT = qs.get('bossShot') === '1'; // story-013 evidence variant: closer spawn + phase holds (screenshots)
+const PITCH_PROBE = qs.get('pitchProbe') === '1'; // story-015: deterministic pitch+drift walk
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, Number.isFinite(v) ? v : a)); // NaN-safe (§8.9)
 const fmt = (n) => (Number.isFinite(n) ? String(Math.max(0, Math.floor(n))) : '0'); // honest HUD values (spec #16)
@@ -151,7 +165,11 @@ function noseWorld(out) {
 }
 
 function forward(out) {
-  return out.set(Math.sin(C.heading), 0, Math.cos(C.heading));
+  // story-015 keystone (GDD §3.0): the 3D form. Every consumer — ship velocity, player
+  // bolts, chase cam, probe spawns — gains the vertical component correctly from this ONE
+  // change. φ = pitch, nose-up positive.
+  const cp = Math.cos(C.pitch);
+  return out.set(Math.sin(C.heading) * cp, Math.sin(C.pitch), Math.cos(C.heading) * cp);
 }
 
 /* ---------- input → steering (story-004: throttle + turn) ---------- */
@@ -167,6 +185,16 @@ function steer(dt) {
   const turn = clamp(keyTurn - mx, -1.25, 1.25);
   C.heading += turn * TURN_RATE * dt;
 
+  // pitch (story-015, GDD §3.1) — mirrors the yaw grammar exactly: pointer-Y DIRECT (above
+  // center = nose up, input.mouse.y is already NDC-up-positive and was unused), same 0.08
+  // deadzone, R = up / F = down, 1.25× combined clamp. ArrowUp/Down stay throttle aliases —
+  // they do NOT become pitch.
+  const keyPitch = (keys.has('KeyR') ? 1 : 0) - (keys.has('KeyF') ? 1 : 0);
+  const myNdc = input.mouseActive ? input.mouse.y : 0;
+  const my = Math.abs(myNdc) > PITCH_DEADZONE ? myNdc : 0;
+  const pitchCmd = clamp(keyPitch + (PITCH_INVERT ? -my : my), -1.25, 1.25);
+  C.pitch = clamp(C.pitch + pitchCmd * PITCH_RATE * dt, -PITCH_MAX, PITCH_MAX);
+
   // throttle — W accelerates toward cruise (boost raises the ceiling), S brakes to 0 and wins
   // over W; neither key holds speed (cruise). Space/Shift without W does nothing and doesn't
   // drain the meter. Boost expiry bleeds back down at brake rate even with W held (review R2:
@@ -181,9 +209,15 @@ function steer(dt) {
   else if (C.speed > maxSpeed) C.speed = Math.max(maxSpeed, C.speed - BRAKE * dt); // expiry bleed, never a snap
   else if (wHeld) C.speed = Math.min(maxSpeed, C.speed + ACCEL * dt);
 
-  // the ship flies where the nose points — vel is derived from heading, never the reverse
-  // (the old velocity-derived heading is what made W flip the camera 180°)
-  C.vel.copy(forward(C.tmp)).multiplyScalar(C.speed);
+  // drift (story-015, GDD §3.2): vel is a PERSISTENT state realigning toward the nose — the
+  // ship flies where the nose points *within a slip angle* (~25° at full turn). The exp form
+  // is dt-scaled (R3: never a per-frame multiplier); speed stays the throttle state (C.speed)
+  // and at speed 0 drift is inert (the story-004 turn-in-place assert survives untouched).
+  // Ordering is LOAD-BEARING (GDD §4.5): alignment runs FIRST, then the boundary bleeds, then
+  // integration — alignment after the bleed would undo the boundary's radial cap every frame.
+  // The nose is still player-owned: vel chases the nose, never the reverse (the old
+  // velocity-derived heading is what made W flip the camera 180°).
+  C.vel.lerp(forward(C.tmp).multiplyScalar(C.speed), 1 - Math.exp(-ALIGN_RATE * dt));
 
   // soft circular rim (story-005): past R_SOFT the outward radial component bleeds toward zero
   // (tangential preserved — the ship slides along the rim instead of pinning against a wall)
@@ -197,6 +231,17 @@ function steer(dt) {
       C.vel.x -= excess * nx; C.vel.z -= excess * nz;
     }
   }
+  // altitude band (story-015 SCAFFOLD, GDD §3.4 — retired by story-016): pitch exists while
+  // the boundary is still the flat disc, so the vertical component bleeds inside
+  // [ARENA_Y − BAND_H, ARENA_Y + BAND_H] with story-005's exact cap-and-floor feel (floor 3,
+  // the anti-mud floor) and a hard ±BAND_HH safety net below; #warn reuses the rim grammar.
+  let dY = Math.abs(C.pos.y - ARENA_Y);
+  if (dY > BAND_H) {
+    const ny = C.pos.y > ARENA_Y ? 1 : -1;
+    const radialY = C.vel.y * ny;
+    const capY = Math.max(3, MAX_SPEED * (BAND_HH - dY) / (BAND_HH - BAND_H));
+    if (radialY > capY) C.vel.y -= (radialY - capY) * ny;
+  }
   C.pos.addScaledVector(C.vel, dt);
 
   // hard circular clamp — safety net for the one frame the bleed cap allows
@@ -206,8 +251,14 @@ function steer(dt) {
     C.pos.x *= s; C.pos.z *= s;
     r = R_HARD;
   }
+  // band hard clamp — safety net for the one frame the bleed cap allows (story-005's clamp, vertical)
+  dY = Math.abs(C.pos.y - ARENA_Y);
+  if (dY > BAND_HH) {
+    C.pos.y = ARENA_Y + (C.pos.y > ARENA_Y ? BAND_HH : -BAND_HH);
+    dY = BAND_HH;
+  }
   if (C.ui.warn) {
-    C.ui.warn.hidden = r <= R_SOFT || C.dead;
+    C.ui.warn.hidden = (r <= R_SOFT && dY <= BAND_H) || C.dead;
     C.ui.warn.textContent = 'EDGE OF SECTOR';
   }
   if (C.rim) C.rim.material.opacity = clamp((r - R_SOFT) / (R_HARD - R_SOFT), 0, 1) * 0.55;
@@ -238,8 +289,10 @@ function boltsTick(dt) {
     // bolt × drone scan (both pools are small — brute force is the honest option)
     ENEMIES.eachAlive((d) => {
       if (!b.userData.alive) return;
-      const dx = d.position.x - b.position.x, dz = d.position.z - b.position.z;
-      if (dx * dx + dz * dz < 1.1) {
+      // story-015: full-3D squared distance (the orb scan's proven form) — the XZ-only form
+      // hit a raider a whole ring-tilt above/below the bolt once the ship can pitch
+      const dx = d.position.x - b.position.x, dy = d.position.y - b.position.y, dz = d.position.z - b.position.z;
+      if (dx * dx + dy * dy + dz * dz < 1.1) {
         C.bolts.kill(b);
         EFFECTS.explosion(d.position);
         noiseBurst({ dur: 0.28, vol: 0.4, f0: 900, f1: 140 });
@@ -516,6 +569,277 @@ function bossProbeTick(dt) {
   }
 }
 
+/* ---------- story-015 pitch probe (?pitchProbe=1) ----------
+ * Deterministic full walk of the new axes (droneProbe/bossProbe pattern). The drive
+ * synthesizes R/F into the REAL key set and writes the pointer NDC into the SAME mouse
+ * object steer() reads — zero input.js changes. Stages in order:
+ *   scan (0.4-2.4 s) — one gunner + one rammer spawned 20 u DIRECTLY above a stationary
+ *     ship; both position-pinned for the window (bossProbe probeHold precedent: their own
+ *     altitude-follow would otherwise enter ram range at ~2.0 s and blur the measurement —
+ *     the follow mechanic itself is measured LIVE by the follow stage below). NO healing
+ *     in-window: an hp+shield drop or a regenT reset IS the hit signal (nothing else can
+ *     reach the ship in 2.4 s — wave raiders are still 38 u out). XZ-only scans hit both
+ *     (the story's stated red); 3D scans pass.
+ *   pitch — R 0.4 s (≈0.72 rad) + yaw independence, pointer +0.8 (direct) / −0.8 (mirror),
+ *     deadzone 0.05 parked, R 1.5 s clamp hold, F 0.4 s. C.pitch is reset to 0 between
+ *     sub-tests (probe-owned precondition, bossProbe probeDamage precedent) so each window
+ *     measures unsaturated.
+ *   drift — W to cruise, 1.0 s full yaw (slip + velMag sampled at the first tick ≥ 1.0 s),
+ *     0.8 s release (recovery), then a re-seated one-rev circle at full yaw (mean/max radius
+ *     to the sample centroid; aligned-entry re-seat is the probe-owned precondition).
+ *   bolt — C.pitch set to 45° (recorded), one bolt through the REAL spawn path (noseWorld +
+ *     forward), tracked 0.5 s (rise + xz-speed; retried if an enemy scan kills it early).
+ *   band — re-seated full-pitch climb + W: max |y−18|, max vy sampled in the 17-20 layer,
+ *     #warn seen outside the band.
+ *   follow — two probe gunners seated AT the arena plane, player teleported to the band
+ *     ceiling (+20 exactly): their mean y must trail within 12 u over 3 s (offset0 recorded).
+ * Reports window.__stage2.pitchProbe (pitchProbeLive is the screenshot hook; api.report
+ * parity lands lastReport). Damage is healed AFTER the scan window — a ~22 s drive must not
+ * die mid-walk with wave raiders orbiting the stationary ship. */
+function pitchProbeTick(dt) {
+  if (!PITCH_PROBE || C.ppDone) return;
+  const pp = C.pp || (C.pp = {
+    t: 0, stage: 0, mark: 0, entryPitch: 0, maxPhi: 0, h0: 0, hp0: 0, regenMark: 0,
+    dPhi: {}, slip: {}, driftPath: {}, boltRise: {}, band: {}, raiderScan: { ramContact: false, boltHit: false }, raiderFollow: {}, viewDirFromUp: {},
+    pts: [], scanG: null, scanR: null, bolt: null, boltP0: null, boltTries: 0, vyMax: 0,
+    follow: [], followAcc: 0, followN: 0,
+  });
+  pp.t += dt;
+  window.__stage2.pitchProbeLive = true;
+  if (pp.stage >= 2) { if (C.hp < HP_MAX) C.hp = HP_MAX; if (C.shield < SHIELD_MAX) C.shield = SHIELD_MAX; } // the scan window stays honest — heal only after it closes
+  const keys = C.api.input.keys;
+  const mouse = C.api.input.mouse;
+
+  if (pp.stage === 0) {
+    pp.entryPitch = C.pitch; // combat-entry snapshot — the replay-never-inherits-a-nose-up contract (GDD §5.6)
+    if (pp.t >= 0.4) {
+      pp.scanG = ENEMIES.spawnForProbe(C.tmp2.set(C.pos.x, C.pos.y + 20, C.pos.z));
+      pp.scanG.userData.kind = 'gunner'; pp.scanG.userData.hp = 2; // gunner: its sitting bolts are the bolt-hit signal
+      pp.scanG.userData.fireT = 0.5; // probe-owned precondition (review fix 5): the live spawn's 1.2-2.2 s first-shot delay left ~20% of runs bolt-less in the 2.4 s window — pin the PROBE raider only, live spawn math untouched
+      pp.scanR = ENEMIES.spawnForProbe(C.tmp2.set(C.pos.x, C.pos.y + 20, C.pos.z)); // rammer: the ram-contact signal
+      pp.hp0 = C.hp + C.shield; pp.regenMark = C.regenT;
+      pp.stage = 1;
+    }
+    return;
+  }
+  if (pp.stage === 1) { // elevated-raider scan window — pin BOTH probe raiders at +20
+    pp.scanG.position.set(C.pos.x, C.pos.y + 20, C.pos.z);
+    pp.scanR.position.set(C.pos.x, C.pos.y + 20, C.pos.z);
+    if (C.hp + C.shield < pp.hp0 || C.regenT < pp.regenMark) pp.raiderScan.boltHit = true; // damage landed
+    pp.regenMark = Math.max(pp.regenMark, C.regenT);
+    if (pp.t >= 2.4) {
+      pp.raiderScan.ramContact = !pp.scanR.userData.alive; // a ram kills the rammer in place
+      pp.raiderScan.windowS = 2;
+      ENEMIES.hitDrone(pp.scanG, 99); ENEMIES.hitDrone(pp.scanR, 99); // release the field for the follow stage
+      pp.scanG = null; pp.scanR = null;
+      mouse.x = 0; mouse.y = 0; C.api.input.mouseActive = false;
+      C.pitch = 0; pp.h0 = C.heading; pp.mark = pp.t;
+      keys.add('KeyR'); // B1 hold begins at the NEXT steer() — the window tolerances absorb the one-frame skew
+      pp.stage = 2;
+    }
+    return;
+  }
+  if (pp.stage === 2) { // B1: R 0.4 s → Δφ ≈ 0.72; heading must not move
+    if (pp.t >= pp.mark + 0.4) {
+      keys.delete('KeyR');
+      pp.dPhi.rHold04 = +C.pitch.toFixed(4);
+      pp.dPhi.headingDrift = +(C.heading - pp.h0).toFixed(4);
+      C.pitch = 0; // probe-owned reset between sub-tests — each window measures unsaturated
+      mouse.x = 0; mouse.y = 0.8; C.api.input.mouseActive = true;
+      pp.mark = pp.t;
+      pp.stage = 3;
+    }
+    return;
+  }
+  if (pp.stage === 3) { // B2: pointer NDC +0.8 for 1.0 s — DIRECT: up = nose up
+    if (pp.t >= pp.mark + 1.0) {
+      pp.dPhi.ptrUp = +C.pitch.toFixed(4);
+      C.pitch = 0; mouse.y = -0.8;
+      pp.mark = pp.t;
+      pp.stage = 4;
+    }
+    return;
+  }
+  if (pp.stage === 4) { // B3: pointer NDC −0.8 — mirror
+    if (pp.t >= pp.mark + 1.0) {
+      pp.dPhi.ptrDown = +C.pitch.toFixed(4);
+      C.camera.getWorldDirection(C.tmp); // R1 guard (review fix 3): view direction at max DOWN pitch — folded angle off the vertical axis (un-pinned steady ≈14-15°)
+      pp.viewDirFromUp.down = +(Math.acos(Math.min(1, Math.abs(C.tmp.y))) * 180 / Math.PI).toFixed(2);
+      C.pitch = 0; mouse.y = 0.05;
+      pp.mark = pp.t;
+      pp.stage = 5;
+    }
+    return;
+  }
+  if (pp.stage === 5) { // B4: pointer parked inside the deadzone (|y| = 0.05 < 0.08)
+    if (pp.t >= pp.mark + 1.0) {
+      pp.dPhi.deadzone = +C.pitch.toFixed(4);
+      mouse.y = 0; C.api.input.mouseActive = false;
+      C.pitch = 0; pp.maxPhi = 0;
+      keys.add('KeyR'); pp.mark = pp.t;
+      pp.stage = 6;
+    }
+    return;
+  }
+  if (pp.stage === 6) { // B5: R held 1.5 s — clamps at PITCH_MAX and STAYS (0.7 s to clamp, 0.8 s held)
+    pp.maxPhi = Math.max(pp.maxPhi, C.pitch);
+    if (pp.t >= pp.mark + 1.5) {
+      keys.delete('KeyR');
+      pp.dPhi.clampEnd = +C.pitch.toFixed(4); pp.dPhi.clampMax = +pp.maxPhi.toFixed(4);
+      C.camera.getWorldDirection(C.tmp); // R1 guard at max UP pitch (see B3; un-pinned steady ≈25°)
+      pp.viewDirFromUp.up = +(Math.acos(Math.min(1, Math.abs(C.tmp.y))) * 180 / Math.PI).toFixed(2);
+      C.pitch = 0;
+      keys.add('KeyF'); pp.mark = pp.t;
+      pp.stage = 7;
+    }
+    return;
+  }
+  if (pp.stage === 7) { // B6: F 0.4 s — mirror of B1
+    if (pp.t >= pp.mark + 0.4) {
+      keys.delete('KeyF');
+      pp.dPhi.fHold04 = +C.pitch.toFixed(4);
+      C.pitch = 0;
+      keys.add('KeyW'); pp.mark = pp.t; // cruise for the drift stages
+      pp.stage = 8;
+    }
+    return;
+  }
+  if (pp.stage === 8) { // C0: W to cruise
+    if (C.speed >= 16.5 || pp.t >= pp.mark + 2.5) {
+      keys.add('KeyA'); pp.mark = pp.t;
+      pp.stage = 9;
+    }
+    return;
+  }
+  if (pp.stage === 9) { // C1: 1.0 s full yaw — slip + magnitude sampled at the first tick ≥ 1.0 s
+    if (pp.t >= pp.mark + 1.0) {
+      keys.delete('KeyA');
+      const f = forward(C.tmp);
+      const dot = clamp(C.vel.dot(f) / Math.max(0.001, C.vel.length()), -1, 1);
+      pp.slip.deg = +(Math.acos(dot) * 180 / Math.PI).toFixed(2);
+      pp.slip.velMag = +C.vel.length().toFixed(3);
+      pp.slip.speed = +C.speed.toFixed(2); // review fix 2: denominator sampled at the SAME tick as velMag — the old stage-8 capture was 1.0 s stale (speed kept ramping to 17), leaving a 0.3% margin at the 0.9 floor
+      pp.mark = pp.t;
+      pp.stage = 10;
+    }
+    return;
+  }
+  if (pp.stage === 10) { // C2: release — 0.8 s later the slip must be < 8°
+    if (pp.t >= pp.mark + 0.8) {
+      const f = forward(C.tmp);
+      const dot = clamp(C.vel.dot(f) / Math.max(0.001, C.vel.length()), -1, 1);
+      pp.slip.recoveredDeg = +(Math.acos(dot) * 180 / Math.PI).toFixed(3);
+      // C3: re-seat (probe-owned precondition: aligned entry, arena-center safe — the circle
+      // keeps r ≤ ~10) and trace one full rev at full yaw
+      C.pos.set(0, ARENA_Y, 0); C.pitch = 0;
+      C.vel.copy(forward(C.tmp)).multiplyScalar(C.speed);
+      keys.add('KeyA'); pp.mark = pp.t; pp.pts.length = 0;
+      pp.stage = 11;
+    }
+    return;
+  }
+  if (pp.stage === 11) { // C3: sample the rev
+    pp.pts.push([C.pos.x, C.pos.z]);
+    if (pp.t >= pp.mark + 2 * Math.PI / TURN_RATE) {
+      keys.delete('KeyA');
+      const cx = pp.pts.reduce((a, p2) => a + p2[0], 0) / pp.pts.length;
+      const cz = pp.pts.reduce((a, p2) => a + p2[1], 0) / pp.pts.length;
+      let sum = 0, mx = 0;
+      for (const p2 of pp.pts) { const d2 = Math.hypot(p2[0] - cx, p2[1] - cz); sum += d2; if (d2 > mx) mx = d2; }
+      pp.driftPath.radius = +(sum / pp.pts.length).toFixed(2);
+      pp.driftPath.radiusMax = +mx.toFixed(2);
+      pp.driftPath.samples = pp.pts.length;
+      pp.driftPath.revS = +(2 * Math.PI / TURN_RATE).toFixed(3);
+      // D: pitched bolt — 45° through the REAL spawn path (noseWorld + forward), tracked 0.5 s
+      C.pitch = 0.7854;
+      pp.boltRise.phi = +C.pitch.toFixed(4);
+      const b = C.bolts.spawn();
+      noseWorld(b.position);
+      forward(b.userData.dir);
+      b.userData.life = BOLT_LIFE;
+      b.lookAt(C.tmp.copy(b.position).add(b.userData.dir));
+      pp.bolt = b; pp.boltP0 = b.position.clone(); pp.mark = pp.t; pp.boltTries = 0;
+      pp.stage = 12;
+    }
+    return;
+  }
+  if (pp.stage === 12) { // bolt tracking — an enemy-scan kill retries (≤3), else records honestly
+    if (!pp.bolt.userData.alive && pp.t < pp.mark + 0.5 && pp.boltTries < 3) {
+      pp.boltTries++;
+      const b = C.bolts.spawn();
+      noseWorld(b.position);
+      forward(b.userData.dir);
+      b.userData.life = BOLT_LIFE;
+      b.lookAt(C.tmp.copy(b.position).add(b.userData.dir));
+      pp.bolt = b; pp.boltP0 = b.position.clone(); pp.mark = pp.t;
+      return;
+    }
+    if (pp.t >= pp.mark + 0.5) {
+      pp.boltRise.dy = +(pp.bolt.position.y - pp.boltP0.y).toFixed(2);
+      pp.boltRise.xzSpeed = +(Math.hypot(pp.bolt.position.x - pp.boltP0.x, pp.bolt.position.z - pp.boltP0.z) / (pp.t - pp.mark)).toFixed(2);
+      pp.boltRise.seconds = +(pp.t - pp.mark).toFixed(3);
+      pp.boltRise.tries = pp.boltTries;
+      if (pp.bolt.userData.alive) C.bolts.kill(pp.bolt);
+      pp.bolt = null;
+      // E: band climb — re-seat, full pitch up + W (still held)
+      C.pos.set(0, ARENA_Y, 0); C.vel.set(0, 0, 0); C.pitch = 0; C.heading = 0;
+      keys.add('KeyR'); pp.mark = pp.t;
+      pp.band.maxYDev = 0; pp.vyMax = 0; pp.band.warnSeen = false;
+      pp.stage = 13;
+    }
+    return;
+  }
+  if (pp.stage === 13) { // band climb: full pitch (reached in 0.7 s) then W holds the climb into the ceiling
+    const dev = Math.abs(C.pos.y - ARENA_Y);
+    pp.band.maxYDev = Math.max(pp.band.maxYDev, +dev.toFixed(2));
+    if (dev >= 18 && dev <= 20) pp.vyMax = Math.max(pp.vyMax, C.vel.y); // the 18-20 layer — 2+ u inside the soft edge (story-005 sampled 5+ inside its 20-deep shell; the band shell is 4 deep, and a 17-layer sample still carries the pre-edge cap one climb-frame past entry)
+    if (dev > BAND_H && C.ui.warn && !C.ui.warn.hidden) pp.band.warnSeen = true;
+    if (pp.t >= pp.mark + 2.6) {
+      keys.delete('KeyR');
+      pp.band.maxVyInLayer = +pp.vyMax.toFixed(2);
+      // F: altitude-follow — two probe gunners seated AT the arena plane, player teleported
+      // to the band ceiling (+20 exactly): their mean y must trail within 12 u over 3 s
+      C.pitch = 0; // the climb left the nose clamped at 72° — level it or the ship keeps climbing
+      C.pos.y = ARENA_Y; C.vel.y = 0;
+      pp.follow = [
+        ENEMIES.spawnForProbe(C.tmp2.set(C.pos.x + 10, ARENA_Y, C.pos.z)),
+        ENEMIES.spawnForProbe(C.tmp2.set(C.pos.x - 10, ARENA_Y, C.pos.z)),
+      ];
+      pp.follow.forEach((g) => { g.userData.kind = 'gunner'; g.userData.hp = 2; });
+      C.pos.y = ARENA_Y + BAND_HH; C.vel.y = 0; // +20 offset — the band ceiling IS +20
+      pp.raiderFollow.offset0 = BAND_HH;
+      pp.mark = pp.t; pp.followAcc = 0; pp.followN = 0;
+      pp.stage = 14;
+    }
+    return;
+  }
+  if (pp.stage === 14) { // follow window: 3 s of LIVE altitude-follow (no pinning here)
+    const live = pp.follow.filter((g) => g.userData.alive);
+    if (live.length) {
+      const meanY = live.reduce((a, g) => a + g.position.y, 0) / live.length;
+      pp.followAcc += Math.abs(meanY - C.pos.y);
+      pp.followN++;
+    }
+    if (pp.t >= pp.mark + 3.0) {
+      pp.raiderFollow.meanDelta = +(pp.followAcc / Math.max(1, pp.followN)).toFixed(2);
+      pp.raiderFollow.followN = pp.followN; // survivor samples feeding the mean (review fix 8: an all-dead pair makes the mean vacuous — ÷1 guard reads 0.00)
+      pp.raiderFollow.raiders = pp.follow.length;
+      pp.follow.forEach((g) => ENEMIES.hitDrone(g, 99));
+      pp.follow = [];
+      keys.delete('KeyW'); // review fix 7: the cruise key must not outlive the walk — the probe page stops driving once the report latches
+      C.ppDone = true;
+      const probe = {
+        entryPitch: +(pp.entryPitch || 0).toFixed(4),
+        dPhi: pp.dPhi, slip: pp.slip, driftPath: pp.driftPath, boltRise: pp.boltRise,
+        band: pp.band, raiderScan: pp.raiderScan, raiderFollow: pp.raiderFollow, viewDirFromUp: pp.viewDirFromUp,
+      };
+      window.__stage2.pitchProbe = probe;
+      window.__stage2.pitchProbeLive = false;
+      C.api.report({ pitchProbe: probe }); // parity with scriptedKill/droneProbe/bossProbe — lands on __stage2.lastReport too
+    }
+  }
+}
+
 function scanNearest() { // full-3D distance to the closest live raider, or null (story-009 spec §5)
   let best = null;
   ENEMIES.eachAlive((d) => {
@@ -544,7 +868,7 @@ export function enterCombat(scene, camera, rocket, ui, api) {
   C.rim.visible = true;
   C.pos.set(0, ARENA_Y, 0);
   C.vel.set(0, 0, 0);
-  C.heading = 0; C.bank = 0; C.speed = 0;
+  C.heading = 0; C.bank = 0; C.speed = 0; C.pitch = 0; // story-015: the replay never inherits a nose-up start (GDD §5.6); vel reset above covers drift
   C.hp = HP_MAX; C.shield = SHIELD_MAX; C.regenT = 0; C.dead = false; C.deathT = 0;
   C.fireT = 0; C.boost = 1; C.boosting = false;
   C.score = 0; C.kills = 0; C.wave = 1; C.waveGapT = 0;
@@ -562,6 +886,9 @@ export function enterCombat(scene, camera, rocket, ui, api) {
   window.__stage2.bossShotPhase = null;
   delete window.__stage2.bossProbe; // a fresh combat must never inherit the previous walk's report
   delete window.__stage2.droneProbe; // review NIT 7: same hygiene for the drone walk's report
+  C.pp = null; C.ppDone = false; // story-015: pitch probe restarts clean — ppDone too (§8.6: same-page re-entry honors the sibling dpDone/bpDone resets)
+  window.__stage2.pitchProbeLive = false;
+  delete window.__stage2.pitchProbe; // same hygiene for the pitch walk's report
   window.__stage2.bossDefeatedReports = 0; // review (finding 1): the exactly-once counter is per-fight
   C.flow = 0;
   C.proxScanT = 0; C.nearest = null; // story-009: proximity scan restarts clean (§8.6)
@@ -591,6 +918,7 @@ export function tickCombat(dt, t) {
   scriptedKillTick(dt);
   droneProbeTick(dt);
   bossProbeTick(dt);
+  pitchProbeTick(dt); // story-015: deterministic pitch+drift walk (?pitchProbe=1)
 
   // shield regen after a clean 3 s
   C.regenT += dt;
@@ -599,12 +927,13 @@ export function tickCombat(dt, t) {
   // ship pose + chase cam
   p.position.copy(C.pos);
   p.rotation.y = C.heading;
+  p.rotation.x = -C.pitch; // story-015: negative — with YXZ composition a positive rotation.x pitches the +Z-forward nose DOWN (GDD §3.0); bank stays the innermost roll, correct at any pitch
   p.rotation.z = C.bank;
   const camTarget = C.tmp.copy(C.pos).addScaledVector(forward(C.tmp2), -7.5 - C.vel.length() * 0.22); // velocity trail (story-002): thrust visibly surges the ship ahead in frame
-  camTarget.y += 3.4;
+  camTarget.y += 3.4; // stays WORLD-up (story-015): never inverts inside the 72° envelope (R1 mitigation IS the clamp)
   const k = 1 - Math.exp(-5 * dt); // feel: trail reads — 6 -> 5 (story-002)
   C.camera.position.lerp(camTarget, k);
-  C.camera.lookAt(C.pos.x + forward(C.tmp2).x * 4, ARENA_Y, C.pos.z + C.tmp2.z * 4);
+  C.camera.lookAt(C.pos.x + C.tmp2.x * 4, C.pos.y + C.tmp2.y * 4, C.pos.z + C.tmp2.z * 4); // story-015: look-target y UNPINNED from ARENA_Y — rides the pitched nose
   EFFECTS.applyShake(dt);
   EFFECTS.tickEffects(dt); // drive the explosion pool — was never called (particles never faded)
   C.flow += ((C.boosting ? 1 : 0) - C.flow) * (1 - Math.exp(-4 * dt)); // smoothed boost rush
@@ -714,6 +1043,7 @@ export function combatState() {
     ebolts: ENEMIES.eboltCount(),
     boost: C.boost,
     speed: +C.speed.toFixed(2), heading: +C.heading.toFixed(3), // probe surface — flow-check's throttle/turn asserts (story-004)
+    pitch: +C.pitch.toFixed(3), velMag: +C.vel.length().toFixed(2), // story-015: pitch envelope + true speed under drift (SPD keeps showing C.speed; velMag is harness-only, §8 decision c)
     pos: C.pos.toArray().map((v) => +v.toFixed(2)), // probe surface — flow-check's keyboard-motion assert (story-003)
     dead: C.dead,
   };
