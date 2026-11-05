@@ -462,10 +462,10 @@ export function powerupProbeTick(dt, C, env) {
         const s = POWERUPS.stats();
         PU.rate = { kills: PU.kills, drops: s.dropped - PU.stats0.dropped };
         if (PU.kills < 100) PU.rate.timeout = true;
-        PU.target = null; PU.bolt = null; PU.mark2 = 0;
+        PU.target = null; PU.bolt = null;
         POWERUPS.clearPowerups();
         PU.kinds0 = POWERUPS.stats();
-        PU.kills = 0; PU.stage = 2;
+        PU.kills = 0; PU.mark2 = PU.t; PU.stage = 2; // mark2 re-arms as stage 2's watchdog
       }
       return;
     case 2: // the uniform 1/3 kind split over M = 300 REAL DROPS (not rolls — 300 rolls at p=0.18
@@ -475,7 +475,10 @@ export function powerupProbeTick(dt, C, env) {
         env.forward(C.tmp);
         POWERUPS.maybeDrop(C.tmp2.copy(C.pos).addScaledVector(C.tmp, 8));
       }
-      if (POWERUPS.stats().dropped - PU.kinds0.dropped >= 300) {
+      if (POWERUPS.stats().dropped - PU.kinds0.dropped >= 300 || (PU.mark2 && PU.t > PU.mark2 + 40)) {
+        // watchdog (mutation 2 proven need): with the drop roll removed, dropped never grows and
+        // the stage would hang — the 40 s cap records honestly (kinds under-collected + timeout)
+        // so the downstream asserts read by VALUE
         const s = POWERUPS.stats();
         PU.kinds = {
           SPREAD: s.byKind.SPREAD - PU.kinds0.byKind.SPREAD,
@@ -483,6 +486,8 @@ export function powerupProbeTick(dt, C, env) {
           SHIELD: s.byKind.SHIELD - PU.kinds0.byKind.SHIELD,
           drops: s.dropped - PU.kinds0.dropped, // the ACTUAL drop count (the 10-per-tick loop overshoots 300 by ≤ 10)
         };
+        if (PU.kinds.drops < 300) PU.kinds.timeout = true;
+        PU.mark2 = 0;
         POWERUPS.clearPowerups();
         PU.stage = 3;
       }
