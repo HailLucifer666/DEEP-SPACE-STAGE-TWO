@@ -1,5 +1,7 @@
 # STAGE TWO — project instructions (CCGS studio installed 2026-11-03)
 
+> **LAUNCH PROTOCOL:** read `one-shot-work/LAUNCH-10-10.md` before any task. One writer at a time; see its §1 rules and §8 session protocol.
+
 Browser space-combat micro-game (vanilla three.js, single-file build) for the VI3W
 interview take-home. The Claude-Code-Game-Studios framework lives in `.claude/`
 (74 skills, 49 agents, docs/templates) with `project.yaml` as its config
