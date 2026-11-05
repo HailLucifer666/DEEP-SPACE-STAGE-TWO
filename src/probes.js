@@ -184,6 +184,7 @@ export function bossProbeTick(dt, C, env) {
       BP.poleQuietT = null; BP.poleQuietAt = null; BP.poleInDash = false;
       BP.polePrev = null; BP.poleL = null; BP.poleE = null; BP.poleSp = [];
       BP.poleDashPeakR3 = 0; BP.poleDashCapR3 = null;
+      BOSS.probeSealDashCap(); // re-review advisory: null the boss's dashCapR3 seam at pole arming — the equator dash wrote 68; if the pole-launch stamp ever drops, the assert must read null (red by absence), never the stale 68
       C.pos.set(0, 96, 0); C.vel.set(0, 0, 0);
     }
     const bpPos = BOSS.probeTargets(C.pos).node; // story-016: sample the boss's world position every drive tick — the dash IS the r3 peak (pre-dash orbit holds ≤ ~48 from the parked ship)

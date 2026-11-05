@@ -121,7 +121,8 @@ red VERIFIED by reading its output — a silent no-op proves nothing)
 | 4 | combat.js tangential preservation removed (excess-subtraction → full-component zeroing, cap kept) (2026-11-05) | `flow-mutation-tangential.txt` — **102/3** | `rim slides along the shell` (**carry 3.5 < 5** — pins) + two same-root downstream reds: with tangential dead the ship lingers on the shell, so the return dive never crosses r3<58∧dY>16 in its 10 s window → `#warn clears` and `rim ring opacity inside` also red (sample-miss, not a product defect). The cap-form asserts (`soft shell bleeds`, `rim floor`) stay green |
 | 5 | boss.js `launchDash` clamp line removed (2026-11-05) | `flow-mutation-bossdash.txt` — **103/2** | `boss dashTarget clamped inside the shell` (**peak 87.99 > 80**) + `boss stays inside mid-dash and re-orbits inside` (**reorbit 87.96 > 85** — the unclamped overshoot leaves the boss outside the shell past rage exit). Adjacent keep-passing: `boss phases entered in order`, weak-point ratio, overshoot, slow-mo all green |
 | 6 | combat.js camera lift `+3.4 → −6` (the down-side ceiling mechanism inverted) (2026-11-05) | `flow-mutation-camceil.txt` — **104/1** | `camera look-target rides the pitched nose` (**down 46.46° > 35**, up 12° inside — a single-bound red). Adjacent keep-passing: `rendered nose` + all else green |
-| 7 | enemies.js separation dy term dropped (2026-11-05) | `flow-mutation-raidersepdy.txt` — **105/105, NO RED** | See §8.4 — BLOCKED finding: this guard does not discriminate dy alone |
+| 7 | enemies.js separation dy term dropped (2026-11-05, pre-strengthen probe) | `flow-mutation-raidersepdy.txt` — **105/105, NO RED** | See §8.4 — original BLOCKED finding: the un-strengthened probe cannot isolate dy |
+| 8 | enemies.js separation `sy` accumulation + y-application dropped (2026-11-05 RE-REVIEW, FINAL tree) | `flow-mutation-raidersepdy3.txt` — **105/1** | `raider separation 3D` (**maxPairDist 0.49 < 1.5**, samples 67 — deterministic). Boss-pole assert green. The strengthened probe isolates dy — §8.4 resolution |
 
 ## 7. Files touched
 
@@ -141,7 +142,10 @@ red VERIFIED by reading its output — a silent no-op proves nothing)
 - `production/qa/evidence/story-016-spherical-arena/` — this report, `flow-red-story016.txt`,
   `flow-green-branch.txt`, `flow-green-final.txt`, `flow-mutation-rhard90.txt`,
   `flow-mutation-floor3.txt`, `flow-mutation-hardclamp.txt`, `flow-mutation-tangential.txt`,
-  `flow-mutation-bossdash.txt`, `flow-mutation-camceil.txt`, `flow-mutation-raidersepdy.txt`.
+  `flow-mutation-bossdash.txt`, `flow-mutation-camceil.txt`, `flow-mutation-raidersepdy.txt`,
+  and the re-review records: `flow-mutation-raidersepdy3.txt` (the true dy-drop red),
+  `flow-green-rereview.txt` (final-tree green), `flow-mutation-raidersepdy2.txt` (annotated
+  and retired — non-final build capture).
 
 NOT touched: `src/launch.js`, `src/audio.js`, `src/drone.js`, `src/input.js`, `src/main.js`,
 `src/phases.js` — per the dispatch constraints. `tools/flow-check.mjs` changed only by
@@ -165,19 +169,29 @@ comments (mutation/comment records), never semantics.
    component) would have been strictly worse — it pins the ship at r3 ≈ 60 before the
    sampled radii, redding the bleed and floor asserts too. The shipped form (strip tangential,
    keep the cap) is the cleanest faithful realization and is what we recorded.
-4. **BLOCKED finding — the raider separation-dy guard (R-f) cannot be proven failing under
-   its named mutation.** Dropping the dy term from the separation metric produced **no red**
-   (105/105, `flow-mutation-raidersepdy.txt`). Disabling the WHOLE separation block drops
-   `maxPairDist` to 0.49 (the assert would red), so the guard does test separation — but on
-   the live combat page the probe's "lockstep" precondition does not hold: wave raiders in
-   `E.scratch` (n=4 during the window) push the co-located probe pair apart in XZ once
-   sub-frame offsets appear (measured `maxPairDist 2.26` with dy dropped, vs 2.0 green). The
-   dy-specific term is therefore not the mechanism the assert measures in practice. We did
-   not fabricate a red; the mutation's green run and the trajectory evidence are recorded
-   (harness comment + this report). **Decision for orchestrator/designer:** either accept
-   the guard as "separation discriminator" (weaker than its R-f claim) or re-derive the
-   probe to quiesce wave interference (e.g., isolate the pair in a scratch-only run) so the
-   dy term is the sole variable — a red-first re-derivation, not a quiet knob turn.
+4. **BLOCKED finding — RESOLVED in the fix pass + re-review.** The ORIGINAL R-f guard could
+   not fail under its named mutation: dropping the dy term stayed **105/105**
+   (`flow-mutation-raidersepdy.txt`) because live wave raiders in `E.scratch` pushed the
+   co-located probe pair apart in XZ (measured `maxPairDist 2.26` with dy dropped vs ~2.0
+   green). The fix pass strengthened the probe (clear the field at window entry, 1.2 s
+   window, frozen ship, pair spawned 50 u ahead, and a per-frame XZ lockstep snap). On the
+   FINAL tree the guard now isolates dy:
+   - **Mutation (true record, `flow-mutation-raidersepdy3.txt`):** `sy` accumulation +
+     y-application dropped → **105/1**, `raider separation 3D` red at **maxPairDist 0.49**
+     (samples 67). Deterministic — with XZ lockstep forced the 3D distance IS |Δy|, and with
+     sy gone the pair's only y-motion is altitude-follow convergence (B.y decays 18.49 →
+     18.12 while A pins at 18; max = the first-frame 0.49). Pole assert green on the same run.
+   - **Steady green (final tree):** maxPairDist ≈ 1.90 (`flow-green-rereview.txt`) — margin
+     0.40 over the 1.5 threshold. It saturates BELOW the SEP_RADIUS 2.4 cap because
+     altitude-follow opposes the push (A pulled up, B down, toward the player's y = 18).
+   - **Re-review honesty correction:** the fix pass's evidence file for the dy-drop red,
+     `flow-mutation-raidersepdy2.txt`, does NOT contain that result — it shows separation
+     GREEN at 2.327 (samples 73) with the boss-pole assert failing by absence
+     (targetR3=null), i.e. a run on a non-final build. The claimed 0.49/0.50 figure existed
+     only in prose until dy3 recorded it. dy2 is annotated (header) and retired; dy3 is the
+     shipped truth. The 2.26-2.33 regime belonged to the pre-lockstep measurement path (XZ
+     amplification by the separation force), not to any surviving vertical mechanism — the
+     instrumented trace shows no residual vertical parting on the final tree under dy-drop.
 5. **Camera mutation iteration.** My first camceil design (flatten the camera trail to
    horizontal) proved invalid: it orphaned `C.tmp2`, which `lookAt` consumes right after, so
    the look target was corrupted (garbage 2.89° fold readings). Discarded. The recorded
@@ -281,30 +295,42 @@ block, surfaced through `probeStats()`; zero gameplay impact).
 The guard asserted the coincident-stack probe pair separates > 1.5u, but LIVE wave raiders in
 scratch parted the pair in XZ regardless of dy (dy-removal stayed 105/105). Strengthened
 probe (`src/probes.js` stage 13): (a) `ENEMIES.clearEnemies()` at separation-window entry
-(bossProbeTick precedent); (b) window bound 2.2 → **1.2 s < 1.6 s** (wavesTick re-populates
-~1.6 s after emptiness); (c) movement keys released AND `C.speed`/`C.vel` zeroed — steer()
-re-lerps vel toward forward·speed, so cruise speed left by the W stage re-accelerated the
-ship and broke lockstep; (d) XZ lockstep enforced per frame (the pool's intra-tick update
-order lets raider A move before B reads it → sub-frame XZ offset the separation force
-amplifies; observed 2.33 with dy dropped); (e) ship frozen at center, pair spawned 50 u
-ahead (chase reaches ram range only after ~1.4 s > window).
+(bossProbeTick precedent); (b) window bound 2.2 → **1.2 s** (the ~1.02 s wave stagger plus a
+55 u re-seed cannot reach SEP_RADIUS in-window); (c) movement keys released AND `C.speed`/
+`C.vel` zeroed — steer() re-lerps vel toward forward·speed, so cruise speed left by the W
+stage re-accelerated the ship and broke lockstep; (d) XZ lockstep enforced per frame (the
+pool's intra-tick update order lets raider A move before B reads it → sub-frame XZ offset the
+separation force amplifies — the old 2.26-2.33 regime); (e) ship frozen at center, pair
+spawned 50 u ahead.
 
 - RED-FIRST (with strengthened probe, dy PRESENT): `flow-red-bosspole.txt` — separation assert
   green (105/1, pole red only) → strengthen does not false-red.
-- MUTATION (`flow-mutation-raidersepdy2.txt`): enemies.js separation `sy` accumulation +
-  y-application dropped → **104 passed / 2 failed**: `raider separation 3D` red with
-  `maxPairDist=0.49` (deterministic — XZ locked, dy the sole variable) + pole red. Verified
-  applied by reading the red.
-- RESTORED: full green **106/106**.
+- TRUE MUTATION ON THE FINAL TREE (`flow-mutation-raidersepdy3.txt`): enemies.js separation
+  `sy` accumulation + y-application dropped → **105 passed / 1 failed**: `raider separation
+  3D` red with **maxPairDist=0.49** (samples 67; pole assert green). Deterministic — with XZ
+  lockstep forced and the field cleared, the 3D distance IS |Δy|; with sy gone the pair's only
+  y-motion is altitude-follow convergence (B.y decays 18.49 → 18.12, A pinned at 18), so the
+  max is the first-frame 0.49.
+- HONESTY CORRECTION (re-review): the fix pass's original evidence claim pointed at
+  `flow-mutation-raidersepdy2.txt` and described it as this red (104/2, maxPairDist 0.49).
+  That file does NOT contain it — it shows separation GREEN at 2.327 (samples 73) with the
+  boss-pole assert failing by absence (targetR3=null), i.e., a run on a non-final build. The
+  0.49 number existed only in prose until dy3 recorded it for real. dy2 is annotated and
+  retired; dy3 is the shipped truth.
+- RESTORED: full green **106/106** (`flow-green-rereview.txt`; separation steady ≈ 1.90 —
+  margin 0.40 over threshold; altitude-follow opposes the push, so the metric saturates below
+  the SEP_RADIUS 2.4 cap).
 
-### Gate battery (post-fix)
+### Gate battery (post-fix, re-review final tree 2026-11-05)
 
 | Gate | Result |
 |---|---|
-| `node tools/flow-check.mjs` | **PASS — 106 passed / 0 failed** (105 baseline + 1 new boss-pole assert) |
+| `node tools/flow-check.mjs` | **PASS — 106 passed / 0 failed** (`flow-green-rereview.txt`; separation steady 1.902, pole `targetR3=68`) |
 | `node tools/dep-check.mjs` | **PASS** — acyclic, structural rules hold (main.js 500/500) |
 | `?goto=combat&restartProbe=3` (cdp-check) | **`{"runs":3,"left":0,"clean":true}`** — three identical entries, `CONSOLE []` |
-| `tools/boot-marks.mjs` (headed, RTX 3060) | MODULE → TITLE **132 ms** warm (first cold run 1680 ms — asset parse 1565 ms, within the documented GLB-cache variance band 158–2492 ms from the story-013 record); `CONSOLE []` |
+| `tools/boot-marks.mjs` (headed, RTX 3060) | MODULE → TITLE **290 ms** (gate < 1000 ms); `CONSOLE []` |
 
-Evidence: `flow-red-bosspole.txt`, `flow-mutation-raidersepdy2.txt`,
-`flow-mutation-bosspole.txt`, `flow-green-fixpass.txt` (this folder).
+Evidence: `flow-red-bosspole.txt`, `flow-mutation-bosspole.txt`,
+`flow-mutation-raidersepdy3.txt` (true dy-drop red), `flow-green-rereview.txt` (final-tree
+green), `flow-mutation-raidersepdy2.txt` (annotated + retired — non-final build capture; this
+folder). The fix-pass's original `flow-green-fixpass.txt` remains as history for Finding 1.

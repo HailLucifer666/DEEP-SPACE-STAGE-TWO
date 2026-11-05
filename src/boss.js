@@ -391,6 +391,7 @@ export function barLine() { // presentation-only BOSS HP line — rides combat.j
   return `BOSS ${'▍'.repeat(Math.round(f * 10))} ${Math.ceil(f * 100)}%`;
 }
 export function probeHold(v) { B.hold = !!v; }
+export function probeSealDashCap() { B.dashCapR3 = null; } // re-review advisory (2026-11-05): B.dashCapR3 is set on EVERY launchDash — if the pole-launch stamp ever drops, the pole-park assert would read the equator's stale 68 and false-green. Null the seam at pole ARMING (probes.js) so a missing pole dash reads null (red by absence); a real pole launch rewrites it fresh at its launch frame.
 export function probePlace(pos) { B.boss.position.copy(pos); } // probe-only framing setter (boss-shot evidence)
 export function probeTargets(fromPos) { // probe aim points: the node (center) and the ring edge nearest the approach
   const u = B.tmp.copy(fromPos).sub(B.boss.position);

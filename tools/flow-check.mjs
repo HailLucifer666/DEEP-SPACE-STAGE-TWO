@@ -794,24 +794,28 @@ try {
   // spawns two rammers at ONE XZ, 0.5 u apart vertically, wobble phase pinned equal
   // (probe-owned precondition: identical steering + XZ-only separation = lockstep, so only the
   // dy term can part them) and measures the max pairwise 3D distance over the window.
-  // BLOCKED MUTATION FINDING (2026-11-05): dropping the dy term from the separation metric
-  // produced NO red (105/105 — flow-mutation-raidersepdy.txt); disabling the WHOLE separation
-  // block drops maxPairDist to 0.49 (would red). The lockstep precondition does not hold on
-  // the live combat page: wave raiders in scratch (n=4) push the co-located pair apart in XZ
-  // once sub-frame offsets appear (maxPairDist 2.26 without dy), so this dy-specific guard
-  // cannot be proven failing under its named mutation — surfaced in the story-016 report.
-  // FIX PASS 2026-11-05 (quality-review finding 2): PROBE STRENGTHENED — at separation-window
-  // entry the probe now clears the enemy field (ENEMIES.clearEnemies(), the bossProbeTick
-  // precedent) and bounds the window to 1.2 s < 1.6 s (wavesTick re-populates ~1.6 s after
-  // emptiness — a naive clear alone would re-contaminate the old 2.2 s window). The ship is
-  // frozen at the center and the pair spawns 50 u ahead (chase at 34.5 u/s reaches ram range
-  // only after ~1.4 s > the window). With the field quiet, the pair's identical-steering
-  // lockstep holds exactly: XZ stays coincident, dy is the sole variable, and maxPairDist
-  // saturates at the SEP_RADIUS cap ≈ 2.4 (push odometer; > 1.5 threshold has 0.9 margin).
-  // MUTATION (2026-11-05, verified applied by reading the red): enemies.js separation `sy`
-  // accumulation + y-application dropped → RED `raider separation 3D` (maxPairDist 0.50 —
-  // the pair never parts; deterministic). flow-mutation-raidersepdy2.txt (104/2 with the
-  // boss-pole finding still red on that run; this guard alone 105/1).
+  // HISTORY (2026-11-05): the ORIGINAL guard could not fail under its named mutation — dy
+  // removal stayed 105/105 (flow-mutation-raidersepdy.txt) because the live combat page's wave
+  // raiders in scratch pushed the co-located pair apart in XZ (3D metric rode the amplification;
+  // maxPairDist 2.26 without dy). FIX PASS strengthened the probe: clear the enemy field at
+  // window entry (ENEMIES.clearEnemies(), bossProbeTick precedent), bound the window to
+  // 1.2 s < the ~1.02 s wave stagger + 55 u re-seed reach (a re-spawned raider cannot cross
+  // SEP_RADIUS to the pair in-window), freeze the ship at the center, spawn the pair 50 u
+  // ahead, and enforce the XZ lockstep per frame (post-tick snap of A onto B's XZ — the pool's
+  // intra-tick order otherwise lets a sub-frame XZ offset appear and the separation force
+  // amplifies it). With XZ forced coincident the measured 3D distance IS |Δy|.
+  // TRUE STEADY (final tree): maxPairDist ≈ 1.90 (flow-green-rereview.txt — margin 0.40 over
+  // 1.5). It saturates BELOW the SEP_RADIUS 2.4 cap because altitude-follow actively opposes
+  // the push (A is pulled up, B down, toward the player's y = 18).
+  // MUTATION (RE-REVIEW, 2026-11-05 — flow-mutation-raidersepdy3.txt): enemies.js separation
+  // `sy` accumulation + y-application dropped → RED `raider separation 3D`, maxPairDist
+  // 0.49 (samples 67; 105 passed / 1 failed, pole green). Deterministic: with sy gone the
+  // pair's only y-motion is altitude-follow convergence (B.y decays 18.49 → 18.12 while A
+  // pins at 18; the measured |Δy| max is the first-frame 0.49). This is the record that
+  // evidences the dy isolation. NOTE: the earlier flow-mutation-raidersepdy2.txt (sep GREEN
+  // 2.327, samples 73, boss-pole fail by absence targetR3=null) was captured on a NON-FINAL
+  // build (pre-lockstep measurement regime) — it does NOT evidence the dy-drop outcome and is
+  // retired from that claim. dy3 is the shipped truth.
   ok('raider separation 3D (coincident-stack pair separates > 1.5u)',
     typeof spx.maxPairDist === 'number' && spx.maxPairDist > 1.5, `maxPairDist=${spx.maxPairDist} samples=${spx.samples}`);
   // story-015 review rider R-g (landed in 016): the RENDERED nose sign — no state assert can
