@@ -62,10 +62,10 @@ function webglAvailable() {
   } catch { return false; }
 }
 
-function boot() {
-  mark('bootStart'); // story-006
-  loadAssets(); // fonts register async — the system stack reads until they land (display: swap)
-  if (document.fonts) document.fonts.ready.then(() => mark('fonts')); // story-006
+/* ---------- boot() helpers (R-c commit 3): three private helpers, one statement block each —
+   same statements, same order, same comments as the pre-split boot(); each is called
+   synchronously from boot() in the original sequence, so every mark fires at the same point ---------- */
+function setupRenderer() { // (a) renderer + scene + camera + lights
   mark('rendererStart'); // story-006: the 4.1 s pre-mark gap suspect — D3D/WebGL device creation
   renderer = new THREE.WebGLRenderer({
     canvas: $('scene-canvas'), antialias: true, alpha: true, powerPreference: 'high-performance',
@@ -83,8 +83,9 @@ function boot() {
   const key = new THREE.DirectionalLight(0xfff2df, 1.6); key.position.set(2.5, 3, 2); scene.add(key);
   const rim = new THREE.DirectionalLight(0x7dd7ff, 0.5); rim.position.set(-2, 1.4, -2.5); scene.add(rim);
   const dawn = new THREE.DirectionalLight(0xff9d54, 0.9); dawn.position.set(-7, 1.4, 5); scene.add(dawn);
+}
 
-  // story-008: bloom post chain — high threshold so only emissive/additive content blooms.
+function setupComposer() { // (b) story-008: bloom post chain — high threshold so only emissive/additive content blooms.
   // §8.3 never-crash: a composer failure (old GPU) logs once and keeps the direct-render path.
   try {
     composer = new EffectComposer(renderer);
@@ -98,7 +99,9 @@ function boot() {
     bloomPass = null;
     console.error('[stage2] post chain disabled — direct render fallback. reason:', err && (err.message || err));
   }
+}
 
+function wireUi() { // (c) UI wiring
   attachInput(); // story-011: the same key/pointer/blur listeners, registered in the same order
   ui.btnLaunch?.addEventListener('click', () => onTitleAction('launch'));
   ui.btnSkip?.addEventListener('click', () => onTitleAction('skip'));
@@ -109,6 +112,16 @@ function boot() {
   ui.panelClose?.addEventListener('click', closePanel);
   ui.goReplay?.addEventListener('click', () => setPhase('pad')); ui.vicReplay?.addEventListener('click', () => setPhase('pad')); // story-014: both cards' REPLAY — same pad landing
   ui.goSkip?.addEventListener('click', () => setPhase('combat'));
+}
+
+function boot() {
+  mark('bootStart'); // story-006
+  loadAssets(); // fonts register async — the system stack reads until they land (display: swap)
+  if (document.fonts) document.fonts.ready.then(() => mark('fonts')); // story-006
+  setupRenderer(); // R-c commit 3: (a) renderer + scene + camera + lights — identical statement order, identical mark timing
+
+  setupComposer(); // R-c commit 3: (b) the try-catch post chain
+  wireUi(); // R-c commit 3: (c) attachInput + title/gameover button wiring
 
   setPhase('loading');
   window.setTimeout(() => { // §6: LOADING only shows if decode takes perceptible time
