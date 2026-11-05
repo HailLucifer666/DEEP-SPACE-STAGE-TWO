@@ -11,7 +11,7 @@ import * as COMBAT from './combat.js';
 import { audioUnlock, isAudioLive, setMuted, isMuted,
   musicState, loopsCount, alarmActive } from './audio.js';
 import { loadAssets, assetReport } from './assets.js';
-import { getStorage, readHighscore, writeHighscore } from './store.js';
+import { getStorage, readHighscore } from './store.js';
 import { setPhase, initPhases } from './phases.js';
 import { input, paused, attachInput, onTitleAction, initInput } from './input.js';
 import { loop, fps, dprCtl, initLoop, composerIsDead } from './loop.js';
