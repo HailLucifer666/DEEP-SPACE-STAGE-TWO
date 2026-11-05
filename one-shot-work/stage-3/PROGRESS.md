@@ -101,9 +101,23 @@ re-derived r → r3; the 015 band asserts retired) — never quiet edits.
       the shrunk shell). Leftovers inspected, discarded; committed state re-verified
       114/114; riders R17-a/b/c stand for stage close. Lesson: a rejected dispatch can
       leave mid-mutation state — re-run the battery after ANY interruption.
-- [ ] Stage close: independent review + smoke record + changelog + GATE.md (this folder);
+- [x] Stage close: independent review + smoke record + changelog + GATE.md (this folder);
       S3X experiential gate + backdrop screenshot + open tuning items collected here
       (013/014 full-auto grant convention)
+      Independent stage review (lead-programmer, read-only, 2026-11-05): CONCERNS — 1
+      IMPORTANT (the ledger's post-fix merged-master runs had no committed artifacts —
+      CLOSED by the stage-close smoke record + stale-record annotations), 6 ADVISORY (all
+      doc-level; dispositioned in the close batch: EPIC/status flips, SPEC actuals, R-h
+      errata, GDD 0.85-threshold line, 016 file-list amendment note), 3 NIT (two
+      dispositioned; mirrored arena consts DEFER-TO-STAGE-4 with the R_HARD-retune
+      trigger). Residual-debt table produced with dispositions (R-a/b/e/f/g LANDED;
+      R-c DEFER mandatory-trigger; R-d ACCEPT; R17-a/b/c DEFER; boss inner ring + drone
+      separation DEFER unless flagged).
+      Smoke record: production/qa/smoke-2026-11-05-stage3.md (114/114 on 04b07d9,
+      restartProbe 33×3 clean, boot 914 ms, dep-check PASS). Changelog Stage 3 entry
+      written. GATE.md: **PASS** (machine) — S3X experiential gate + look/feel verdicts
+      OWED at the next session open (checkpoint asked 2026-11-05, unanswered; revocable
+      at any tag). Doc batch: 857fea1.
 
 Method per story (carried from stage-2, evolved):
 story file → ONE gameplay-programmer subagent (report path under
@@ -133,3 +147,17 @@ Notes:
 - Stage-2 verdicts PAID 2026-11-05 (drone look / boss feel / victory moment — all PASS,
   recorded in stage-2 PROGRESS.md). Stage-3 look/feel review lands at stage close per the
   grant, alongside the S3X experiential gate.
+
+# STAGE 3 DONE — 2026-11-05 (machine gates; human verdicts owed)
+Tags: good-2026-11-05-d (015) · good-2026-11-05-e (016) · good-2026-11-05-f (017).
+flow-check 76 → 114 asserts. Scoreboard (convention made explicit): 5/6 phases closed =
+the pre-roadmap take-home build + roadmap stage ledgers 0, 1, 2, 3; **17/20 stories**.
+Remaining: Stage 4 (story-018 — scope exists ONLY in the 2026-11-04 conversation, must be
+re-recorded before the stage opens; story-019 balance/telemetry + the boss-reward decision
+— the victory card shows SCORE — 0; recommendation 1000 flat, also conversation-only, must
+be written down) and Stage 5 (story-020 settings persistence + README/deploy + host choice).
+Owed at next session open: S3X experiential gate + look/feel verdicts (pitch feel, drift
+weight, arena readability, first-climb moment) — GATE.md records them OWED; revocable at
+any tag (rollback = git checkout good-2026-11-05-f). Rider backlog for Stage 4: R-c
+(main.js refactor, mandatory trigger), R17-a/b/c, mirrored arena consts, plus the two
+player-flag-conditional tuning items.
