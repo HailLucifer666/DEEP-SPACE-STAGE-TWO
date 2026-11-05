@@ -56,7 +56,21 @@ const ALIGN_RATE = 4.5;      // 1/s — drift realignment toward forward·speed 
 const FIRE_INTERVAL = 1 / 8; // ~8/s hold-fire
 const BOLT_SPEED = 42;
 const BOLT_LIFE = 1.2;
-const BOLT_POOL = 24;
+// story-018 rider (orchestrator-accepted): 24 → 36 — SPREAD+OVERDRIVE saturation headroom
+// (GDD §3.8: 17.6 shots/s × 3 fan bolts × 1.2 s life at the pathological extreme). Prepare-time
+// allocation, restart-clean preserved; pool.js steal-oldest remains the final cap.
+const BOLT_POOL = 36;
+// story-018 charged shot (GDD §3.1-3.2, §7 — threshold spray-then-charge, the resolved
+// Decision 1): ONE trigger, two stages. Below T_CHARGE of continuous LMB hold the stream fires
+// exactly as shipped (first bolt on the press frame); AT the threshold the stream suppresses
+// and the charge fills; release at/after the threshold fires exactly ONE charged bolt; release
+// before it fires nothing extra (the stream already did the work — no partial charge).
+const T_CHARGE = 0.6;          // s of continuous hold before suppression + charge fill (feel knob 0.45-0.9)
+const CHARGE_DAMAGE = 6;       // charged bolt damage — elite-gunner one-shot anchor; boss weak point 6×3 = 18 (curve knob 4-8)
+const CHARGE_SCALE = 3.0;      // charged bolt visual scale ×3 — readable under the shipped bloom chain
+const SUPPRESS_STREAM = true;  // DESIGN CONST, not a knob: the balance hinge (GDD §3.1) — stream+charge together is a dominant strategy
+const BOLT_COLOR = 0x9fe8ff;   // shipped stream bolt color
+const CHARGE_COLOR = 0xffc85a; // charged bolt — the amber family (the boss node's color language, GDD §3.2)
 const HP_MAX = 100, SHIELD_MAX = 50, SHIELD_REGEN_DELAY = 3, SHIELD_REGEN_RATE = 14;
 const DEATH_SLOWMO = 0.7;    // seconds of real time at timeScale 0.3 before gameover (a click lands it sooner)
 const SCORE_DRONE = 100, SCORE_GUNNER = 150, SCORE_WAVE = 150;
@@ -71,6 +85,8 @@ const C = {
   pos: new THREE.Vector3(), vel: new THREE.Vector3(), heading: 0, bank: 0, speed: 0, pitch: 0, // speed = throttle state (u/s along the nose); heading/pitch are player-commanded (story-004/015); vel is drift state (persistent, story-015)
   hp: HP_MAX, shield: SHIELD_MAX, regenT: 0, dead: false, deathT: 0,
   fireT: 0, boost: 1, boosting: false,
+  chargeT: 0, charging: false, // story-018: hold accumulator (s) + past-threshold latch — zeroed on death/pause/exit (GDD §3.2 cancel rules)
+  fired: { stream: 0, charged: 0 }, // story-018 probe surface: fire-path bolts spawned this fight (story-019's telemetry supersedes)
   wave: 0, waveGapT: 0, score: 0, kills: 0,
   time: 0, // story-014: per-fight combat clock — scaled sdt while alive (the world's slow-mo slows it), frozen while dead; reset each enterCombat. NOT game.time (the global clock — launch phases own it)
 
@@ -270,18 +286,63 @@ function steer(dt) {
   C.bank += (clamp(-turn * 0.7, -0.7, 0.7) - C.bank) * (1 - Math.exp(-7 * dt));
 }
 
-/* ---------- weapons ---------- */
-function fireTick(dt) {
-  const wantFire = C.api.input.fire;
-  C.fireT -= dt;
-  if (!wantFire || C.dead || C.fireT > 0) return;
-  C.fireT = FIRE_INTERVAL;
+/* ---------- weapons — story-018: ONE trigger, two stages (GDD §3.1 threshold spray-then-charge) ---------- */
+
+// story-018: one spawner for both stages — stream (dmg 1, cyan, scale 1) and charged
+// (dmg CHARGE_DAMAGE, amber family, scale ×3, single-hit — same pool, same BOLT_SPEED, no
+// pierce). Pool reuse resets the visual identity every spawn: a reused slot must not inherit
+// the previous bolt's look. userData.dmg threads through every hit site (raider/orb/boss);
+// probe-spawned unstamped bolts read `|| 1` at the sites (scriptedKill/bossProbe stay exact).
+function spawnBolt(dmg, charged, dir) {
   const b = C.bolts.spawn();
   noseWorld(b.position);
-  forward(b.userData.dir);
+  if (dir) b.userData.dir.copy(dir); else forward(b.userData.dir);
   b.userData.life = BOLT_LIFE;
+  b.userData.dmg = dmg;
+  b.userData.charged = charged;
   b.lookAt(C.tmp.copy(b.position).add(b.userData.dir));
+  b.scale.setScalar(charged ? CHARGE_SCALE : 1);
+  b.material.color.setHex(charged ? CHARGE_COLOR : BOLT_COLOR);
+  return b;
+}
+
+function spawnStreamShot() {
+  spawnBolt(1, false);
+  C.fired.stream++;
   sweep({ f0: 1500, f1: 320, dur: 0.09, vol: 0.12, type: 'square' });
+}
+
+function fireTick(dt) {
+  const input = C.api.input;
+  const wantFire = input.fire;
+  C.fireT -= dt;
+  // pause cancel (GDD §3.2): the raw key set is the pause signal — the same grammar steer's
+  // key reads use, zero cross-module change (input.js stays zero-diff). The loop halts
+  // tickCombat while paused, so the FIRST post-unpause tick still sees the key here and zeroes
+  // the hold accumulator — a post-unpause release fires a tap's worth of stream, never a
+  // charged bolt.
+  if (wantFire && !C.dead && (input.keys.has('KeyP') || input.keys.has('Escape'))) {
+    C.chargeT = 0; C.charging = false;
+  }
+  if (!wantFire || C.dead) {
+    // release AT/after the threshold → exactly ONE charged bolt, latency ≤ 1 frame (the
+    // pointerup flips input.fire at window level; fireTick observes it next tick). Death:
+    // accumulator zeroed and the release fires NOTHING (GDD §3.2 cancel rules).
+    if (C.charging && !C.dead) {
+      spawnBolt(CHARGE_DAMAGE, true);
+      C.fired.charged++;
+    }
+    C.chargeT = 0; C.charging = false;
+    return;
+  }
+  C.chargeT += dt;
+  if (C.chargeT >= T_CHARGE) {
+    if (!C.charging) C.charging = true; // the threshold crossing — the charge whine rides the HUD/audio commit
+    if (SUPPRESS_STREAM) return;
+  }
+  if (C.fireT > 0) return;
+  C.fireT = FIRE_INTERVAL;
+  spawnStreamShot();
 }
 
 function boltsTick(dt) {
@@ -299,7 +360,7 @@ function boltsTick(dt) {
         C.bolts.kill(b);
         EFFECTS.explosion(d.position);
         noiseBurst({ dur: 0.28, vol: 0.4, f0: 900, f1: 140 });
-        if (ENEMIES.hitDrone(d, 1)) {
+        if (ENEMIES.hitDrone(d, b.userData.dmg || 1)) { // story-018: the bolt carries its damage (stream 1, charged 6); probe-spawned unstamped bolts default to 1
           C.score += d.userData.kind === 'gunner' ? SCORE_GUNNER : SCORE_DRONE;
           C.kills++;
           EFFECTS.shake(0.06); // kill feedback (J)
@@ -316,7 +377,7 @@ function boltsTick(dt) {
         C.bolts.kill(b);
         EFFECTS.explosion(o.position);
         noiseBurst({ dur: 0.28, vol: 0.4, f0: 900, f1: 140 });
-        if (DRONES.hitOrb(o, 1)) {
+        if (DRONES.hitOrb(o, b.userData.dmg || 1)) { // story-018: bolt-carried damage (charged 6 one-shots the 2-HP orb — GDD §5, no special case)
           C.score += SCORE_ORB;
           C.kills++;
           EFFECTS.shake(0.06);
@@ -334,7 +395,7 @@ function boltsTick(dt) {
         C.bolts.kill(b);
         EFFECTS.explosion(b.position);
         noiseBurst({ dur: 0.3, vol: zone === 2 ? 0.5 : 0.4, f0: zone === 2 ? 1200 : 800, f1: 140 });
-        if (BOSS.hitBoss(1, zone === 2, C.bossApi)) EFFECTS.shake(0.12);
+        if (BOSS.hitBoss(b.userData.dmg || 1, zone === 2, C.bossApi)) EFFECTS.shake(0.12); // story-018: bolt-carried damage — hitBoss already takes the dmg param, boss.js stays zero-diff (weak point 6×3 = 18)
       }
     }
   });
@@ -450,6 +511,8 @@ export function enterCombat(scene, camera, rocket, ui, api) {
   C.heading = 0; C.bank = 0; C.speed = 0; C.pitch = 0; // story-015: the replay never inherits a nose-up start (GDD §5.6); vel reset above covers drift
   C.hp = HP_MAX; C.shield = SHIELD_MAX; C.regenT = 0; C.dead = false; C.deathT = 0;
   C.fireT = 0; C.boost = 1; C.boosting = false;
+  C.chargeT = 0; C.charging = false; // story-018: the hold accumulator never survives an entry (GDD §3.2 combat-exit cancel)
+  C.fired = { stream: 0, charged: 0 }; // story-018 probe counters restart beside kills (the L453 pattern)
   C.score = 0; C.kills = 0; C.wave = 1; C.waveGapT = 0;
   C.time = 0; // story-014: the clock is per-fight — every combat entry restarts it
   C.scriptT = -1; C.scriptDone = false; C.scriptDrone = null;
@@ -598,6 +661,8 @@ export function clearCombat() {
   // last-frame pip state must not ride the pad — the pips are combat's writes, same class as the #hud-bars
   // clear above (pre-existing leak; the death-card REPLAY inherits this fix too)
   C.dead = false; C.deathT = 0; C.speed = 0;
+  C.chargeT = 0; C.charging = false; // story-018: a mid-hold exit wipes the accumulator (GDD §3.2) — the death-card SKIP can never inherit it
+  C.fired = { stream: 0, charged: 0 };
   if (C.rim) { C.rim.material.opacity = 0; C.rim.visible = false; } // story-005: rim leaves the render list with combat (review R2-9)
   DRESSING.hideDressing(); // story-017: the ambient field + shell visual leave the render list with combat (rim-ring lifecycle — hidden, never disposed)
 }
@@ -617,6 +682,9 @@ export function combatState() {
     rimOpacity: C.rim ? +C.rim.material.opacity.toFixed(3) : 0, // story-016: the equator ring's 3D-proximity driver, harness-visible (probe surface only)
     speed: +C.speed.toFixed(2), heading: +C.heading.toFixed(3), // probe surface — flow-check's throttle/turn asserts (story-004)
     pitch: +C.pitch.toFixed(3), velMag: +C.vel.length().toFixed(2), // story-015: pitch envelope + true speed under drift (SPD keeps showing C.speed; velMag is harness-only, §8 decision c)
+    charge: +Math.min(1, C.chargeT / T_CHARGE).toFixed(3), // story-018: the charge fill 0..1 over T_CHARGE
+    charging: C.charging, // story-018: past the threshold — stream suppressed, release fires the charged bolt
+    fired: { stream: C.fired.stream, charged: C.fired.charged }, // story-018 probe surface (pre-telemetry; story-019 supersedes)
     pos: C.pos.toArray().map((v) => +v.toFixed(2)), // probe surface — flow-check's keyboard-motion assert (story-003)
     dead: C.dead,
   };
