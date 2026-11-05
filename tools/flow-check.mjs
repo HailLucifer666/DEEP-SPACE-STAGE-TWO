@@ -185,7 +185,40 @@ try {
      O = (0, ARENA_Y, 0) — and the sphere walk ADDS the pitched-clamp drive (S16 sphere section
      below). On the 015 build these re-derived asserts stay GREEN by design: their drives are
      planar (pitch 0, y ≡ 18) so r3 ≡ hypot(x,z) there; the r3 form is what lets the pitched
-     drives discriminate (the 015 band build reached r3 ≈ 82.5 = hypot(80, 20) legally). */
+     drives discriminate (the 015 band build reached r3 ≈ 82.5 = hypot(80, 20) legally).
+     STORY-016 MUTATION RECORDS (branch, post-green, 2026-11-05; each: mutate → npm run
+     build → full flow-check → restore → rebuild; verified applied by reading the red output):
+       1. combat.js `R_HARD 80 → 90` (predecessor) → RED `hard clamp under pitched boost`
+          (maxR3 90.00). `boundary is a sphere` stays green: its 7b drive breaks at r3 ≥ 79
+          before the inflated 90 clamp can be seen — the pitched-clamp assert is the one the
+          threshold change discriminates (flow-mutation-rhard90.txt, 104/1).
+       2. combat.js boundary floor `Math.max(3, …)` → 0 → RED `rim floor keeps progress at
+          the deep shell` (deepRadial 1.63 < 2.5, 3 samples — the pure linear-cap asymptote
+          returns). Adjacent keep-passing: `soft shell bleeds` + `boundary is a sphere` green
+          (flow-mutation-floor3.txt, 104/1).
+       3. combat.js hard spherical clamp REMOVED → RED `hard clamp under pitched boost`
+          (maxR3 88.04). The run then ABORTS at the natural-death wait: with no clamp the
+          ship leaves the bounded arena and outruns the ≤12 u/s raiders, so nothing kills it
+          in 90 s. Same run with the clamp threshold 80 → 92 reds identically (maxR3 88.40)
+          and aborts identically — no full-suite hard-clamp mutation exists; the abort is a
+          structural side effect of any outward-breach mutation, not a product defect
+          (flow-mutation-hardclamp.txt, 25 passed + target red + abort).
+       4. combat.js tangential preservation removed (excess-subtraction → full-component
+          zeroing, cap kept) → RED `rim slides along the shell` (carry 3.5 < 5) + two
+          same-root downstream reds: with tangential dead the ship lingers on the shell, so
+          the return dive never crosses r3<58∧dY>16 in its 10 s window → `#warn clears` and
+          `rim ring opacity inside` also red (sample-miss). The cap-form asserts (`soft shell
+          bleeds`, `rim floor`) stay green (flow-mutation-tangential.txt, 102/3).
+       5. combat.js camera lift +3.4 → −6 (the down-side ceiling mechanism inverted) → RED
+          `camera look-target rides the pitched nose` (down 46.46° > 35; up 12° inside — a
+          single-bound red). Adjacent keep-passing: `rendered nose` + all else green
+          (flow-mutation-camceil.txt, 104/1).
+       6. enemies.js separation dy term dropped → NO RED (105/105 green — flow-mutation-
+          raidersepdy.txt). BLOCKED finding: the R-f guard does not discriminate dy alone;
+          disabling the WHOLE separation block drops maxPairDist to 0.49 (would red), so the
+          guard tests separation, but live wave raiders in scratch push the co-located probe
+          pair apart in XZ regardless of dy (the lockstep precondition does not hold on the
+          live combat page). Surfaced in the story-016 report. */
   const r3Of = (p) => Math.hypot(p.x, p.y - 18, p.z);
   const dist3 = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
   // 7 — boosted straight out: (a) boost expiry BLEEDS, never snaps (review R2-1: the old branch
@@ -465,9 +498,13 @@ try {
      re-orbits inside. dashPeakR3 = max boss r3 sampled every drive tick across the charge
      stage (the dash IS the peak — the pre-dash orbit holds ≤ ~48 from the parked ship);
      reorbitR3 = boss r3 at rage-stage exit (death-stage entry), ~0.8 s after the dash ends.
-     RED on the 015 build: the fields do not exist (015 probe pattern — red by absence);
-     mutation-verified: removing the clamp line puts dashPeakR3 ≈ 88 > 80 (see the story-016
-     mutation record). */
+     RED on the 015 build: the fields do not exist (015 probe pattern — red by absence).
+     MUTATION (branch, post-green, 2026-11-05): boss.js launchDash clamp line removed → RED
+     `boss dashTarget clamped inside the shell` (peak 87.99 > 80) AND `boss stays inside
+     mid-dash and re-orbits inside` (reorbit 87.96 > 85 — the unclamped overshoot leaves the
+     boss outside the shell past rage exit). Adjacent keep-passing: `boss phases entered in
+     order`, weak-point ratio, overshoot, slow-mo all green (flow-mutation-bossdash.txt,
+     103/2). */
   ok('boss dashTarget clamped inside the shell (dash peak r3 ≤ 80 = 68 + OVERSHOOT + margin)',
     typeof bpX.dashPeakR3 === 'number' && bpX.dashPeakR3 <= 80, `peak=${bpX.dashPeakR3} park=${bpX.parkR3}`);
   ok('boss stays inside mid-dash and re-orbits inside (peak ≤ 92, re-orbit r3 ≤ 85)',
@@ -733,6 +770,12 @@ try {
   // spawns two rammers at ONE XZ, 0.5 u apart vertically, wobble phase pinned equal
   // (probe-owned precondition: identical steering + XZ-only separation = lockstep, so only the
   // dy term can part them) and measures the max pairwise 3D distance over 2.2 s.
+  // BLOCKED MUTATION FINDING (2026-11-05): dropping the dy term from the separation metric
+  // produced NO red (105/105 — flow-mutation-raidersepdy.txt); disabling the WHOLE separation
+  // block drops maxPairDist to 0.49 (would red). The lockstep precondition does not hold on
+  // the live combat page: wave raiders in scratch (n=4) push the co-located pair apart in XZ
+  // once sub-frame offsets appear (maxPairDist 2.26 without dy), so this dy-specific guard
+  // cannot be proven failing under its named mutation — surfaced in the story-016 report.
   ok('raider separation 3D (coincident-stack pair separates > 1.5u)',
     typeof spx.maxPairDist === 'number' && spx.maxPairDist > 1.5, `maxPairDist=${spx.maxPairDist} samples=${spx.samples}`);
   // story-015 review rider R-g (landed in 016): the RENDERED nose sign — no state assert can
@@ -752,6 +795,10 @@ try {
   // (up-hold 25.4 → 44.1°, down-hold 17.7 → 24.5°; floor-only run recorded green, 2026-11-05) — so the
   // shipped assert adds up ≤ 35°, the bound the re-pin violates (flow-mutation-camup.txt). The floor
   // stays for the opposite-class regression (view driven TOWARD vertical).
+  // STORY-016 RIDER R-a MUTATION (2026-11-05): camera lift +3.4 → −6 (the down-side ceiling
+  // mechanism inverted — the camera sags below the ship at down pitch) → RED on the down
+  // bound only: down 46.46° > 35° while up 12° stays inside (flow-mutation-camceil.txt,
+  // 104/1). This is what proves the added down-ceiling half discriminates.
   ok('camera look-target rides the pitched nose (R1: view ≥10° off vertical at max pitch both ways, ≤35° up AND down — 016 rider R-a: the down-side ceiling closes the flatten-during-DOWN-pitch regression class)', typeof cu.down === 'number' && typeof cu.up === 'number' && cu.down >= 10 && cu.up >= 10 && cu.up <= 35 && cu.down <= 35, JSON.stringify(cu));
   ok('CONSOLE [] (pitchProbe page)', errs.length === 0, errs.join(' | '));
 
