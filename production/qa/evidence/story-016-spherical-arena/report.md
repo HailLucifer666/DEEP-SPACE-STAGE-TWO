@@ -205,3 +205,42 @@ passing untouched, and the red-first record intact. The one concern is §8.4: th
 separation-dy guard cannot be proven failing under its named mutation (no red — the live-wave
 XZ pushes part the probe pair regardless of dy) — surfaced as a BLOCKED finding for
 orchestrator/designer decision; no source change was made without sign-off.
+
+## 10. R-e extraction — probe drives moved to src/probes.js
+
+Rider R-e (the only spec gap found on the otherwise-compliant story-016 implementation) is
+now closed: the three probe drives are extracted out of `src/combat.js` into a new
+`src/probes.js`. STRICTLY behavior-neutral — no game-behavior change; moved verbatim.
+
+**What moved** (from `src/combat.js` → `src/probes.js`):
+- The three probe ticks: `droneProbeTick` (story-012), `bossProbeTick` (story-013, with its
+  `bossBolt` helper), `pitchProbeTick` (story-015, the large ~263-line drive).
+- All probe-owned state: the former `C.dp*` / `C.bp*` / `C.pp` fields → module-level state
+  in probes.js (`DP` / `BP` / `PP`), reset via exported `resetProbes()` (called from
+  `enterCombat`, replacing the inline resets; identical window hygiene).
+- The query-flag wiring: `?droneProbe=1`, `?bossProbe=1`, `?bossShot=1`, `?pitchProbe=1`
+  parsing moved with the ticks.
+
+**Import direction** (house dep-check, acyclic): `probes.js` imports only `enemies.js`,
+`drone.js`, `boss.js` — it does NOT import `combat.js`. `combat.js` imports `probes.js`
+and calls the ticks with `(dt, C, probeEnv)` — combat state plus the pure helpers/constants
+the ticks close over (`forward`, `noseWorld`, `clamp`, `ARENA_Y`, `BOLT_LIFE`,
+`TURN_RATE`, `HP_MAX`, `SHIELD_MAX`), the same context-passing pattern
+`ENEMIES.tickEnemies` / `BOSS.tickBoss` already use. Graph: probes → (boss/drone/enemies),
+combat → probes; no cycle.
+
+**Proof — two green runs on identical semantics:**
+- Baseline (before extraction, head 203e090): `node tools/flow-check.mjs` → FLOW-CHECK PASS
+  **105 passed, 0 failed**, every page CONSOLE [] (recorded in
+  `flow-green-r-e-baseline.txt`).
+- After extraction: `node tools/flow-check.mjs` → FLOW-CHECK PASS **105 passed, 0 failed**,
+  every page CONSOLE [] — identical asserts, zero diff on `tools/flow-check.mjs`.
+- `node tools/dep-check.mjs` → PASS — acyclic, structural rules hold (main.js 500/500).
+- `npm run build` green both times (index.html regenerated).
+
+**Line counts:** `src/combat.js` 1100 → 614 lines (the three drives + probe state + query
+flags removed); `src/probes.js` new, 513 lines.
+
+**Prime-rule note:** no new behavior was introduced — this is a pure move (extraction), so
+no regression test is required; the proof is the identical 105/105 flow-check and PASS
+dep-check on both sides of the move.

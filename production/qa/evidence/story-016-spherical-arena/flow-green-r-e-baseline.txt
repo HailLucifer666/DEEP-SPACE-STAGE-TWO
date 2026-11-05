@@ -1,0 +1,6 @@
+FLOW GREEN BASELINE — rider R-e (probes extraction), story-016
+branch: story-016-spherical-arena  head: 203e090
+run: 2026-11-05T17:25:46+05:30
+command: npm run build && node tools/flow-check.mjs
+result: FLOW-CHECK PASS — 105 passed, 0 failed
+console: every page CONSOLE [] (verified by harness asserts)
