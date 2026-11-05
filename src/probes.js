@@ -9,17 +9,20 @@
 import * as ENEMIES from './enemies.js';
 import * as DRONES from './drone.js';
 import * as BOSS from './boss.js';
+import * as DRESSING from './arena-dressing.js'; // story-017: combat-only ambient field + shell visual (reads its probe surfaces — never the reverse)
 
 const qs = new URLSearchParams(location.search);
 const DRONE_PROBE = qs.get('droneProbe') === '1'; // story-012: deterministic single-drone run
 const BOSS_PROBE = qs.get('bossProbe') === '1'; // story-013: deterministic boss walk (skips the wave-5 wait)
 const BOSS_SHOT = qs.get('bossShot') === '1'; // story-013 evidence variant: closer spawn + phase holds (screenshots)
 const PITCH_PROBE = qs.get('pitchProbe') === '1'; // story-015: deterministic pitch+drift walk
+const DRESSING_PROBE = qs.get('dressingProbe') === '1'; // story-017: deterministic dressing walk (ambient field + shell visual)
 
 /* probe-owned state (the former C.dp* / C.bp* / C.pp fields in combat.js before R-e) — untouched by normal play */
 const DP = { t: -1, drone: null, win: 0, done: false, tele: false, dive: false, contact: false, samples: 0, mm: null };
 const BP = { t: -1, stage: 'spawn', stageT: 0, fired: 0, hpMark: 0, spawnWave: 0, hud: false, charged: false, raged: false, ragePinned: false, killed: false, done: false, dashPeakR3: 0, reorbitR3: 0, poleArmed: false, poleDone: false, poleQuietT: null, poleQuietAt: null, poleInDash: false, polePrev: null, poleL: null, poleE: null, poleDashPeakR3: 0, poleDashCapR3: null };
 const PP = { state: null, done: false }; // the pitch walk's one probe-only object, rebuilt fresh on combat entry
+const DD = { t: 0, stage: 0, mark: 0, sub: null, done: false, minCl: 0, samples: 0, pulses: [], entryShown: null, opacityAt78: null, opacityAt60: null }; // story-017 dressing walk — page-scoped (see resetProbes note + dressingProbeTick)
 
 export function resetProbes() { // rider R-e: what enterCombat's inline probe resets did — same state, same window hygiene
   Object.assign(DP, { t: -1, drone: null, win: 0, done: false, tele: false, dive: false, contact: false, samples: 0, mm: null });
@@ -32,6 +35,13 @@ export function resetProbes() { // rider R-e: what enterCombat's inline probe re
   delete window.__stage2.droneProbe; // review NIT 7: same hygiene for the drone walk's report
   window.__stage2.pitchProbeLive = false;
   delete window.__stage2.pitchProbe; // same hygiene for the pitch walk's report
+  // story-017: the dressing walk's report gets the same stale-free hygiene. Its MEASUREMENT
+  // state (DD) is deliberately NOT reset here — the walk is page-scoped: it begins at combat
+  // entry and its lifecycle witness spans the page's combat re-entries, so `done` latches
+  // across resetProbes calls (see dressingProbeTick).
+  Object.assign(DD, { t: 0, stage: 0, mark: 0, sub: null, minCl: 0, samples: 0, pulses: [], entryShown: null, opacityAt78: null, opacityAt60: null });
+  window.__stage2.dressingProbeLive = false;
+  delete window.__stage2.dressingProbe;
 }
 
 /* ---------- story-012 drone probe (?droneProbe=1) ----------
@@ -582,6 +592,98 @@ export function pitchProbeTick(dt, C, env) {
       window.__stage2.pitchProbe = probe;
       window.__stage2.pitchProbeLive = false;
       C.api.report({ pitchProbe: probe }); // parity with scriptedKill/droneProbe/bossProbe — lands on __stage2.lastReport too
+    }
+  }
+}
+
+/* ---------- story-017 dressing probe (?dressingProbe=1) ----------
+ * Deterministic walk of the combat-only ambient dressing (droneProbe/pitchProbe pattern).
+ * Stages, in order:
+ *   entry (0 s) — snap the field/shell visibility at combat entry (the re-show half of the
+ *     rim-ring lifecycle), clear the enemy field + reseat the ship at O (probe-owned
+ *     precondition; bossProbe/pitchProbe precedent), then start the clearance walk: W cruise
+ *     + full-yaw orbit (drift circle radius ≈7 u around O) + varied-pitch pulses (R/F 0.35 s
+ *     every 2 s). The orbit stays ≥ ~18 u from the shell's inner edge (25 u), so the
+ *     geometric clearance margin is ~15-18 u. The field is cleared EVERY tick during the walk
+ *     + HP/shield healed (pitchProbe precedent) — the walk must not die mid-drive with wave
+ *     raiders orbiting the ship.
+ *   walk (10 s) — sample the nearest instance-to-ship 3D distance every tick (min over the
+ *     drive).
+ *   parks — teleport-park at r3 78 (bossProbe shell-park precedent: C.pos set, vel/speed
+ *     zeroed, keys released), wait 0.6 s for the driver to settle, sample shell opacity (> 0,
+ *     design 0.162); re-park at r3 60, wait, sample (== 0).
+ *   report — { ambientCount, shellFill, clearance, shell: { material, opacityAt78,
+ *     opacityAt60 }, lifecycle: { shownOnEnter } } on window.__stage2.dressingProbe
+ *     (+ lastReport parity via api.report). The clear/re-show lifecycle half is verified by
+ *     the HARNESS via __stage2.dressingLive() across a death → gameover → SKIP → combat
+ *     re-entry walk (see flow-check's story-017 block) — the in-page tick cannot witness the
+ *     gameover gap (it only runs in combat). */
+export function dressingProbeTick(dt, C, env) {
+  if (!DRESSING_PROBE || DD.done) return;
+  DD.t += dt;
+  window.__stage2.dressingProbeLive = true;
+  const keys = C.api.input.keys;
+
+  if (DD.stage === 0) { // entry snapshot + walk start
+    DD.entryShown = DRESSING.fieldVisible();
+    C.hp = env.HP_MAX; C.shield = env.SHIELD_MAX;
+    ENEMIES.clearEnemies();
+    C.pos.set(0, env.ARENA_Y, 0); C.vel.set(0, 0, 0); C.speed = 0; C.pitch = 0;
+    C.api.input.mouseActive = false; // pointer parked — no steering interference
+    keys.delete('KeyW'); keys.delete('KeyA'); keys.delete('KeyD'); keys.delete('KeyR'); keys.delete('KeyF'); keys.delete('Space');
+    keys.add('KeyW'); keys.add('KeyA'); // cruise + full-yaw orbit
+    DD.pulses = [];
+    for (let i = 1; i <= 9; i += 2) DD.pulses.push({ at: i, key: 'KeyR', on: false, releaseAt: 0 }); // up
+    for (let i = 2; i <= 8; i += 2) DD.pulses.push({ at: i, key: 'KeyF', on: false, releaseAt: 0 }); // down
+    DD.mark = DD.t; DD.minCl = Infinity; DD.samples = 0;
+    DD.stage = 1;
+    return;
+  }
+
+  if (DD.stage === 1) { // the 10 s clearance walk
+    ENEMIES.clearEnemies(); // the field never crowds the walk — wave raiders respawn ~1.6 s
+    if (C.hp < env.HP_MAX) C.hp = env.HP_MAX;
+    if (C.shield < env.SHIELD_MAX) C.shield = env.SHIELD_MAX;
+    for (const p of DD.pulses) {
+      if (!p.on && DD.t >= DD.mark + p.at) { keys.add(p.key); p.on = true; p.releaseAt = DD.t + 0.35; }
+      if (p.on && DD.t >= p.releaseAt) { keys.delete(p.key); p.on = false; }
+    }
+    const near = DRESSING.nearestTo(C.pos);
+    if (near) { DD.minCl = Math.min(DD.minCl, near.d); DD.samples++; }
+    if (DD.t >= DD.mark + 10.0) {
+      keys.delete('KeyW'); keys.delete('KeyA');
+      for (const p of DD.pulses) keys.delete(p.key);
+      DD.stage = 2; DD.sub = 'park78'; DD.mark = DD.t;
+      C.pos.set(0, env.ARENA_Y, 78); C.vel.set(0, 0, 0); C.speed = 0; C.pitch = 0; // r3 78 park
+    }
+    return;
+  }
+
+  if (DD.stage === 2) { // shell opacity parks
+    if (DD.sub === 'park78') {
+      if (DD.t >= DD.mark + 0.6) {
+        DD.opacityAt78 = +DRESSING.shellOpacity().toFixed(4);
+        DD.sub = 'park60'; DD.mark = DD.t;
+        C.pos.set(0, env.ARENA_Y, 60); C.vel.set(0, 0, 0); C.speed = 0; // r3 60 park
+      }
+      return;
+    }
+    if (DD.sub === 'park60') {
+      if (DD.t >= DD.mark + 0.6) {
+        DD.opacityAt60 = +DRESSING.shellOpacity().toFixed(4);
+        const probe = {
+          ambientCount: DRESSING.fieldCount(),
+          shellFill: DRESSING.shellFill(),
+          clearance: { min: +DD.minCl.toFixed(2), samples: DD.samples },
+          shell: { material: DRESSING.shellMaterial(), opacityAt78: DD.opacityAt78, opacityAt60: DD.opacityAt60 },
+          lifecycle: { shownOnEnter: DD.entryShown },
+        };
+        window.__stage2.dressingProbe = probe;
+        window.__stage2.dressingProbeLive = false;
+        DD.done = true;
+        C.api.report({ dressingProbe: probe }); // parity — lands on __stage2.lastReport too
+      }
+      return;
     }
   }
 }
