@@ -26,8 +26,16 @@ telemetry field list.
 
 | Item | Status | Evidence |
 | --- | --- | --- |
-| Gate: write-down committed | done | story-018/019 + EPIC rows + this ledger, 2026-11-05 |
+| Gate: write-down committed | done | story-018/019 + EPIC rows + this ledger, 2026-11-05 (commit ca9f0ec) |
+| Chair passes: architecture + GDD | done | docs/architecture.md §6-8 (R-c plan + contracts); design/gdd/stage-4-balance.md (643 lines, 4 decisions resolved, options in §9) |
+| Story files amended with GDD params | done | 2026-11-05: fire binding = threshold spray-then-charge (T_CHARGE 0.6 s, CHARGE_DAMAGE 6 vs regular 1, LMB-only — Space is boost); elites = raiders only, pre-elite counts; tables = waves 1-5 authored (totals = derived), boundary wave 5/6; telemetry = 12-group event-driven set; award site corrected to combat.js report wrapper (boss.js zero-diff); no seeded RNG exists — determinism by probe-forced kills/spawns + binomial bands |
 | R-c main.js refactor | todo | |
 | story-018 charged shot + pickups | todo | |
 | story-019 elites/tables/telemetry/reward | todo | |
 | Stage close (review, smoke, changelog, GATE) | todo | |
+
+Riders flagged (player calls at the checkpoint, not silent):
+- BOLT_POOL 24→36 (SPREAD+OVERDRIVE saturation headroom; GDD §3.8) — recommend ACCEPT.
+- boss.js L35 stale comment (says 20-HP arithmetic, shipped BOSS_HP is 60) — comment-only; boss.js is zero-diff in 019, so defer unless the player says otherwise.
+- Alt-tab hold-fire input-state finding (blur clears mouseActive, not fire) — future polish list, no Stage 4 fix.
+- Charged-shot fire-binding model ships as GDD §9 Decision 1 RECOMMENDATION (threshold spray-then-charge); the player verdicts it at the stage checkpoint (options + rollback = tag).

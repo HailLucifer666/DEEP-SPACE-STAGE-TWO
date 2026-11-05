@@ -5,6 +5,10 @@ world goes 3D). Every claim below is grounded in the cited file read at Stage 2 
 not verified by code are marked UNVERIFIED. Scope line and conventions:
 `one-shot-work/stage-2/PROGRESS.md` lines 74–80. Identity/pillars: `design/game-brief.md`.
 
+**Stage 4 additions (2026-11-05, stage-4 open):** sections 6–8 below carry the R-c main.js
+refactor plan (TD-003, the mandatory first Stage 4 merge) and the story-018/019 module
+contracts. Sections 1–5 are the Stage 2/3 record — unedited.
+
 ## 1. Stack decision record (documented, not re-decided)
 
 | Choice | Where | Why (one line) |
@@ -78,3 +82,331 @@ not verified by code are marked UNVERIFIED. Scope line and conventions:
 7. **Boot laziness contract** (`src/store.js` 23–24, `src/main.js` 397): no `localStorage` touch before the title mark; `readHighscore()` pre-warm returns 0 and re-renders after warm-up.
 8. **Never-crash edges**: TD-013 composer degrade latch (`loop.js`), TD-015 musicTo guard (`audio.js` 248–285), drone GLB degrade-to-proc (`drone.js` 129–150), corrupt-GLB fallback rocket (`main.js` 267) — new Stage 3 failure paths get the same one-line-degrade treatment.
 9. **Overlay sweep + `playing` cursor contract** (`phases.js` 116–126): any new Stage 3 HUD element joins `OVERLAY_ELMS` or is phase-owned like `#tele`.
+
+---
+
+## 6. STAGE 4 — R-c: the main.js extraction plan (TD-003; the mandatory FIRST Stage 4 merge)
+
+Written 2026-11-05 at stage-4 open from a full read of `src/main.js` (exactly 500 lines by
+dep-check's metric — zero headroom), `src/phases.js`, `src/input.js`, `src/loop.js`,
+`src/pool.js`, `src/combat.js`, `src/probes.js` and `tools/dep-check.mjs`. Story-011 already
+moved STORE/PHASES/INPUT/LOOP out of main.js; TD-003's "PHASES+INPUT+LOOP could be modules" is
+therefore satisfied history. R-c extracts what story-011 left: the **UI banner** and the
+**ROCKET banner**.
+
+### 6.1 The rule being satisfied (tools/dep-check.mjs, read 2026-11-05)
+
+dep-check enforces exactly four structural rules: (1) the import graph is acyclic (DFS over the
+static-import graph, exit 1 on any cycle — "ES import cycles are a defect even when they appear
+to work"); (2) `store.js` imports nothing; (3) **nothing imports `main.js`** (main is the
+composition root); (4) `main.js ≤ 500` physical lines by its own metric (`split('\n')` minus the
+trailing newline — main.js read at exactly 500). It also rejects any bare import outside its
+skip list (`stage-two-lib`, `three`, `three/…`, `../node_modules/…`). It does NOT enforce
+function length — the < 50-line function rule is a review standard. Registered >50 offenders at
+stage-3 close: tickCombat, tickAscent, tickTransition, steer; read now add boot() (~80 lines,
+main.js 325–404) and the probe drives in probes.js. R-c must add no new offender and closes
+boot() (commit 3).
+
+### 6.2 Extraction plan — two new modules, everything else stays
+
+| Block in main.js | Lines | Destination | Notes |
+| --- | --- | --- | --- |
+| `$` helper | 46 | **stays in main.js** | boot() needs `$('scene-canvas')`; one line kept |
+| UI banner: `ui` map, PANEL_HTML, openPanel/closePanel, refreshSoundButton, refreshRecordLine, resetArmT/onResetClick/disarmReset, OVERLAY_ELMS, toast | 45, 47–122 | **src/hud.js (NEW)** | 77 lines out. OVERLAY_ELMS and the `ui` map move TOGETHER (OVERLAY_ELMS closes over `ui` at eval time) in the same internal build order. openPanel/onResetClick read `probs.phase` → via ctx (`initHud(ctx)` joins the WIRING line). resetArmT/toastTimer become hud.js module lets. Imports: store.js (readHighscore/writeHighscore) + audio.js (isMuted/setMuted) only. Its module body performs ZERO storage calls — the story-007 laziness contract (§5.7) survives because `readHighscore()` pre-warm still returns 0 and the warm call site (main.js 397) does not move. |
+| `probs` declaration | 125 | **stays in main.js** | probs is boot/probe state (written by boot, phases, loop, rocket-prep; read by ctx, `__stage2`, debug). A naive whole-banner move would drag it and invert a dependency. Pinned: stays. |
+| ROCKET banner: MODEL_FIX/activeFix/shipAdapter/rocketShape, b64ToArrayBuffer, loadRocket, applyShipFix, measureShip, prepareRocket, loadPropRocket, preparePropRocket, makeFallbackRocket, spin viewer (spinRig/setupSpinViewer/updateSpinLabel/applySpinFix) | 124, 126–311 | **src/rocket.js (NEW)** | 185 lines out. Imports: stage-two-lib (THREE + GLTFLoader — GLTFLoader leaves main.js's lib import line) + ship-fix.js (adapterRows — main.js drops that import line entirely). All `scene`/`rocket` reads become **ctx getter reads at call time** (see R-c3). `initRocket(ctx)` joins the WIRING line. Bindings read by main.js after the move: `activeFix`/`rocketShape` (updateDebug 429–431, `__stage2.rocketMetrics` 464–472, input.js via `ctx.activeFix`) are mutated, never reassigned → plain object exports; `spinRig` IS reassigned (`spinRig = { sway }`, 295) → `export let spinRig` live binding (ES spec-guaranteed; esbuild 0.28 materializes it), accessor-function fallback if review prefers mutation-only exports — pick one in review, never mix. |
+
+main.js additions: the two import statements (+4 lines), `initRocket(ctx);` (+1). **Predicted
+main.js after R-c: ≈ 240 lines** (band 235–255; dep-check prints the exact number) — under the
+420 target with ~260 lines of Stage 4 headroom, though story-018's HUD work lands in hud.js, not
+main.js, so main.js should stay roughly flat through Stage 4.
+
+New files: `src/hud.js` ≈ 100–115 lines; `src/rocket.js` ≈ 205–220 (header + imports + moved
+code + init). Both far under 800.
+
+**Not extracted, deliberately:** the DEBUG banner (updateDebug/fmtN, ~23 lines — its ctx
+plumbing outweighs 23 lines and it is consumed through ctx already); boot()'s GLB decode chain,
+SCENE state, the `window.__stage2` surface, WIRING and GO (the composition root itself); and
+combat.js / launch.js / transition.js / probes.js — R-c is a main.js refactor, the pre-existing
+>50-line functions there are registered debt OUT of this merge's blast radius, and story-018/019
+are about to edit combat.js heavily (a structural split immediately before that maximizes merge
+pain for zero behavior gain).
+
+### 6.3 Import graph after R-c (dep-check must print this shape, acyclic)
+
+```
+main.js   -> stage-two-lib, launch, combat, audio, assets, store, phases, input, loop, hud(NEW), rocket(NEW)
+hud.js    -> store, audio                    (NEW leaf — only main.js imports it)
+rocket.js -> stage-two-lib, ship-fix         (NEW leaf — only main.js imports it)
+phases.js -> launch, transition, combat, audio, store
+input.js  -> audio, combat, transition, ship-fix, phases
+loop.js   -> launch, transition, phases, input
+combat.js -> lib, enemies, drone, boss, effects, pool, audio, launch, probes, arena-dressing
+probes.js -> enemies, drone, boss, arena-dressing        (story-018 adds powerups)
+enemies.js -> lib, pool   ·  boss.js -> lib, enemies, audio  ·  store.js -> (none)
+```
+
+The wiring rule that keeps it acyclic: hud.js and rocket.js receive EVERYTHING through the ONE
+ctx object (`initHud(ctx)`, `initRocket(ctx)`); neither ever imports main.js, phases.js,
+input.js or loop.js. ctx itself needs NO new properties except `CORRUPT_GLB` (appended to the
+existing SPIN/DT_CLAMP/RESTART_N line) — `ui`, `probs`, `mark`, `spinRig`, `applySpinFix`,
+`activeFix` (via the existing getter semantics) and the scene getters are already there.
+
+### 6.4 Hard constraints and their proof
+
+- **ZERO behavior change** — `node tools/flow-check.mjs`: all **114 asserts GREEN with
+  `tools/flow-check.mjs` byte-identical** to the gate commit (no assert edited, added, or
+  removed; the diff review verifies). The moves are verbatim: same statements, same order, same
+  comments.
+- **main.js ≤ 420 target** — predicted ≈ 240; dep-check prints the number (and enforces ≤ 500).
+- **All files < 800 lines** — trivially held (largest file in the tree after R-c stays combat.js
+  at 628).
+- **Functions < 50 lines** — no new offender; boot() (80) is decomposed in commit 3 (6.6).
+- **Nothing imports main.js / store isolated / acyclic** — dep-check.
+
+### 6.5 Eval-order and boot-gate risk register (the naive-extraction hazards)
+
+- **R-c1 — OVERLAY_ELMS cannot move without the `ui` map.** It closes over
+  `ui.title/hud/gameover/…` at eval time (main.js 112–113). They move together into hud.js in
+  the same internal order. DOM readiness is unchanged: the bundle script already evaluates after
+  DOM parse (today's main.js module body does getElementById at 47–58 and works), and moving
+  code between modules of the SAME script tick does not cross the parse boundary — only
+  within-script evaluation order changes.
+- **R-c2 — PERF_T0 is the boot-marks epoch and sits AFTER the imports** (main.js 28). Two new
+  leaf imports add function/const-declaration eval only (sub-millisecond). MODULE→TITLE is
+  measured FROM PERF_T0 (`boot-marks.mjs` `at('title')`), so the < 1000 ms gate is immune by
+  construction; TRUE-wait (`navT0 + title`) gains < 1 ms. Verified, not assumed: the boot-marks
+  run in the battery, compared against the pre-move headed output.
+- **R-c3 — scene/rocket reads inside the moved code must be CALL-TIME.** prepareRocket reads
+  `scene.environment` (212) and setupSpinViewer reads `rocket`/`scene` (285–294) — module-scope
+  lets that boot() assigns asynchronously. In rocket.js they become `ctx.scene`/`ctx.rocket`
+  getter reads at call time (the story-011 "never a stale copy" rule). Snapshotting them into a
+  const at init is the one bug class that passes dep-check and breaks boot.
+- **R-c4 — hud.js module body must not touch storage.** Only refreshRecordLine calls
+  readHighscore, which is pre-warm-safe (returns 0). The title mark → storeStart ordering
+  (§5.7) is untouched because the warm call site does not move.
+- **R-c5 — probs stays in main.js** (see 6.2). Dragging it into a new module would force the new
+  module to hold main-owned state at eval time.
+- **R-c6 — GLTFLoader's import moves main → rocket.js.** esbuild bundles it identically (no
+  module-scope side effects in the lib); the lib import line in main.js slims, same line count.
+- **R-c7 — live bindings across the bundle.** spinRig is the only REASSIGNED binding that
+  crosses the boundary. `export let` is spec-correct and esbuild-correct; the in-house
+  mutation-only precedent (loop.js `fps` container) is the fallback. Reviewer picks one; both
+  are behavior-neutral.
+
+### 6.6 Verification battery (named, in order, run on EVERY commit of the refactor)
+
+1. `npm run build` — esbuild absorbs the new modules into the single `index.html` (never
+   hand-edited).
+2. `node tools/dep-check.mjs` — prints the graph; expect acyclic + main.js ≈ 240 (limit 500).
+3. `node tools/flow-check.mjs` — real headless Edge CDP run (budget several minutes);
+   **114/114 GREEN, test file byte-identical** to the gate commit.
+4. `node tools/boot-marks.mjs` — HEADED run; MODULE→TITLE inside the documented band (445 ms at
+   story-011; GLB-variance band 158–2492 ms documented in §5.2), `phase:title` + `rocket:glb`,
+   `CONSOLE []` clean.
+
+Red-first mapping for a pure refactor: the pre-move build's green 114/114 plus its headed
+boot-marks output IS the recorded baseline; any post-move red means the move changed behavior —
+revert and bisect by commit. Commit/merge protocol: one commit per extraction — (1) hud.js,
+(2) rocket.js, (3) boot() decomposed into three private helpers with identical statement order
+and identical mark timing (renderer+lights / composer try-catch / UI wiring; each ≤ 50 lines —
+closes the last >50 function in main.js). Each commit runs the full battery; merge `--no-ff`
+and tag `good-2026-11-05-g` per the stage ledger's chain. **story-018 may not add a line to
+main.js or hud.js until this merge lands** (the gate commit's order).
+
+## 7. STAGE 4 — story-018 contracts: charged shot + pickups (src/powerups.js NEW)
+
+### 7.1 src/powerups.js — ownership and exports
+
+Header constants (owning-module convention — combat keeps only the charged-shot's CHARGE_*
+consts in its own const block): `DROP_CHANCE = 0.18`, `PICKUP_LIFE = 8`, `PICKUP_BLINK = 2`
+(blink during the LAST 2 s), `PICKUP_RADIUS = 1.4`, `EFFECT_T = 8`, `SPREAD_ARC = 6` (±6°
+three-bolt fan), `OVERDRIVE_DIV = 2.2` (fire interval ÷ 2.2), `PICKUP_POOL = 8` (saturation
+steals the oldest slot — pool.js semantics), and the kind set { SPREAD, OVERDRIVE, SHIELD }.
+
+- **Pool**: `makePool` (pool.js, reuse-first) created ONCE in `preparePowerups(scene)`, called
+  from combat.js `prepareCombat` beside prepareEnemies/prepareDrones/prepareBoss/
+  prepareDressing — pickups join the entity **baseline** (restartProbe `clean:true` preserved;
+  the baseline count RISES — expected and recorded, same-build comparison per the story-017
+  precedent). Entity: a rotating pickup sprite (additive, `depthWrite:false` — the neon
+  convention), userData `{ alive, kind, t }`.
+- **`maybeDrop(pos)`** — the roll `Math.random() < DROP_CHANCE`, uniform kind, pool spawn. Call
+  sites: ONLY the two bolt-kill sites in combat.js `boltsTick` (raider kill ~302–307, orb kill
+  ~319–324). The rammer's self-kill lives inside enemies.js (~196–201) and story-018's file
+  list does NOT include enemies.js — so **ram deaths do not roll drops**; "on kill" is read as
+  "player-killed". GDD may widen it later (needs an enemies.js api hook — open item, §8.5).
+- **`tickPowerups(dt, playerPos, api)`** — age/spin/blink; despawn at PICKUP_LIFE
+  (`pool.kill`); pickup detection = **FULL-3D squared distance < PICKUP_RADIUS²** (the
+  story-015 lesson: never XZ-only); on overlap `pool.kill(it)` + `api.picked(kind)`. The api is
+  composed by combat.js — powerups.js never reads combat state (acyclic by construction).
+- **`forceDropForProbe(pos, kind)`** — probe-only deterministic spawn (spawnForProbe precedent)
+  for the kind/effect asserts. The 18% RATE assert runs REAL rolls over N scripted kills
+  (scriptedKill pattern) inside a binomial band — widen trials, never bounds.
+- **`clearPowerups()`** — `pool.clear()`; rides `clearCombat` beside clearEnemies/clearDrones/
+  clearBoss/clearEffects (§8.6). `enterCombat` needs no re-show: pickups are hidden until
+  dropped, like bolts.
+- **Seeded-RNG note (honest flag):** there is NO seedable combat RNG in the tree today (bare
+  `Math.random` in combat.js/enemies.js/boss.js), despite the story's "the combat RNG is
+  already seedable". The contract above (forced probe spawns for determinism + real-roll
+  binomial bands for rates) achieves the story's determinism goals without inventing an RNG
+  util; if the GDD insists on seeding, that is a new util module — flag it, never sneak it.
+
+### 7.2 Effect timers — owner: combat.js (the story pins it: "timer state lives in the combat.js player object")
+
+`C` gains `powerT: { SPREAD: 0, OVERDRIVE: 0, SHIELD: 0 }` (seconds remaining per kind).
+powerups.js is ENTITY-side only (drop/despawn/pickup-detection); combat.js is EFFECT-side:
+
+- `applyEffect(kind)` (the `api.picked` target): `C.powerT[kind] = EFFECT_T`; SHIELD
+  additionally refills `C.shield = SHIELD_MAX`.
+- `tickCombat`: after the regen block, decrement all three; while SHIELD is active the regen
+  gate treats `SHIELD_REGEN_DELAY` as 0; on a timer crossing zero the expiry side-effects fire
+  (combat.js plays the expire blip via its existing audio imports — powerups.js stays
+  sound-free; pickup blip likewise at `api.picked`).
+- `fireTick`: SPREAD active → spawn 3 bolts at ±SPREAD_ARC° (SAME bolt pool, same BOLT_LIFE —
+  no baseline change); OVERDRIVE active → `FIRE_INTERVAL / OVERDRIVE_DIV`. The charged shot
+  branches in this same function (C.chargeT + CHARGE_* consts in combat.js's header; parameters
+  pending the GDD): release-after-hold fires exactly ONE charged bolt that reuses the C.bolts
+  pool (a stamped/heavier bolt, NOT a new pool — restartProbe entities stay stable); charging
+  cancels on death (damagePlayer), pause (tickCombat halts), and combat exit (the
+  clearCombat/enterCombat reset block); whichever regular-fire behavior the GDD chooses
+  (suppressed vs continues) is pinned by a probe assert before implementation.
+- `clearCombat` wipes C.powerT alongside the pool drain; `enterCombat`'s reset block zeroes it
+  beside score/kills (the L453 pattern).
+
+### 7.3 Harness surface (probes, combatState, HUD)
+
+- `combatState()` gains `charge` (GDD-shaped charge state) and the active-effect fields (e.g.
+  `power: { SPREAD: seconds|0, OVERDRIVE: …, SHIELD: … }`) — they reach the harness through the
+  EXISTING `window.__stage2.combatState()` surface in main.js: **zero main.js change**.
+- New probe pages `?chargeProbe=1` / `?powerupProbe=1`: drive ticks live in probes.js
+  (`chargeProbeTick` / `powerupProbeTick`, called from tickCombat beside the existing drives;
+  probes.js gains an import of powerups.js — acyclic; powerups.js never imports probes.js),
+  report `window.__stage2.chargeProbe` / `.powerupProbe` + `api.report` lastReport parity,
+  state reset in `resetProbes()` with the stale-delete window hygiene, per-page `CONSOLE []`.
+  Ordering probes per the story: charge release during death slow-mo; a pickup taken during the
+  boss fight (boss drops are EXEMPT — no drop call site in the boss path — but effects must
+  still apply; OVERDRIVE matters most there).
+- HUD (post-R-c only): the charge meter + effect chips are combat DOM writes in the
+  change-gated hudBars style (combat.js owns combat HUD writes); the CONTROLS panel text and
+  the hint bar live in hud.js's PANEL_HTML and `tools/index.template.html` (index.html is
+  build output — never hand-edited). Audio: charge whine + pickup/expire blips as named synth
+  recipes in audio.js (audio-bag pattern), played from combat.js call sites.
+
+**Module edges:** powerups.js imports stage-two-lib + pool.js. Imported by combat.js (+probes.js
+for the probe drive). combat.js CONSUMES from powerups: prepare/maybeDrop/tick/clear + the probe
+force; combat.js PROVIDES to powerups: the `picked` api. Nothing imports main.js; store.js stays
+isolated; dep-check acyclic.
+
+## 8. STAGE 4 — story-019 contracts: elites, wave tables, telemetry, boss reward
+
+### 8.1 Boss reward — SCORE_BOSS = 1000, placement and re-fire safety
+
+Const `SCORE_BOSS = 1000` in combat.js's score-constants block (~62–66, beside
+SCORE_DRONE/GUNNER/WAVE/OR — a named const, never a literal). **Award call site: the
+bossApi.report wrapper in combat.js prepareCombat (~130–141)** — the same handler that owns the
+exactly-once counter and the victory guard:
+
+```
+if (r && r.bossDefeated) {
+  window.__stage2.bossDefeatedReports = (window.__stage2.bossDefeatedReports || 0) + 1;
+  if (!C.dead && !C.victoryFired) { C.score += SCORE_BOSS; C.victoryFired = true; C.api.go('victory'); }
+}
+```
+
+- **Ordering**: victory.enter reads `cs.score` synchronously inside the `go('victory')` call
+  stack (phases.js ~102–106), so the award lands BEFORE the card freezes it — same-frame
+  visibility, probe-pinned.
+- **Exactly-once**: boss.js reports once (deathTick's B.dead latch, ~241–251); the award
+  additionally rides the `!C.victoryFired` guard, so a forced second victory trigger cannot
+  double-award (the re-fire probe pins it). Re-entry after victory: enterCombat zeroes C.score
+  (L453) — restart class starts at 0. Highscore: victory.enter's
+  `writeHighscore(Math.max(finalScore, readHighscore()))` picks the +1000 up with zero card
+  edits (phases.js untouched, per the story).
+- **Deviation to record**: the story file lists `src/boss.js — award call site only`, but the
+  wrapper in combat.js IS the call site, and combat.js's own design comment pins "boss.js stays
+  a pure signal source" — boss.js has no score access, threading one through the api would
+  extend the api surface and split const ownership, and boss.js must not import combat.js
+  (that edge is a cycle). **Recommendation: boss.js zero-diff; the story report records the
+  deviation.** The alternative (an `api.addScore` called from boss.js deathTick) is rejected
+  for those reasons.
+
+### 8.2 Elite variants — src/enemies.js
+
+Header consts (owning-module convention): `ELITE_MIN_WAVE = 4`, `ELITE_CHANCE = 0.22`,
+`ELITE_SCALE = 1.35`, `ELITE_TINT = 0xffa02f`, `ELITE_HP_MULT = 3`, `ELITE_SPEED_MULT = 1.15`,
+`ELITE_SCORE_MULT = 2` (EXPORTED — combat.js imports it for the kill site; enemies.js is
+already a combat.js dep, so no new edge). The chance derives from the wave number
+(`w >= ELITE_MIN_WAVE` roll per spawn), never a hand-written list (acceptance #18).
+
+Per-spawn stamps in spawnRaider's elite branch: `u.elite`, `u.hp × 3`, `u.speedMult`,
+`scale.setScalar(ELITE_SCALE)`, trim retint — and because the pool REUSES instances, **every
+spawn RESETS scale/tint/elite** (normal spawns restore emissive 0xff3b2f and scale 1) so reuse
+never leaks an elite skin. Steering consumes `u.speedMult` at the two E.speed sites (gunner
+vRadial/vTang, rammer sp) — non-elites multiply by 1, zero diff. Contact radius: the spec does
+not list one — recommend `u.r = R_RAIDER × ELITE_SCALE` pending the GDD (a ×1.35 model with a
+0.9 hitbox reads unfair; open item, §8.5). Score ×2 applies at the combat.js kill sites via the
+imported ELITE_SCORE_MULT.
+
+### 8.3 Per-wave composition tables — src/enemies.js
+
+Shape: a `WAVE_TABLE` const for waves 1..N (fields per the GDD: counts and kind mix), with the
+EXISTING derived formulas (waveCount/waveSpeed/waveStagger/waveWobble/rammerShare) untouched as
+the fallback beyond the boundary: `table[w] ?? derived(w)`. The enemies.js header TODAY says
+"there is no per-wave table anywhere" — story-019 REWRITES that sentence to state the
+table↔derivation boundary (a table row is design data under review, not a hand-kept selector in
+a guard — the acceptance-#18 resolution), and flow-check pins the boundary wave BOTH ways
+(w = N resolves from the table, w = N+1 from the derivation). `startWave` consumes resolved
+values only. Elite × table: table counts are read pre-elite, the elite roll is a per-spawn
+modifier (recommendation; the GDD states it — a "2 gunners" row with per-spawn elite rolls
+otherwise silently yields 2 × HP×3 sponges).
+
+### 8.4 Balance telemetry — the accumulator lives in combat.js
+
+A module-level `const T = { kills: {gunner, rammer, orb}, eliteKills: 0, shots: 0, hits: 0,
+dmg: {raider: 0, orb: 0, boss: 0}, powerPicks: {SPREAD, OVERDRIVE, SHIELD}, scoreBySource:
+{…}, waveReached: 0, duration: 0 }` (exact field list per the GDD's open item). Plain number
+fields; **event-driven writes ONLY** — increments at existing event sites, never per-frame
+allocations or work in the render loop (the story's own risk note):
+
+- shots: fireTick spawns (+1 per bolt; +1 per charged release). hits: the three bolt-scan hit
+  branches (raider/orb/boss). kills: the existing C.kills sites (elite kills also count in
+  their kind bucket — elite is a flag, not a kind). powerPicks: story-018's `api.picked`.
+- damage-by-source: the per-frame api object literals at tickCombat (~483–485) ALREADY allocate
+  fresh `{ damagePlayer, explosion }` objects every frame — wrap damagePlayer per caller: the
+  ENEMIES api counts 'raider', the DRONES api 'orb', the C.bossApi 'boss'. damagePlayer keeps
+  its signature, so probeDamagePlayer/deathFastForward are untouched.
+- waveReached / score-by-source / duration read LIVE C state in the dump (C.wave, the per-site
+  score increments incl. the boss award, C.time) — no duplicate counters. Known granularity
+  limit: boss volleys ride E.bolts through the ENEMIES api (tickBolts), so boss-volley damage
+  lands in the 'raider' bucket unless the GDD pays for an enemies.js source hook (open item).
+- **Zeroing**: enterCombat's reset block (the L453 pattern) zeroes T beside score/kills — the
+  restart-parity assert reads it back; the mutation "forget to zero on enterCombat" goes RED
+  via that assert.
+- **Exposure**: `combatState()` gains `telemetry: { …T }` (probe surface only; player-facing UI
+  unchanged) — flows through the existing `window.__stage2.combatState()`; the scripted probe
+  asserts every field with counts matching its own actions, no NaN/undefined.
+
+### 8.5 Open items that gate implementation (the GDD pass — recorded in the ledger)
+
+Charged-shot parameters + binding model (hold-fire vs hold-to-charge — the load-bearing design
+risk); composition-table shape + boundary wave + pre/post-elite counts; which kinds can be
+elite; elite contact radius; telemetry field-list granularity (boss-volley vs raider-bolt share
+one api bucket today); whether ram deaths roll drops (default NO — enemies.js is not in
+story-018's file list).
+
+### 8.6 Contract summary (who provides/consumes what)
+
+- **combat.js PROVIDES**: enterCombat/tickCombat/clearCombat (phases.js), combatState +
+  probeDamagePlayer + deathFastForward (window.__stage2), the bossApi (boss.js), per-frame api
+  objects (ENEMIES/DRONES ticks), probeEnv (probes.js) — and NEW for Stage 4: the POWERUPS
+  prepare/maybeDrop/tick/clear calls + the `picked` api + the telemetry accumulator.
+- **combat.js CONSUMES**: ENEMIES (waves/bolts/kill helpers), DRONES, BOSS
+  (state/boltHit/hitBoss/alive/eligible/barLine), EFFECTS, pool, audio, launch
+  (stageShip/combatFlow), probes (the drives + resetProbes), DRESSING, POWERUPS (new).
+- **powerups.js IMPORTS**: stage-two-lib, pool.js. IMPORTED BY: combat.js, probes.js.
+- **enemies.js IMPORTS**: lib, pool (+ nothing new). **probes.js IMPORTS gain**: powerups.js.
+- Probes report on `window.__stage2`: `.chargeProbe` / `.powerupProbe` (story-018),
+  `.telemetry` inside `combatState()` (story-019), always with `lastReport` parity and
+  `resetProbes()` stale-delete hygiene. Pickups join the baseline pool created once in
+  prepareCombat; clearCombat drains them; `restartProbe` stays `clean:true` with the baseline
+  rise recorded same-build.

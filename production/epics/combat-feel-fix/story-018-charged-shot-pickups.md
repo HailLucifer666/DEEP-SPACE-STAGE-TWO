@@ -22,14 +22,15 @@ that record, written 2026-11-05.
 3. The mandatory main.js refactor (R-c / TD-003) lands FIRST in Stage 4, before any story
    adds a line to main.js (500/500 at the stage-3 close, zero headroom — dep-check enforces).
 
-**NOT recovered (stated honestly):** the charged shot's parameters — charge time, damage,
-binding model, visuals. They were never written down on disk (searched 2026-11-05 across
-`one-shot-work/`, `design/`, `production/`, `docs/` — zero hits). The Stage 4 GDD pass
-(game-designer → `design/gdd/stage-4-balance.md`) proposes them. The open design question it
-must resolve: **hold-to-fire** (~8/s continuous, shipped since S4) and **hold-to-charge** are
-competing uses of the same button — separate key vs charge-on-hold-threshold vs a mode are
-the candidate shapes. The proposal goes to the player at the story checkpoint (options +
-recommendation, rollback = tag), consistent with how stages 1–3 ran.
+**NOT recovered (stated honestly) — RESOLVED 2026-11-05 by the Stage 4 GDD pass:** the charged
+shot's parameters were never written down on disk (searched across `one-shot-work/`,
+`design/`, `production/`, `docs/` — zero hits). The Stage 4 GDD
+(`design/gdd/stage-4-balance.md`, written 2026-11-05) now fixes them: **threshold
+spray-then-charge** — the LMB-only stream fires exactly as shipped below `T_CHARGE = 0.6 s`
+of continuous hold; at the threshold the stream suppresses and the charge fills (whine starts);
+release fires exactly one charged bolt, `CHARGE_DAMAGE = 6` vs the regular bolt's literal-1
+damage. DPS parity anchor ±15%. Full options analysis + the three alternatives in GDD §9
+Decision 1 — the player can re-pick at the stage checkpoint (rollback = tag).
 
 ## Goal
 
@@ -56,8 +57,8 @@ Two player-facing additions, both combat-only:
 - `src/combat.js` — charged shot in the fire path (fire interval / bolt spawn), kill→drop
   hook, effect application, `combatState()` gains charge + active-effect fields for the
   harness.
-- `src/input.js` — only if the GDD's chosen binding needs a new key (key-hold state is
-  already tracked; prefer zero change).
+- `src/input.js` — **zero change** (GDD resolution: the threshold model reads the existing
+  LMB hold state; the pause cancel reads the keys the fire path already sees).
 - HUD (charge meter + effect chips): `src/main.js` (PANEL_HTML/panels) and/or
   `tools/index.template.html` — **only after R-c has merged** (main.js is 500/500 until then).
 - `src/audio.js` — charge whine + pickup/expire blips (synth recipes, audio-bag pattern).
@@ -73,16 +74,24 @@ Two player-facing additions, both combat-only:
 
 ## Acceptance criteria (structure now; numbers filled from the GDD when it lands)
 
-- [ ] Charged shot: release-after-hold fires exactly one charged bolt (probe counts bolts);
-      damage/kill behavior matches the GDD numbers; charge state is visible (HUD) and
-      audible; the probe pins whichever regular-fire behavior the GDD chose (suppressed vs
-      continues); charging cancels on death, pause, and combat exit; `combatState()` exposes
-      the charge state.
-- [ ] Pickups: a kill drops at most one pickup at the 18% rate (seeded-RNG probe over N
-      kills, binomial band); despawn at 8 s with a 2 s blink (visibility probe); each effect
-      verified per-kind (SPREAD fan count, OVERDRIVE interval, SHIELD refill + regen delay
-      zeroed); effect expires at 8 s; HUD chip shows name + seconds; `clearCombat()` wipes
-      timers and entities — `restartProbe` stays `clean:true` (pickups join the baseline).
+- [ ] Charged shot (GDD §3.1-3.2 numbers): the LMB-only stream fires exactly as shipped
+      below `T_CHARGE = 0.6 s` of continuous hold (a 0.2 s tap → ≥ 1 stream bolt, 0
+      charged); at the threshold the stream suppresses, the charge fills (whine starts), and
+      release fires exactly ONE charged bolt (`CHARGE_DAMAGE = 6` — one-shots a seeded
+      gunner AND a seeded elite gunner; weak-point hit does 18 via the existing dmg param —
+      `src/boss.js` untouched); release before the threshold fires nothing extra; charge
+      state visible (`combatState().charge/charging`; HUD meter post-R-c) and audible;
+      charging cancels on death, pause, and combat exit (accumulator wiped, release fires
+      nothing); `combatState()` exposes the charge state.
+- [ ] Pickups: a kill drops at most one pickup at the 18% rate (forced-kill probe over
+      N = 100 real rolls, binomial 95% band for p = 0.18 — **no seeded RNG exists in the
+      tree**; determinism comes from probe-forced kills/spawns, GDD §8.3); despawn at 8 s
+      with a 2 s blink (visibility probe); each effect verified per-kind (SPREAD 3-bolt fan
+      ±6° stream-only, OVERDRIVE interval ≈ 0.0568 s, SHIELD refill 50 + regen delay zeroed
+      in-window and restored 3 s after expiry); same-kind re-pickup refreshes to 8 s (never
+      stacks); different kinds run concurrently; effect expires at 8 s; HUD chip shows name
+      + seconds (post-R-c); `clearCombat()` wipes timers and entities — `restartProbe` stays
+      `clean:true` (pickups join the baseline, ~6 entities, recorded growth).
 - [ ] All existing flow-check asserts stay green (114 + new); every new harness page asserts
       its own `CONSOLE []`; boot-marks MODULE→TITLE inside the documented band; dep-check
       acyclic with main.js ≤ 500.
@@ -99,9 +108,11 @@ build before the change lands; mutation + date recorded IN the test file; the mu
 verified applied (read its red output); adjacent keep-passing cases ship with every
 mutation.
 
-- **Seeded RNG for drops**: the drop roll and pickup kind are forced deterministically in
-  probes (the combat RNG is already seedable); if an assert proves flaky, widen the trial
-  count, never the bounds.
+- **Determinism without a seeded RNG** (TD finding, 2026-11-05: no seedable RNG exists in
+  the tree): probes force kills/spawns directly (the spawnForProbe precedent) and rate
+  asserts run binomial 95% bands over N real rolls; if an assert proves flaky, widen the
+  trial count, never the bounds. The GDD's "seeded" wording is implemented as
+  forced/injected for this reason.
 - **Ordering probes**: charge release during death slow-mo; a pickup taken during the boss
   fight (boss exempt from DROPS, but effects must still apply — OVERDRIVE matters most
   there).
