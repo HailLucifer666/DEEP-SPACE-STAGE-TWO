@@ -12,9 +12,12 @@ import * as BOSS from './boss.js';
 import { BOSS_WAVE } from './boss.js';
 import * as EFFECTS from './effects.js';
 import { makePool } from './pool.js';
-import { beep, sweep, noiseBurst, loopStart, musicEvict, musicSetDuck, alarmTick, proximityTick } from './audio.js';
+import * as POWERUPS from './powerups.js'; // story-018: drop roll + pickup pool + stats (entity side only — the EFFECT timers live here; powerups never reads combat state, dep-check acyclic)
+import { EFFECT_T, KINDS as EFFECT_KINDS } from './powerups.js';
+import { beep, sweep, noiseBurst, loopStart, musicEvict, musicSetDuck, alarmTick, proximityTick,
+  chargeWhine, chargeRelease, pickupBlip, expireBlip } from './audio.js'; // story-018: named synth recipes (audio.js) — combat owns the call sites; powerups.js stays sound-free
 import { stageShip, combatFlow } from './launch.js';
-import { droneProbeTick, bossProbeTick, pitchProbeTick, dressingProbeTick, resetProbes } from './probes.js'; // rider R-e: the probe drives + their state live in probes.js — combat calls them, never the reverse (dep-check: acyclic)
+import { droneProbeTick, bossProbeTick, pitchProbeTick, dressingProbeTick, chargeProbeTick, powerupProbeTick, resetProbes } from './probes.js'; // rider R-e: the probe drives + their state live in probes.js — combat calls them, never the reverse (dep-check: acyclic)
 import * as DRESSING from './arena-dressing.js'; // story-017: combat-only ambient field + shell visual (GDD §3.6)
 
 const ARENA_Y = 18; // story-016: re-anchored as the sphere CENTER's y — O = (0, ARENA_Y, 0) (the spawn point)
@@ -71,6 +74,9 @@ const CHARGE_SCALE = 3.0;      // charged bolt visual scale ×3 — readable und
 const SUPPRESS_STREAM = true;  // DESIGN CONST, not a knob: the balance hinge (GDD §3.1) — stream+charge together is a dominant strategy
 const BOLT_COLOR = 0x9fe8ff;   // shipped stream bolt color
 const CHARGE_COLOR = 0xffc85a; // charged bolt — the amber family (the boss node's color language, GDD §3.2)
+// story-018 effect knobs (GDD §7 places SPREAD_ANGLE/OVERDRIVE_DIV in combat.js — the consumer; EFFECT_T lives in powerups.js with the other pickup consts)
+const SPREAD_ARC = 6;          // degrees — ±6° three-bolt fan per stream shot while SPREAD is active
+const OVERDRIVE_DIV = 2.2;     // stream interval ÷ 2.2 while OVERDRIVE is active — T_CHARGE unchanged (GDD §3.2)
 const HP_MAX = 100, SHIELD_MAX = 50, SHIELD_REGEN_DELAY = 3, SHIELD_REGEN_RATE = 14;
 const DEATH_SLOWMO = 0.7;    // seconds of real time at timeScale 0.3 before gameover (a click lands it sooner)
 const SCORE_DRONE = 100, SCORE_GUNNER = 150, SCORE_WAVE = 150;
@@ -86,6 +92,7 @@ const C = {
   hp: HP_MAX, shield: SHIELD_MAX, regenT: 0, dead: false, deathT: 0,
   fireT: 0, boost: 1, boosting: false,
   chargeT: 0, charging: false, // story-018: hold accumulator (s) + past-threshold latch — zeroed on death/pause/exit (GDD §3.2 cancel rules)
+  effects: { SPREAD: 0, OVERDRIVE: 0, SHIELD: 0 }, // story-018: seconds remaining per pickup effect — OWNER: combat.js (architecture §7.2; the entity side lives in powerups.js)
   fired: { stream: 0, charged: 0 }, // story-018 probe surface: fire-path bolts spawned this fight (story-019's telemetry supersedes)
   wave: 0, waveGapT: 0, score: 0, kills: 0,
   time: 0, // story-014: per-fight combat clock — scaled sdt while alive (the world's slow-mo slows it), frozen while dead; reset each enterCombat. NOT game.time (the global clock — launch phases own it)
@@ -100,6 +107,7 @@ const C = {
   rim: null, // story-005: the visible sector-edge ring (created once, opacity driven by proximity)
   pips: [], pipDir: new THREE.Vector3(), pipFwd: new THREE.Vector3(), pipInv: new THREE.Quaternion(),
   retX: -1, retY: -1, lastBars: null, lastScore: null, // change-gates for DOM writes
+  lastChips: null, lastChargePct: -1, lastChargeFull: null, // story-018: chip line + charge-meter change-gates
 };
 const qs = new URLSearchParams(location.search);
 const SCRIPTED_KILL = qs.get('scriptedKill') === '1';
@@ -133,6 +141,7 @@ export function prepareCombat(scene, camera, rocket, ui, api) {
   DRONES.prepareDrones(scene); // story-012: orbs join the wave layer; GLB decode starts here if inlined
   BOSS.prepareBoss(scene); // story-013: the single-entity boss joins the scene at prepare (baseline-stable mesh count)
   DRESSING.prepareDressing(scene, { AMBIENT_FIELD_COUNT, AMBIENT_FIELD_SEED, SHELL_VISUAL_MAX_OPACITY, R_SOFT, R_HARD, ARENA_Y }); // story-017: baseline member — the ambient field + shell visual are created ONCE here (never per-entry allocation) and hide/show with the combat lifecycle
+  POWERUPS.preparePowerups(scene); // story-018: the pickup pool joins the entity baseline — created ONCE, pre-warmed 6 (restarts allocate nothing new; the restartProbe baseline RISES by 6, recorded)
   C.bossApi = { // the boss's tick/death api — EFFECTS + the combat probe surfaces, drone-tick api shape extended for slow-mo + report
     damagePlayer, explosion: (p) => EFFECTS.explosion(p), shake: (a) => EFFECTS.shake(a),
     setTimeScale: (v) => C.api.setTimeScale(v), getTimeScale: () => C.api.getTimeScale(),
@@ -184,6 +193,20 @@ function reparentRocket(toPose) {
 
 function noseWorld(out) {
   return C.rocket ? C.rocket.localToWorld(out.set(0, 1.0, 0)) : out.copy(C.pos);
+}
+
+// story-018 drop position: the dying enemy's position clamped to r3 ≤ R_HARD − 1 — orbs can
+// legally die outside the sphere (orbit overshoot, full-3d-flight §5.4) and an unclamped drop
+// behind the hard clamp would be permanently unreachable (GDD §3.3/§5). Uses C.tmp2 — safe:
+// the kill sites are synchronous and maybeDrop copies the position. The ONLY two callers are
+// the raider/orb bolt-kill sites in boltsTick ("on kill" = player-killed — ram/dive deaths
+// self-kill inside enemies.js/drone.js and never roll; the boss path has no call site at all).
+function dropAt(pos) {
+  C.tmp2.set(pos.x, pos.y - ARENA_Y, pos.z);
+  const r3 = C.tmp2.length();
+  if (r3 > R_HARD - 1) C.tmp2.multiplyScalar((R_HARD - 1) / r3);
+  C.tmp2.y += ARENA_Y;
+  POWERUPS.maybeDrop(C.tmp2);
 }
 
 function forward(out) {
@@ -306,10 +329,33 @@ function spawnBolt(dmg, charged, dir) {
   return b;
 }
 
+// story-018 fan scratch (module-level — no per-shot allocation). The fan rotates the shot's
+// forward ±SPREAD_ARC about the SHIP'S LOCAL UP (kept perpendicular to forward, so the angle
+// between the dirs is exactly ±6° at any pitch — a world-up rotation would narrow the fan at
+// high pitch). The charged bolt is NEVER fanned (GDD §3.2: 3×6 = 18 alpha per cycle would
+// break the DPS parity anchor). NOTE: the center dir is copied OUT of C.tmp first — spawnBolt's
+// lookAt clobbers C.tmp, so a second spawnBolt(dir) reading C.tmp would fly a garbage direction.
+const FAN = { right: new THREE.Vector3(), up: new THREE.Vector3(), left: new THREE.Vector3(), rightD: new THREE.Vector3(), center: new THREE.Vector3() };
+const WORLD_UP = new THREE.Vector3(0, 1, 0);
+
 function spawnStreamShot() {
-  spawnBolt(1, false);
-  C.fired.stream++;
-  sweep({ f0: 1500, f1: 320, dur: 0.09, vol: 0.12, type: 'square' });
+  const d0 = forward(C.tmp); // center dir
+  if (C.effects.SPREAD > 0) {
+    FAN.right.copy(d0).cross(WORLD_UP).normalize();
+    FAN.up.copy(FAN.right).cross(d0).normalize();
+    const a = SPREAD_ARC * Math.PI / 180;
+    FAN.left.copy(d0).applyAxisAngle(FAN.up, a).normalize();
+    FAN.rightD.copy(d0).applyAxisAngle(FAN.up, -a).normalize();
+    FAN.center.copy(d0); // out of the lookAt-clobbered scratch BEFORE the first spawn
+    spawnBolt(1, false, FAN.left);
+    spawnBolt(1, false, FAN.center);
+    spawnBolt(1, false, FAN.rightD);
+    C.fired.stream += 3;
+  } else {
+    spawnBolt(1, false);
+    C.fired.stream++;
+  }
+  sweep({ f0: 1500, f1: 320, dur: 0.09, vol: 0.12, type: 'square' }); // shipped stream voice — one per SHOT (a fan is one shot)
 }
 
 function fireTick(dt) {
@@ -331,17 +377,18 @@ function fireTick(dt) {
     if (C.charging && !C.dead) {
       spawnBolt(CHARGE_DAMAGE, true);
       C.fired.charged++;
+      chargeRelease(); // the heavy thump (GDD §3.2 audio row)
     }
     C.chargeT = 0; C.charging = false;
     return;
   }
   C.chargeT += dt;
   if (C.chargeT >= T_CHARGE) {
-    if (!C.charging) C.charging = true; // the threshold crossing — the charge whine rides the HUD/audio commit
+    if (!C.charging) { C.charging = true; chargeWhine(); } // the crossing — the whine teaches it (GDD §3.1)
     if (SUPPRESS_STREAM) return;
   }
   if (C.fireT > 0) return;
-  C.fireT = FIRE_INTERVAL;
+  C.fireT = C.effects.OVERDRIVE > 0 ? FIRE_INTERVAL / OVERDRIVE_DIV : FIRE_INTERVAL; // OVERDRIVE: stream interval ÷ 2.2 ≈ 0.0568 s — T_CHARGE itself is unchanged (GDD §3.2)
   spawnStreamShot();
 }
 
@@ -363,6 +410,7 @@ function boltsTick(dt) {
         if (ENEMIES.hitDrone(d, b.userData.dmg || 1)) { // story-018: the bolt carries its damage (stream 1, charged 6); probe-spawned unstamped bolts default to 1
           C.score += d.userData.kind === 'gunner' ? SCORE_GUNNER : SCORE_DRONE;
           C.kills++;
+          dropAt(d.position); // story-018: raider drop site — bolt kills roll 18%, ram deaths never do (enemies.js untouched)
           EFFECTS.shake(0.06); // kill feedback (J)
           beep({ freq: 620, dur: 0.09, vol: 0.16, type: 'triangle' });
         }
@@ -380,6 +428,7 @@ function boltsTick(dt) {
         if (DRONES.hitOrb(o, b.userData.dmg || 1)) { // story-018: bolt-carried damage (charged 6 one-shots the 2-HP orb — GDD §5, no special case)
           C.score += SCORE_ORB;
           C.kills++;
+          dropAt(o.position); // story-018: orb drop site (the position is clamped inside dropAt — orbs die outside the sphere legally)
           EFFECTS.shake(0.06);
           beep({ freq: 620, dur: 0.09, vol: 0.16, type: 'triangle' });
         }
@@ -402,6 +451,19 @@ function boltsTick(dt) {
 }
 
 /* ---------- damage / death ---------- */
+// story-018 effect side (architecture §7.2): the timers live HERE on the combat player object.
+// applyEffect is the api.picked target powerups.js calls back through: set the timer to
+// EFFECT_T (same-kind re-pickup REFRESHES to 8 s — never stacks), SHIELD additionally refills
+// to SHIELD_MAX. Different kinds run concurrently (one timer each). Expiry restores the
+// shipped constants with no snap (the regen delay reads 3 again, the stream interval
+// FIRE_INTERVAL again) — the expire blip rides the HUD/audio commit.
+function applyEffect(kind) {
+  C.effects[kind] = EFFECT_T;
+  if (kind === 'SHIELD') C.shield = SHIELD_MAX;
+  pickupBlip(); // the pickup confirm — powerups.js stays sound-free; the api.picked target plays it (architecture §7.2)
+}
+const POWERUP_API = { picked: applyEffect }; // composed ONCE — powerups.js never reads combat state (acyclic)
+
 function damagePlayer(n) {
   if (C.dead) return;
   const toShield = Math.min(C.shield, n);
@@ -512,6 +574,7 @@ export function enterCombat(scene, camera, rocket, ui, api) {
   C.hp = HP_MAX; C.shield = SHIELD_MAX; C.regenT = 0; C.dead = false; C.deathT = 0;
   C.fireT = 0; C.boost = 1; C.boosting = false;
   C.chargeT = 0; C.charging = false; // story-018: the hold accumulator never survives an entry (GDD §3.2 combat-exit cancel)
+  C.effects = { SPREAD: 0, OVERDRIVE: 0, SHIELD: 0 }; // story-018: effect timers wipe beside score/kills (the L453 pattern)
   C.fired = { stream: 0, charged: 0 }; // story-018 probe counters restart beside kills (the L453 pattern)
   C.score = 0; C.kills = 0; C.wave = 1; C.waveGapT = 0;
   C.time = 0; // story-014: the clock is per-fight — every combat entry restarts it
@@ -525,7 +588,9 @@ export function enterCombat(scene, camera, rocket, ui, api) {
   C.flow = 0;
   C.proxScanT = 0; C.nearest = null; // story-009: proximity scan restarts clean (§8.6)
   C.lastBars = null; C.lastScore = null; // clearCombat emptied the DOM — force one HUD rewrite
+  C.lastChips = null; C.lastChargePct = -1; C.lastChargeFull = null; // story-018: same rewrite force for the chips + charge meter
   C.bolts.clear();
+  POWERUPS.clearPowerups(); // story-018: the pickup pool drains with the pools — enterCombat needs no re-show (pickups are hidden until dropped, like bolts)
   ENEMIES.clearEnemies();
   DRONES.clearDrones();
   EFFECTS.clearEffects();
@@ -547,16 +612,31 @@ export function tickCombat(dt, t) {
   DRONES.tickDrones(dt, C.pos, { damagePlayer, explosion: (pos) => EFFECTS.explosion(pos) });
   BOSS.tickBoss(dt, C.pos, C.bossApi); // story-013: the warden — single-entity state machine
   wavesTick(dt);
+  POWERUPS.tickPowerups(dt, C.pos, POWERUP_API); // story-018: age/spin/blink/despawn + the full-3D pickup check → api.picked
   scriptedKillTick(dt);
   droneProbeTick(dt, C, probeEnv); // rider R-e: probes receive combat state + pure helpers (probes.js never imports combat.js)
   bossProbeTick(dt, C, probeEnv);
   pitchProbeTick(dt, C, probeEnv); // story-015: deterministic pitch+drift walk (?pitchProbe=1)
   dressingProbeTick(dt, C, probeEnv); // story-017: deterministic dressing walk (?dressingProbe=1)
+  chargeProbeTick(dt, C, probeEnv); // story-018: deterministic charged-shot walk (?chargeProbe=1)
+  powerupProbeTick(dt, C, probeEnv); // story-018: deterministic pickup/effect walk (?powerupProbe=1)
   DRESSING.tickDressing(dt, Math.hypot(C.pos.x, C.pos.y - ARENA_Y, C.pos.z)); // story-017: slow whole-group rotation + shell opacity from 3D proximity (the ring's driver grammar)
 
-  // shield regen after a clean 3 s
+  // shield regen after a clean 3 s — story-018: while SHIELD is active the regen delay reads 0
+  // (GDD §3.3's intended reading: a hit still zeroes regenT, and the zero delay means regen
+  // resumes immediately in-window; expiry restores the 3 s delay with no snap)
   C.regenT += dt;
-  if (C.regenT >= SHIELD_REGEN_DELAY) C.shield = Math.min(SHIELD_MAX, C.shield + SHIELD_REGEN_RATE * dt);
+  if (C.regenT >= (C.effects.SHIELD > 0 ? 0 : SHIELD_REGEN_DELAY)) C.shield = Math.min(SHIELD_MAX, C.shield + SHIELD_REGEN_RATE * dt);
+
+  // story-018 effect timers — ticked on the combat dt (slow-mo slows effects like every
+  // combat timer); expiry zeroes the timer and restores the shipped constants with no snap
+  for (let i = 0; i < EFFECT_KINDS.length; i++) {
+    const k = EFFECT_KINDS[i];
+    if (C.effects[k] > 0) {
+      C.effects[k] -= dt;
+      if (C.effects[k] <= 0) { C.effects[k] = 0; expireBlip(); } // the "over" blip marks the boundary — the shipped constants are already restored by the zero
+    }
+  }
 
   // ship pose + chase cam
   p.position.copy(C.pos);
@@ -595,6 +675,31 @@ export function tickCombat(dt, t) {
   if (C.ui.hudScore) {
     const score = `SCORE ${fmt(C.score)}   WAVE ${fmt(C.wave)}`;
     if (score !== C.lastScore) { C.ui.hudScore.textContent = score; C.lastScore = score; }
+  }
+
+  // story-018 effect chips — one per active effect, name + whole seconds left, change-gated
+  // (the hudBars pattern).combat owns the write; the element + styles live in the template.
+  if (C.ui.hudChips) {
+    let chips = '';
+    for (let i = 0; i < EFFECT_KINDS.length; i++) {
+      const k = EFFECT_KINDS[i];
+      if (C.effects[k] > 0) chips += `<span class="chip k-${k}">${k} ${Math.ceil(C.effects[k])}s</span>`;
+    }
+    if (chips !== C.lastChips) { C.ui.hudChips.innerHTML = chips; C.lastChips = chips; }
+  }
+
+  // story-018 charge meter — the reticle ring fills 0→1 over T_CHARGE during a hold and
+  // flashes at the crossing (.charge-full). Change-gated on the 5%-stepped fill + the
+  // crossing state (the reticle is combat's DOM write — it rides the pointer position block).
+  if (C.ui.reticle) {
+    const pct = Math.round(clamp(C.chargeT / T_CHARGE, 0, 1) * 20) * 5;
+    const full = C.charging;
+    if (pct !== C.lastChargePct || full !== C.lastChargeFull) {
+      C.ui.reticle.style.setProperty('--p', pct);
+      C.ui.reticle.classList.toggle('charge', pct > 0);
+      C.ui.reticle.classList.toggle('charge-full', full);
+      C.lastChargePct = pct; C.lastChargeFull = full;
+    }
   }
 
   // reticle rides the pointer — the OS cursor is hidden while playing (template .playing)
@@ -644,6 +749,7 @@ export function tickCombat(dt, t) {
 export function clearCombat() {
   if (!C.ready) return;
   C.bolts.clear();
+  POWERUPS.clearPowerups(); // story-018: the pickup pool drains with the pools — enterCombat needs no re-show (pickups are hidden until dropped, like bolts)
   ENEMIES.clearEnemies(); // also drains the boss volley's bolts — the volley rides E.bolts (story-013)
   DRONES.clearDrones(); // story-012: the orb pool rides the same §8.6 drain — restarts allocate nothing new
   BOSS.clearBoss(); // story-013: the single entity hides + resets — spawn-once latch re-arms for the next combat
@@ -655,6 +761,12 @@ export function clearCombat() {
   if (C.ui.warn) C.ui.warn.hidden = true;
   if (C.ui.hudBars) C.ui.hudBars.innerHTML = ''; // pad phases must not inherit combat bars
   if (C.ui.hudScore) C.ui.hudScore.textContent = '';
+  if (C.ui.hudChips) C.ui.hudChips.innerHTML = ''; // story-018: combat's chip line must not ride the pad (same class as the bars clear)
+  if (C.ui.reticle) { // story-018: the charge meter is combat's write — the pad gets a clean reticle
+    C.ui.reticle.classList.remove('charge', 'charge-full');
+    C.ui.reticle.style.removeProperty('--p');
+  }
+  C.lastChips = null; C.lastChargePct = -1; C.lastChargeFull = null; // force one rewrite on re-entry
   if (C.ui.tele) C.ui.tele.textContent = ''; // TD-014 (story-013): the SPD line is combat's write —
   // it must not ride the pad until cruise rewrites (phases.js resets its lastSpd gate on combat.enter)
   for (const pip of C.pips) pip.style.opacity = '0'; // story-014 (found during evidence capture): combat's
@@ -662,6 +774,7 @@ export function clearCombat() {
   // clear above (pre-existing leak; the death-card REPLAY inherits this fix too)
   C.dead = false; C.deathT = 0; C.speed = 0;
   C.chargeT = 0; C.charging = false; // story-018: a mid-hold exit wipes the accumulator (GDD §3.2) — the death-card SKIP can never inherit it
+  C.effects = { SPREAD: 0, OVERDRIVE: 0, SHIELD: 0 }; // story-018: timers + entities wiped with the pools
   C.fired = { stream: 0, charged: 0 };
   if (C.rim) { C.rim.material.opacity = 0; C.rim.visible = false; } // story-005: rim leaves the render list with combat (review R2-9)
   DRESSING.hideDressing(); // story-017: the ambient field + shell visual leave the render list with combat (rim-ring lifecycle — hidden, never disposed)
@@ -684,6 +797,7 @@ export function combatState() {
     pitch: +C.pitch.toFixed(3), velMag: +C.vel.length().toFixed(2), // story-015: pitch envelope + true speed under drift (SPD keeps showing C.speed; velMag is harness-only, §8 decision c)
     charge: +Math.min(1, C.chargeT / T_CHARGE).toFixed(3), // story-018: the charge fill 0..1 over T_CHARGE
     charging: C.charging, // story-018: past the threshold — stream suppressed, release fires the charged bolt
+    effects: { SPREAD: +C.effects.SPREAD.toFixed(2), OVERDRIVE: +C.effects.OVERDRIVE.toFixed(2), SHIELD: +C.effects.SHIELD.toFixed(2) }, // story-018: seconds remaining per effect (the EXPOSED surface — GDD names it combatState().effects)
     fired: { stream: C.fired.stream, charged: C.fired.charged }, // story-018 probe surface (pre-telemetry; story-019 supersedes)
     pos: C.pos.toArray().map((v) => +v.toFixed(2)), // probe surface — flow-check's keyboard-motion assert (story-003)
     dead: C.dead,

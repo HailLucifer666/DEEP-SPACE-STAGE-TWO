@@ -360,3 +360,22 @@ export function vacuumDrop({ dur = 1.6, vol = 0.5 } = {}) {
   o.connect(g); g.connect(master);
   o.start(t); o.stop(t + dur + 0.05);
 }
+
+/* ---------- story-018: charged shot + pickup cues (GDD §3.2; the audio-bag pattern — every
+   recipe is math on the existing primitives, played from combat.js call sites; powerups.js
+   stays sound-free by contract) ---------- */
+export function chargeWhine() { // the rising whine AT the threshold crossing — the game announces the second stage (GDD §3.1: "the whine teaches the crossing")
+  sweep({ f0: 240, f1: 1180, dur: 0.5, vol: 0.15, type: 'sawtooth' });
+  beep({ freq: 740, dur: 0.4, vol: 0.05, type: 'sine', delay: 0.05 });
+}
+export function chargeRelease() { // the heavy thump when the charged bolt leaves
+  noiseBurst({ dur: 0.32, vol: 0.5, f0: 1300, f1: 110 });
+  beep({ freq: 140, dur: 0.22, vol: 0.22, type: 'triangle' });
+}
+export function pickupBlip() { // flying through a powerup — two-tone confirm
+  beep({ freq: 660, dur: 0.09, vol: 0.18, type: 'square' });
+  beep({ freq: 990, dur: 0.12, vol: 0.18, type: 'square', delay: 0.07 });
+}
+export function expireBlip() { // a timed effect runs out — softer, lower, unmistakably "over"
+  beep({ freq: 300, dur: 0.16, vol: 0.12, type: 'sine' });
+}

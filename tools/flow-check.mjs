@@ -967,6 +967,222 @@ try {
     !!lcSeen.atPad && lcSeen.atPad.fv === false && !!lcSeen.atReenter && lcSeen.atReenter.fv === true,
     JSON.stringify(lcSeen));
   ok('CONSOLE [] (dressingProbe page)', errs.length === 0, errs.join(' | '));
+  /* --- story-018 charged shot (?chargeProbe=1, page over the SAME CDP session) ---
+     Deterministic in-page drive (droneProbe pattern; src/probes.js chargeProbeTick): the
+     drive writes C.api.input.fire DIRECTLY (probe-owned precondition — the same class as
+     pitchProbe's synthesized keys; input.js stays zero-diff) and reads combat state + the
+     bolt pool (pool.update(0, …) — the ENEMIES.eachAlive trick). Field discipline per tick:
+     enemies/orbs cleared at stage entries, wave pinned at 1 with a 99 s gap (wavesTick can
+     never cycle), hp/shield healed — the walk cannot die mid-drive.
+     Stages in order: tap 0.2 s (≥ 1 stream, 0 charged) → hold 1.0 s (exactly 1 charged on
+     release, ≤ 6 stream all fired pre-threshold, charged identity captured from the live
+     pool: scale ×3, amber 0xffc85a, dmg 6) → charged one-shot of a seeded gunner (hp 2) →
+     of an elite-HP gunner (hp 6, probe-stamped — real elites are story-019 territory) →
+     boss weak point 18 (6 × WEAK_MULT 3) via a probe-stamped charged bolt through
+     hitBoss's dmg param (boss.js zero-diff — bossProbe's bossBolt placement pattern) →
+     3-shot burst = exactly 3 charged bolts → pause cancel (harness-coordinated: the drive
+     raises chargePauseArm mid-hold past the threshold, the harness presses the REAL pause
+     keys — setPaused lives in input.js — then raises chargePauseGo) → death cancel (the
+     drive raises chargeDeathArm, the harness fires __stage2.probeDamagePlayer(500), the
+     drive releases and latches the report BEFORE the death card lands).
+     RED-FIRST (2026-11-06, master build @ 27e4a61, product code untouched, only this
+     harness differs): ?chargeProbe=1 is unread so window.__stage2.chargeProbe never
+     appears and the deadline expires — every new assert records its red from the null
+     probe (the exact droneProbe red pattern); combatState().charge/.charging are
+     undefined; the exit-wipe walk still lands (gameover poll rides the natural AFK death)
+     but reads undefined. Full output: production/qa/evidence/story-018-charged-shot-pickups/flow-red-story018.txt.
+     MUTATIONS (branch, post-green, each: mutate → npm run build → full flow-check →
+     restore → rebuild; the mutation is VERIFIED applied by reading its red output — a
+     silent no-op proves nothing): PENDING at first commit of this block — the verified
+     records are appended here after the mutation runs land (they also live in the
+     story-018 programmer report). */
+  await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat&chargeProbe=1' });
+  let cp = null;
+  {
+    const t0 = Date.now();
+    let pauseHandled = false, deathHandled = false;
+    for (;;) {
+      // harness-coordinated cancels: setPaused + probeDamagePlayer live outside the drive's
+      // reach (input.js owns pause; combat's damagePlayer is not exported to probes), so the
+      // HARNESS acts on the drive's arm flags with real key events / the probe surface.
+      try {
+        if (!pauseHandled && await evl(`(window.__stage2 && window.__stage2.chargePauseArm) === true`)) {
+          pauseHandled = true;
+          await key('KeyP', 'keydown');
+          await sleep(400);
+          await key('KeyP', 'keydown'); // second press unpauses; the key set still holds KeyP for the drive's zeroing read
+          await sleep(150);
+          await key('KeyP', 'keyup');
+          await evl(`window.__stage2.chargePauseGo = true`);
+        }
+        if (!deathHandled && await evl(`(window.__stage2 && window.__stage2.chargeDeathArm) === true`)) {
+          deathHandled = true;
+          await evl(`(window.__stage2 && __stage2.probeDamagePlayer) ? __stage2.probeDamagePlayer(500) : 0`);
+        }
+        cp = await J(`(window.__stage2 && window.__stage2.chargeProbe) || null`);
+      } catch { cp = null; }
+      if (cp) break;
+      if (Date.now() - t0 > 180000) break; // deadline — the asserts below record the red
+      await sleep(200);
+    }
+  }
+  const cpX = cp || {};
+  const cpc = await evl(`(window.__stage2 && __stage2.combatState) ? JSON.stringify({
+    charge: __stage2.combatState().charge, charging: __stage2.combatState().charging }) : null`);
+  let cpcX = {};
+  try { cpcX = JSON.parse(cpc || '{}'); } catch { cpcX = {}; }
+  const tap = cpX.tap || {}, h1 = cpX.hold1 || {}, og = cpX.oneShotGunner || {}, oe = cpX.oneShotElite || {},
+    wk = cpX.weak || {}, pz = cpX.pause || {}, dt18 = cpX.death || {}, cch = cpX.charge || {}, crt = cpX.reticle || {};
+  ok('chargeProbe reports (story-018)', !!cp, JSON.stringify(cp));
+  ok('combatState exposes charge (0..1) + charging (bool)', typeof cpcX.charge === 'number' && typeof cpcX.charging === 'boolean',
+    `charge:${typeof cpcX.charge}=${cpcX.charge} charging:${typeof cpcX.charging}`);
+  ok('tap 0.2s → stream fires, 0 charged', tap.stream >= 1 && tap.charged === 0, JSON.stringify(tap));
+  ok('hold 1.0s → exactly 1 charged on release, ≤6 stream all pre-threshold',
+    h1.charged === 1 && h1.stream >= 4 && h1.stream <= 6 && h1.streamAtCross === h1.stream, JSON.stringify(h1));
+  ok('charged bolt identity (scale ×3, amber 0xffc85a, dmg 6, single)',
+    h1.scale === 3 && h1.color === 0xffc85a && h1.dmg === 6, JSON.stringify(h1));
+  ok('charged one-shots a gunner (hp 2) through the real kill path', og.killed === true && og.killsDelta === 1, JSON.stringify(og));
+  ok('charged one-shots an elite-HP gunner (hp 6, probe-stamped)', oe.killed === true && oe.killsDelta === 1, JSON.stringify(oe));
+  ok('charged weak-point hit does 18 (6 × WEAK_MULT 3 — the dmg param, boss.js untouched)',
+    wk.delta === 18, JSON.stringify(wk));
+  ok('3-shot burst = exactly 3 charged bolts (never 0, never >1 per release)', cpX.burst3 === 3, `burst3=${cpX.burst3}`);
+  ok('charge state readable (charge rose to 1, charging seen)', cch.max >= 0.99 && cch.chargingSeen === true, JSON.stringify(cch));
+  ok('charge meter rides the reticle (ring class + full flash)', crt.chargeClass === true && crt.full === true, JSON.stringify(crt));
+  ok('pause cancel: accumulator zeroed (≤0.1 vs the ≥0.6 pre-pause hold), post-unpause release ≤1 stream / 0 charged',
+    pz.chargeTAtResume <= 0.1 && pz.chargingAtResume === false && pz.chargedAfter === 0 && pz.streamAfter <= 1, JSON.stringify(pz));
+  ok('death cancel: accumulator zeroed, release fires nothing', dt18.chargedAfter === 0 && dt18.chargeTZeroed === true, JSON.stringify(dt18));
+  {
+    // exit-wipe: the death cancel left combat dying — ride it to gameover, SKIP back in;
+    // the accumulator + fired counters must read zeroed (clearCombat + enterCombat reset)
+    let goLanded = false;
+    {
+      const t0 = Date.now();
+      for (;;) {
+        try { if (await J(`__stage2.phase`) === 'gameover') { goLanded = true; break; } } catch {}
+        if (Date.now() - t0 > 45000) break;
+        await sleep(250);
+      }
+    }
+    if (goLanded) await evl(`document.getElementById('go-skip').click()`);
+    let back = false;
+    {
+      const t0 = Date.now();
+      for (;;) {
+        try { if (await J(`__stage2.phase`) === 'combat') { back = true; break; } } catch {}
+        if (Date.now() - t0 > 20000) break;
+        await sleep(200);
+      }
+    }
+    const csExit = back ? await J(`__stage2.combatState()`) : null;
+    ok('combat exit wipes the charge state (re-entry reads charge 0, fired 0)',
+      !!csExit && csExit.charge === 0 && csExit.charging === false && !!csExit.fired &&
+      csExit.fired.stream === 0 && csExit.fired.charged === 0, JSON.stringify(csExit));
+  }
+  ok('CONSOLE [] (chargeProbe page)', errs.length === 0, errs.join(' | '));
+
+  /* --- story-018 pickups (?powerupProbe=1, next page over the SAME CDP session) ---
+     Deterministic in-page drive (src/probes.js powerupProbeTick; imports powerups.js —
+     acyclic). Stages: drop rate over N = 100 REAL bolt-path kills (spawnForProbe target +
+     a probe bolt into it — the same kill site combat's boltsTick owns, so maybeDrop's real
+     Math.random rolls are counted; binomial 95% band for p = 0.18 computed exactly offline:
+     [11, 25] — widen trials, never hand-widen bounds) → kind split over M = 300 more real
+     rolls (uniform 1/3: exact 95% band per kind [84, 115]) → despawn 8 s + blink last 2 s
+     (forced drop, tracked via POWERUPS.eachAlive) → pickup radius full-3D (1.3 picks up,
+     1.6 does not, vertical-offset 1.345 picks up — the story-015 lesson) → SPREAD (one shot
+     = 3 bolts at ±6° about the ship's local up; charged stays single) → OVERDRIVE (measured
+     shot-to-shot interval ≈ 0.0568 ±10%; charged still 1; suppression still at T_CHARGE) →
+     SHIELD (refill 50, immediate regen in-window, 3 s delay restored after expiry) →
+     refresh-not-stack + concurrency → HUD chips (name + seconds, gone after expiry) →
+     effects apply during the boss fight (boss exempt from drops — effects verified with
+     BOSS.alive()). Reports window.__stage2.powerupProbe (+ api.report parity).
+     RED-FIRST (2026-11-06, master build @ 27e4a61): ?powerupProbe=1 is unread — every new
+     assert records its red from the null probe; the clearCombat-wipe walk lands but reads
+     undefined effects. Same red output file as the charge block.
+     MUTATIONS: recorded in the charge block above (mutation 2 = the drop roll). */
+  await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat&powerupProbe=1' });
+  let pu = null;
+  {
+    const t0 = Date.now();
+    for (;;) {
+      // guarded + thrown-tolerant (droneProbe pattern): across Page.navigate the old
+      // execution context dies — raw reads throw and would kill the run before the asserts
+      try { pu = await J(`(window.__stage2 && window.__stage2.powerupProbe) || null`); } catch { pu = null; }
+      if (pu) break;
+      if (Date.now() - t0 > 180000) break; // deadline — the asserts below record the red
+      await sleep(250);
+    }
+  }
+  const puX = pu || {};
+  const puRate = puX.rate || {}, puKinds = puX.kinds || {}, puDs = puX.despawn || {}, puRad = puX.radius || {},
+    puSpr = puX.spread || {}, puOd = puX.overdrive || {}, puSh = puX.shield || {}, puRf = puX.refresh || {},
+    puBs = puX.boss || {};
+  ok('powerupProbe reports (story-018)', !!pu, JSON.stringify(pu));
+  ok('drop rate p=0.18 within the binomial 95% band (100 real bolt-path kills)',
+    puRate.kills === 100 && puRate.drops >= 11 && puRate.drops <= 25, JSON.stringify(puRate));
+  ok('at most one drop per kill (100 kills → ≤ 100 drops)', puRate.kills === 100 && puRate.drops <= puRate.kills, JSON.stringify(puRate));
+  ok('kind split ≈ 1/3 each — joint χ² goodness-of-fit at 95% over 300 real drops (χ²(2) ≤ 5.991)',
+    (() => {
+      const ks = [puKinds.SPREAD, puKinds.OVERDRIVE, puKinds.SHIELD];
+      if (!ks.every((n) => typeof n === 'number' && n >= 0)) return false;
+      const total = ks.reduce((a, b) => a + b, 0);
+      if (total < 300) return false;
+      const exp = total / 3;
+      const x2 = ks.reduce((a, n) => a + (n - exp) * (n - exp) / exp, 0);
+      return x2 <= 5.991;
+    })(), JSON.stringify(puKinds));
+  ok('despawn at 8 s (alive at 7.9, gone at 8.1)', puDs.aliveAt79 === true && puDs.goneAt81 === true, JSON.stringify(puDs));
+  ok('blink during the last 2 s (off before 6.0 s, on after — blink starts at LIFE − BLINK = 6.0)', puDs.blinkAt55 === false && puDs.blinkAt65 === true, JSON.stringify(puDs));
+  ok('pickup radius full-3D (1.3 picks up, 1.6 does not, vertical 1.345 picks up)',
+    puRad.pickedAt13 === true && puRad.pickedAt3D === true && puRad.pickedAt16 === false, JSON.stringify(puRad));
+  ok('SPREAD: one shot = 3-bolt fan at ±6°, charged stays single',
+    puSpr.fan === 3 && typeof puSpr.anglePlus === 'number' && Math.abs(puSpr.anglePlus - 6) <= 0.5 &&
+    typeof puSpr.angleMinus === 'number' && Math.abs(puSpr.angleMinus - 6) <= 0.5 &&
+    puSpr.centerAngle <= 0.5 && puSpr.chargedSingle === 1, JSON.stringify(puSpr));
+  ok('OVERDRIVE: shot count over the 0.6 s pre-suppression burst matches the ÷2.2 interval (0.0568 s → 10.6 expected, band [9,12] covers frame quantization + DT_CLAMP stalls; a missing OVERDRIVE reads ~5 → red) + the timestamp interval honest + charged single + suppression unchanged at T_CHARGE',
+    typeof puOd.shots === 'number' && puOd.shots >= 9 && puOd.shots <= 12 &&
+    typeof puOd.interval === 'number' && puOd.interval >= 0.045 && puOd.interval <= 0.075 &&
+    puOd.chargedSingle === 1 && typeof puOd.suppressAt === 'number' && Math.abs(puOd.suppressAt - 0.6) <= 0.1, JSON.stringify(puOd));
+  ok('SHIELD: refill 50, immediate regen in-window, 3 s delay restored after expiry',
+    puSh.refill50 === true && puSh.regenInWindow === true && puSh.delayRestored === true && puSh.regenResumed === true, JSON.stringify(puSh));
+  ok('same-kind re-pickup refreshes to 8 s (never stacks); kinds run concurrently',
+    puRf.refreshed === true && puRf.stacked === false && puRf.concurrent === true, JSON.stringify(puRf));
+  ok('HUD chips: name + seconds while active, gone after expiry',
+    typeof puRf.chipsActive === 'string' && puRf.chipsActive.includes('SPREAD') && puRf.chipsGone === '', JSON.stringify(puRf));
+  ok('effects apply during the boss fight (boss itself never drops) — shot count over the 0.5 s window matches the ÷2.2 interval (band [8,11])',
+    puBs.bossAliveAtPickup === true && typeof puBs.shots === 'number' && puBs.shots >= 8 && puBs.shots <= 11 &&
+    typeof puBs.interval === 'number' && puBs.interval >= 0.045 && puBs.interval <= 0.075, JSON.stringify(puBs));
+  {
+    // clearCombat wipe: forced death → gameover → SKIP → combat re-entry — the effect
+    // timers must read zeroed and the chips DOM empty (enterCombat reset + clearCombat)
+    await evl(`(window.__stage2 && __stage2.probeDamagePlayer) ? __stage2.probeDamagePlayer(500) : 0`);
+    let goLanded = false;
+    {
+      const t0 = Date.now();
+      for (;;) {
+        try { if (await J(`__stage2.phase`) === 'gameover') { goLanded = true; break; } } catch {}
+        if (Date.now() - t0 > 30000) break;
+        await sleep(250);
+      }
+    }
+    if (goLanded) await evl(`document.getElementById('go-skip').click()`);
+    let back = false;
+    {
+      const t0 = Date.now();
+      for (;;) {
+        try { if (await J(`__stage2.phase`) === 'combat') { back = true; break; } } catch {}
+        if (Date.now() - t0 > 20000) break;
+        await sleep(200);
+      }
+    }
+    const csWipe = back ? await J(`__stage2.combatState()`) : null;
+    const chipsAfter = back ? await evl(`document.getElementById('hud-chips') ? document.getElementById('hud-chips').textContent : null`) : null;
+    ok('clearCombat wipes effect timers + chips (re-entry reads all 0 / empty)',
+      !!csWipe && !!csWipe.effects && csWipe.effects.SPREAD === 0 && csWipe.effects.OVERDRIVE === 0 &&
+      csWipe.effects.SHIELD === 0 && chipsAfter === '', `effects=${JSON.stringify(csWipe && csWipe.effects)} chips=${JSON.stringify(chipsAfter)}`);
+  }
+  ok('CONSOLE [] (powerupProbe page)', errs.length === 0, errs.join(' | '));
+
+
 
   /* --- R-c commit 4: SPIN N-key regression probe (?debug=1&spin=1, page over the SAME CDP session) ---
      input.js 30-31 dereferences ctx.activeFix (the SHIP1 closed-viewer N/T path), but story-011

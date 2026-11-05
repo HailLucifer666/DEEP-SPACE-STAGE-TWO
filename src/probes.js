@@ -10,6 +10,7 @@ import * as ENEMIES from './enemies.js';
 import * as DRONES from './drone.js';
 import * as BOSS from './boss.js';
 import * as DRESSING from './arena-dressing.js'; // story-017: combat-only ambient field + shell visual (reads its probe surfaces — never the reverse)
+import * as POWERUPS from './powerups.js'; // story-018: forceDropForProbe + eachAlive + stats for the pickup walk (acyclic — powerups never imports probes/combat)
 
 const qs = new URLSearchParams(location.search);
 const DRONE_PROBE = qs.get('droneProbe') === '1'; // story-012: deterministic single-drone run
@@ -17,12 +18,29 @@ const BOSS_PROBE = qs.get('bossProbe') === '1'; // story-013: deterministic boss
 const BOSS_SHOT = qs.get('bossShot') === '1'; // story-013 evidence variant: closer spawn + phase holds (screenshots)
 const PITCH_PROBE = qs.get('pitchProbe') === '1'; // story-015: deterministic pitch+drift walk
 const DRESSING_PROBE = qs.get('dressingProbe') === '1'; // story-017: deterministic dressing walk (ambient field + shell visual)
+const CHARGE_PROBE = qs.get('chargeProbe') === '1'; // story-018: deterministic charged-shot walk
+const POWERUP_PROBE = qs.get('powerupProbe') === '1'; // story-018: deterministic pickup/effect walk
 
 /* probe-owned state (the former C.dp* / C.bp* / C.pp fields in combat.js before R-e) — untouched by normal play */
 const DP = { t: -1, drone: null, win: 0, done: false, tele: false, dive: false, contact: false, samples: 0, mm: null };
 const BP = { t: -1, stage: 'spawn', stageT: 0, fired: 0, hpMark: 0, spawnWave: 0, hud: false, charged: false, raged: false, ragePinned: false, killed: false, done: false, dashPeakR3: 0, reorbitR3: 0, poleArmed: false, poleDone: false, poleQuietT: null, poleQuietAt: null, poleInDash: false, polePrev: null, poleL: null, poleE: null, poleDashPeakR3: 0, poleDashCapR3: null };
 const PP = { state: null, done: false }; // the pitch walk's one probe-only object, rebuilt fresh on combat entry
 const DD = { t: 0, stage: 0, mark: 0, sub: null, done: false, minCl: 0, samples: 0, pulses: [], entryShown: null, opacityAt78: null, opacityAt60: null }; // story-017 dressing walk — page-scoped (see resetProbes note + dressingProbeTick)
+// story-018 walk state (droneProbe pattern: plain state HERE, reset by resetProbes on combat entry)
+const CP = {
+  t: -1, stage: 0, mark: 0, done: false,
+  tap: null, hold1: null, oneShotG: null, oneShotE: null, weak: null, burst3: 0,
+  pause: null, death: null, chargeMax: 0, chargingSeen: false, reticle: null,
+  bStream: 0, bCharged: 0, killsMark: 0, target: null, bossHpMark: 0, armed: false,
+  hold1StreamAtCross: 0, hold1Cap: null, burstCycles: 0, od: null, burstDiag: [], pauseWall: 0, cycleB: 0,
+};
+const PU = {
+  t: -1, stage: 0, mark: 0, sub: 0, done: false,
+  stats0: null, kinds0: null, kills: 0, dropsMark: 0, target: null,
+  rate: null, kinds: null, despawn: null, radius: null, spread: null, overdrive: null,
+  shield: null, refresh: null, boss: null, pick: null, drop: null, mark2: 0, lastT: null, bolt: null, odFrames: 0, odDt: 0,
+  shieldBefore: 0, regenMark: 0, baselineEntities: 0, shotTimes: [], lastCount: 0,
+};
 
 export function resetProbes() { // rider R-e: what enterCombat's inline probe resets did — same state, same window hygiene
   Object.assign(DP, { t: -1, drone: null, win: 0, done: false, tele: false, dive: false, contact: false, samples: 0, mm: null });
@@ -42,6 +60,750 @@ export function resetProbes() { // rider R-e: what enterCombat's inline probe re
   Object.assign(DD, { t: 0, stage: 0, mark: 0, sub: null, minCl: 0, samples: 0, pulses: [], entryShown: null, opacityAt78: null, opacityAt60: null });
   window.__stage2.dressingProbeLive = false;
   delete window.__stage2.dressingProbe;
+  // story-018: the charge/powerup walks' reports + the harness arm flags — stale-delete hygiene
+  Object.assign(CP, {
+    t: -1, stage: 0, mark: 0, done: false,
+    tap: null, hold1: null, oneShotG: null, oneShotE: null, weak: null, burst3: 0,
+    pause: null, death: null, chargeMax: 0, chargingSeen: false, reticle: null,
+    bStream: 0, bCharged: 0, killsMark: 0, target: null, bossHpMark: 0, armed: false,
+    hold1StreamAtCross: 0, hold1Cap: null, burstCycles: 0, od: null, burstDiag: [], pauseWall: 0, cycleB: 0,
+  });
+  Object.assign(PU, {
+    t: -1, stage: 0, mark: 0, sub: 0, done: false,
+    stats0: null, kinds0: null, kills: 0, dropsMark: 0, target: null,
+    rate: null, kinds: null, despawn: null, radius: null, spread: null, overdrive: null,
+    shield: null, refresh: null, boss: null, pick: null, drop: null, mark2: 0,
+    shieldBefore: 0, regenMark: 0, baselineEntities: 0, shotTimes: [], lastCount: 0,
+    bolt: null, odFrames: 0, odDt: 0,
+  });
+  delete window.__stage2.chargeProbe;
+  delete window.__stage2.powerupProbe;
+  delete window.__stage2.chargePauseArm; // harness-coordinated cancels: the arm flags never survive an entry
+  delete window.__stage2.chargePauseGo;
+  delete window.__stage2.chargeDeathArm;
+}
+
+/* ---------- story-018 shared drive helpers ----------
+ * Probe-owned preconditions (pitchProbe/bossProbe precedent): empty field, wave pinned at 1
+ * with a 99 s gap (wavesTick's 1.6 s cycle can never fire — the drive re-pins AFTER wavesTick
+ * each frame, probes run last in tickCombat), ship healed + parked. `pin` is the per-tick
+ * form; `clear` is the stage-entry form. */
+function cpFieldClear(C) {
+  ENEMIES.clearEnemies();
+  DRONES.clearDrones();
+}
+function cpPin(C, heal) {
+  C.wave = 1; C.waveGapT = 99;
+  if (heal) { if (C.hp < 100) C.hp = 100; if (C.shield < 50) C.shield = 50; }
+}
+function boltTargetSeat(C, env) { // the one-shot seat: 3 u along the ray FROM THE NOSE — the charged bolt spawns at noseWorld and flies along forward, so a target on that exact ray is a guaranteed scan hit (a ship-center seat sits 1.0 u off the ray, leaving a hit window narrower than one frame step — flaky); all pre-threshold stream bolts are already past 3 u at release (the last fires at chargeT ≤ 0.6, i.e. ≥ 4.2 u out), so the charged hit is cleanly the killing hit
+  env.forward(C.tmp);
+  env.noseWorld(C.tmp2);
+  return C.tmp2.addScaledVector(C.tmp, 3);
+}
+function seedBoltTarget(C, env, hp, kind) {
+  const d = ENEMIES.spawnForProbe(boltTargetSeat(C, env));
+  d.userData.kind = kind;
+  d.userData.hp = hp;
+  d.position.copy(C.tmp2); // exact seat on the nose ray
+  return d;
+}
+function captureChargedBolt(C) { // find the live charged bolt — identity for the harness assert
+  let cap = null;
+  C.bolts.update(0, (b) => {
+    if (b.userData.charged && b.userData.alive && !cap) {
+      cap = { scale: b.scale.x, color: b.material.color.getHex(), dmg: b.userData.dmg };
+    }
+  });
+  return cap;
+}
+
+/* ---------- story-018 charge probe (?chargeProbe=1) ----------
+ * Deterministic walk of the two-stage trigger (droneProbe pattern). The drive writes
+ * C.api.input.fire DIRECTLY (probe-owned precondition — the same class as pitchProbe's
+ * synthesized keys; input.js is zero-diff by design) and reads combat state + the bolt pool
+ * (pool.update(0, …) — the ENEMIES.eachAlive trick). Stages in order:
+ *   tap 0.2 s (≥1 stream, 0 charged) → hold 1.0 s (exactly 1 charged on release, ≤6 stream
+ *   all pre-threshold — streamAtCross snapshots fired.stream the frame charging latches;
+ *   charged identity captured from the live pool) → charged one-shot of a seeded gunner
+ *   (hp 2) → of an elite-HP gunner (hp 6, probe-stamped — real elites are story-019) → boss
+ *   weak point 18 (probe-stamped charged bolt through hitBoss's dmg param, bossBolt
+ *   placement pattern — the release bolt is waited out first so exactly one hit lands) →
+ *   3-shot burst = 3 → pause cancel (harness-coordinated: chargePauseArm raised mid-hold
+ *   past the threshold; the harness presses the REAL pause keys — setPaused lives in
+ *   input.js — and raises chargePauseGo; the drive is FROZEN during the pause like the
+ *   game, so its first post-unpause tick reads the zeroed accumulator) → death cancel
+ *   (chargeDeathArm → harness probeDamagePlayer(500) → the drive releases and latches the
+ *   report BEFORE the death card lands — the dead block runs after the drives in
+ *   tickCombat, so fire=false lands the same frame and the slow-mo clock runs its course).
+ * Reports window.__stage2.chargeProbe (+ api.report lastReport parity). */
+export function chargeProbeTick(dt, C, env) {
+  if (!CHARGE_PROBE || CP.done) return;
+  CP.t += dt;
+  cpPin(C, true);
+  if (C.chargeT > CP.chargeMax) CP.chargeMax = C.chargeT;
+  if (C.charging) CP.chargingSeen = true;
+  const fire = C.api.input.fire;
+
+  switch (CP.stage) {
+    case 0: // settle, then baseline + tap
+      if (CP.t >= 0.4) {
+        cpFieldClear(C);
+        C.vel.set(0, 0, 0); C.speed = 0; C.pitch = 0; C.heading = 0;
+        CP.bStream = C.fired.stream; CP.bCharged = C.fired.charged;
+        C.api.input.fire = true; CP.mark = CP.t; CP.stage = 1;
+      }
+      return;
+    case 1: // tap window
+      if (CP.t >= CP.mark + 0.2) {
+        C.api.input.fire = false; CP.mark = CP.t; CP.stage = 2;
+      }
+      return;
+    case 2: // tap settle → record
+      if (CP.t >= CP.mark + 0.4) {
+        CP.tap = { stream: C.fired.stream - CP.bStream, charged: C.fired.charged - CP.bCharged };
+        cpFieldClear(C);
+        CP.bStream = C.fired.stream; CP.bCharged = C.fired.charged;
+        C.api.input.fire = true; CP.mark = CP.t; CP.stage = 3;
+      }
+      return;
+    case 3: // hold 1.0 s — watch the crossing for streamAtCross + reticle evidence
+      if (C.charging && !CP.hold1StreamAtCross) CP.hold1StreamAtCross = C.fired.stream - CP.bStream;
+      if (!CP.reticle && C.charging && C.chargeT > 0.65) {
+        // sampled a few frames PAST the crossing — combat's change-gated reticle write runs
+        // after the drives in tickCombat, so the crossing frame's DOM still shows the pre-write state
+        try {
+          const r = document.getElementById('reticle');
+          CP.reticle = {
+            chargeClass: r.classList.contains('charge'),
+            p: r.style.getPropertyValue('--p'),
+            full: r.classList.contains('charge-full'),
+          };
+        } catch { CP.reticle = { chargeClass: false, p: '', full: false }; }
+      }
+      if (CP.t >= CP.mark + 1.0) {
+        C.api.input.fire = false; CP.mark = CP.t; CP.stage = 4;
+      }
+      return;
+    case 4: // charged bolt spawned on the release frame (+1) — capture identity
+      if (C.fired.charged > CP.bCharged) {
+        CP.hold1 = {
+          stream: C.fired.stream - CP.bStream,
+          charged: C.fired.charged - CP.bCharged,
+          streamAtCross: CP.hold1StreamAtCross,
+          ...(captureChargedBolt(C) || {}),
+        };
+        CP.mark = CP.t; CP.stage = 5;
+      } else if (CP.t > CP.mark + 1.5) { CP.hold1 = { stream: C.fired.stream - CP.bStream, charged: 0, timeout: true }; CP.mark = CP.t; CP.stage = 5; }
+      return;
+    case 5: // settle → seed the gunner one-shot
+      if (CP.t >= CP.mark + 0.4) {
+        cpFieldClear(C);
+        CP.bCharged = C.fired.charged; CP.killsMark = C.kills;
+        CP.stage = 6;
+      }
+      return;
+    case 6: // hold for the gunner one-shot
+      if (CP.t >= CP.mark + 0.05) { C.api.input.fire = true; CP.mark = CP.t; CP.stage = 7; }
+      return;
+    case 7:
+      if (CP.t >= CP.mark + 0.7) { C.api.input.fire = false; CP.mark = CP.t; CP.stage = 8; }
+      return;
+    case 8: // charged in flight — seed the gunner (hp 2) NOW: no stream bolt is inside 3 u (all pre-threshold bolts passed it before the release)
+      if (C.fired.charged > CP.bCharged) {
+        CP.target = seedBoltTarget(C, env, 2, 'gunner');
+        CP.mark = CP.t; CP.stage = 9;
+      } else if (CP.t > CP.mark + 1.5) { CP.oneShotG = { killed: false, killsDelta: 0, timeout: true }; CP.stage = 10; }
+      return;
+    case 9: // pin + wait for the kill
+      if (CP.target) {
+        env.forward(C.tmp);
+        CP.target.position.copy(boltTargetSeat(C, env)); // re-pinned on the flight ray every tick
+        if (!CP.target.userData.alive) {
+          CP.oneShotG = { killed: true, killsDelta: C.kills - CP.killsMark };
+          CP.target = null; CP.mark = CP.t; CP.stage = 10;
+        } else if (CP.t > CP.mark + 1.5) {
+          CP.oneShotG = { killed: false, killsDelta: C.kills - CP.killsMark, timeout: true };
+          ENEMIES.hitDrone(CP.target, 99); CP.target = null; CP.mark = CP.t; CP.stage = 10;
+        }
+      }
+      return;
+    case 10: // settle → elite-HP one-shot (probe-stamped hp 6 — a stream bolt would NOT one-shot it)
+      if (CP.t >= CP.mark + 0.4) {
+        cpFieldClear(C);
+        CP.bCharged = C.fired.charged; CP.killsMark = C.kills;
+        CP.stage = 11;
+      }
+      return;
+    case 11:
+      if (CP.t >= CP.mark + 0.05) { C.api.input.fire = true; CP.mark = CP.t; CP.stage = 12; }
+      return;
+    case 12:
+      if (CP.t >= CP.mark + 0.7) { C.api.input.fire = false; CP.mark = CP.t; CP.stage = 13; }
+      return;
+    case 13:
+      if (C.fired.charged > CP.bCharged) {
+        CP.target = seedBoltTarget(C, env, 6, 'gunner');
+        CP.mark = CP.t; CP.stage = 14;
+      } else if (CP.t > CP.mark + 1.5) { CP.oneShotE = { killed: false, killsDelta: 0, timeout: true }; CP.stage = 15; }
+      return;
+    case 14:
+      if (CP.target) {
+        env.forward(C.tmp);
+        CP.target.position.copy(boltTargetSeat(C, env)); // re-pinned on the flight ray every tick
+        if (!CP.target.userData.alive) {
+          CP.oneShotE = { killed: true, killsDelta: C.kills - CP.killsMark };
+          CP.target = null; CP.mark = CP.t; CP.stage = 15;
+        } else if (CP.t > CP.mark + 1.5) {
+          CP.oneShotE = { killed: false, killsDelta: C.kills - CP.killsMark, timeout: true };
+          ENEMIES.hitDrone(CP.target, 99); CP.target = null; CP.mark = CP.t; CP.stage = 15;
+        }
+      }
+      return;
+    case 15: // settle → weak-point stage (release bolt waited out first: exactly one hit lands)
+      if (CP.t >= CP.mark + 1.4) {
+        cpFieldClear(C);
+        env.forward(C.tmp);
+        BOSS.spawnForProbe(C.tmp2.copy(C.pos).addScaledVector(C.tmp, 20).setY(env.ARENA_Y));
+        BOSS.probeHold(true); // pinned — the drive owns the geometry end-to-end
+        CP.bossHpMark = BOSS.state().hp;
+        CP.stage = 16;
+      }
+      return;
+    case 16: { // probe-stamped charged bolt into the weak node — the dmg param through hitBoss
+      const t = BOSS.probeTargets(C.pos);
+      const away = C.tmp.copy(C.pos).sub(t.node).normalize();
+      const b = C.bolts.spawn();
+      b.position.copy(t.node).addScaledVector(away, 3.0);
+      b.userData.dir.copy(away).negate();
+      b.userData.life = env.BOLT_LIFE;
+      b.userData.dmg = 6; b.userData.charged = true; // the stamp fireTick's release path puts on real charged bolts
+      b.lookAt(C.tmp2.copy(b.position).add(b.userData.dir));
+      CP.mark = CP.t; CP.stage = 17;
+      return;
+    }
+    case 17: // record the 18, release the boss
+      if (BOSS.state() && BOSS.state().hp <= CP.bossHpMark - 18) {
+        CP.weak = { delta: CP.bossHpMark - BOSS.state().hp };
+        BOSS.clearBoss();
+        cpFieldClear(C);
+        CP.mark = CP.t; CP.stage = 18;
+      } else if (CP.t > CP.mark + 1.5) {
+        CP.weak = { delta: BOSS.state() ? CP.bossHpMark - BOSS.state().hp : 0, timeout: true };
+        BOSS.clearBoss();
+        cpFieldClear(C);
+        CP.mark = CP.t; CP.stage = 18;
+      }
+      return;
+    case 18: // 3-shot burst: 3 × (hold 0.75 s + release + confirm)
+      cpFieldClear(C);
+      CP.bCharged = C.fired.charged; // the STAGE baseline — never re-touched (the burst3 delta reads against it)
+      CP.cycleB = CP.bCharged; // the per-cycle confirm baseline
+      CP.burstCycles = 0; CP.mark = CP.t; CP.stage = 19;
+      return;
+    case 19:
+      if (CP.burstCycles < 3) {
+        if (!fire && !CP.armed) { C.api.input.fire = true; CP.mark = CP.t; CP.armed = true; }
+        else if (CP.armed && CP.t >= CP.mark + 0.75) {
+          // diagnostics: the accumulator state AT the release tick — discriminates "the hold
+          // never charged" (chargeT < 0.6) from "the release path failed" (chargeT ≥ 0.6)
+          CP.burstDiag.push({ chargeT: +C.chargeT.toFixed(3), charging: C.charging, stream: C.fired.stream });
+          C.api.input.fire = false; CP.armed = false; CP.mark = CP.t; CP.stage = 20;
+        }
+      } else {
+        CP.burst3 = C.fired.charged - CP.bCharged; // vs the STAGE baseline — 3 confirms = 3
+        cpFieldClear(C); CP.mark = CP.t; CP.stage = 22;
+      }
+      return;
+    case 20: // confirm exactly 1 charged this cycle, then next cycle (per-cycle baseline — the
+      // stage baseline stays untouched; re-baselining bCharged here made burst3 read 0 on a
+      // fully-working 3-bolt burst — the accounting bug the first green run caught)
+      if (C.fired.charged > CP.cycleB) {
+        CP.cycleB = C.fired.charged; CP.burstCycles++;
+        CP.mark = CP.t; CP.stage = 19;
+      } else if (CP.t > CP.mark + 1.0) { CP.cycleB = C.fired.charged; CP.burstCycles++; CP.mark = CP.t; CP.stage = 19; }
+      return;
+    case 22: // pause cancel — arm the harness at 0.7 s of hold (charging true, stream suppressed)
+      cpFieldClear(C);
+      CP.bStream = C.fired.stream; CP.bCharged = C.fired.charged;
+      C.api.input.fire = true; CP.mark = CP.t; CP.stage = 23;
+      return;
+    case 23:
+      if (CP.t >= CP.mark + 0.7) {
+        window.__stage2.chargePauseArm = true; // the harness presses the REAL pause keys
+        CP.pauseWall = performance.now(); // wall clock — CP.t FREEZES during the pause
+        CP.mark = CP.t; CP.stage = 24;
+      }
+      return;
+    case 24: // frozen during the pause (the loop halts tickCombat) — the trigger is the WALL-CLOCK
+      // freeze (awake gap ≪ wall gap ⇒ tickCombat was halted), with Go as the explicit ack and
+      // an awake-time timeout for the no-pause degenerate case
+      if (window.__stage2.chargePauseGo ||
+          (performance.now() - CP.pauseWall) - ((CP.t - CP.mark) * 1000) > 300 ||
+          CP.t > CP.mark + 8) {
+        // the FIRST post-unpause fireTick already zeroed the accumulator (the key set still
+        // held KeyP) — record what the drive sees, then release IMMEDIATELY and count from here
+        CP.pause = {
+          armed: !!window.__stage2.chargePauseGo,
+          chargeTAtResume: C.chargeT,
+          chargingAtResume: C.charging,
+        };
+        window.__stage2.chargePauseGo = false;
+        CP.bStream = C.fired.stream; // post-release window baseline (the release itself fires no stream)
+        C.api.input.fire = false; CP.mark = CP.t; CP.stage = 25;
+      }
+      return;
+    case 25: // post-unpause release: ≤1 stream in the post-release window, 0 charged — the load-bearing
+      // triple is chargedAfter 0 + chargeTAtResume ≤ 0.1 + chargingAtResume false (had the ≥0.6
+      // accumulator survived the pause, the release would have fired a charged bolt)
+      if (CP.t >= CP.mark + 0.4) {
+        CP.pause.chargedAfter = C.fired.charged - CP.bCharged;
+        CP.pause.streamAfter = C.fired.stream - CP.bStream;
+        CP.pause.streamWholeStage = CP.pause.streamAfter; // legacy field name kept for the harness extra
+        cpFieldClear(C); CP.mark = CP.t; CP.stage = 26;
+      }
+      return;
+    case 26: // death cancel — arm the harness at 0.7 s of hold
+      CP.bStream = C.fired.stream; CP.bCharged = C.fired.charged;
+      C.api.input.fire = true; CP.mark = CP.t; CP.stage = 27;
+      return;
+    case 27:
+      if (CP.t >= CP.mark + 0.7) {
+        window.__stage2.chargeDeathArm = true; // the harness fires probeDamagePlayer(500)
+        CP.mark = CP.t; CP.stage = 28;
+      }
+      return;
+    case 28: // dead mid-hold — the accumulator is zeroed; release must fire NOTHING
+      if (C.dead || CP.t > CP.mark + 8) {
+        CP.armed = C.dead;
+        C.api.input.fire = false;
+        CP.mark = CP.t; CP.stage = 29;
+      }
+      return;
+    case 29: // latch BEFORE the death card (the dead block runs after the drives in tickCombat)
+      CP.death = {
+        armed: CP.armed,
+        chargedAfter: C.fired.charged - CP.bCharged,
+        chargeTZeroed: C.chargeT === 0,
+      };
+      CP.done = true;
+      {
+        const probe = {
+          tap: CP.tap, hold1: CP.hold1, oneShotGunner: CP.oneShotG, oneShotElite: CP.oneShotE,
+          weak: CP.weak, burst3: CP.burst3, burstDiag: CP.burstDiag, pause: CP.pause, death: CP.death,
+          charge: { max: +Math.min(1, CP.chargeMax / 0.6).toFixed(3), chargingSeen: CP.chargingSeen },
+          reticle: CP.reticle,
+        };
+        window.__stage2.chargeProbe = probe;
+        C.api.report({ chargeProbe: probe }); // parity with scriptedKill/droneProbe — lands on lastReport too
+      }
+      return;
+  }
+}
+
+/* ---------- story-018 powerup probe (?powerupProbe=1) ----------
+ * Deterministic walk of the pickup system (imports powerups.js — acyclic). The RATE asserts
+ * run REAL rolls through the REAL kill path: a probe raider seeded 8 u ahead + a probe bolt
+ * into it → combat's bolt-kill site calls maybeDrop → Math.random() rolls are counted via
+ * POWERUPS.stats() deltas (no seeded RNG is invented — architecture §7.1). Stages: 100 real
+ * kills (drop rate, ≤1 drop/kill) → 300 more rolls (kind split ≈ 1/3) → despawn 8 s + blink
+ * last 2 s (forced drop tracked via POWERUPS.eachAlive) → pickup radius full-3D (1.3 yes,
+ * 1.6 no, vertical-offset 1.345 yes) → SPREAD (one shot = 3 bolts ±6°, charged single) →
+ * OVERDRIVE (shot-to-shot interval ≈ 0.0568, charged single, suppression unchanged) → SHIELD
+ * (refill 50, immediate regen in-window, 3 s delay restored after expiry) → refresh-not-stack
+ * + concurrency + HUD chips → effects during the boss fight (boss exempt from drops).
+ * Reports window.__stage2.powerupProbe (+ api.report parity). */
+export function powerupProbeTick(dt, C, env) {
+  if (!POWERUP_PROBE || PU.done) return;
+  PU.t += dt;
+  window.__stage2.puStage = PU.stage; // debug probe surface — the drive's live stage (deleted with the report latch)
+  // the SHIELD stage owns the shield numbers (refill 50 / 30-mimic / restored-delay reads) —
+  // housekeep must not heal over them; every other stage heals (stray hits cannot kill the walk)
+  cpPin(C, !(PU.stage >= 21 && PU.stage <= 26));
+
+  switch (PU.stage) {
+    case 0: // settle + baseline
+      if (PU.t >= 0.4) {
+        cpFieldClear(C);
+        C.vel.set(0, 0, 0); C.speed = 0; C.pitch = 0; C.heading = 0;
+        PU.stats0 = POWERUPS.stats();
+        PU.baselineEntities = (window.__stage2 && window.__stage2.entities) || 0;
+        PU.stage = 1;
+      }
+      return;
+    case 1: // 100 real bolt-path kills (the real maybeDrop rolls — pool steal-oldest caps entities at 6).
+      // The probe bolt is RE-SEATED 0.2 u behind the pinned target EVERY drive tick: the scan
+      // (which runs before this drive) then always reads it within the 1.05 hit radius — a free
+      // 42 u/s bolt at low headless fps teleports 0.7-2.9 u per frame and can straddle the
+      // ±1.05 window forever (the stage-1 hang the first green run hit). The kill site (and its
+      // real maybeDrop roll) is combat's own boltsTick path either way.
+      if (!PU.target) {
+        env.forward(C.tmp);
+        PU.target = ENEMIES.spawnForProbe(C.tmp2.copy(C.pos).addScaledVector(C.tmp, 8));
+        PU.target.userData.kind = 'rammer'; PU.target.userData.hp = 1;
+        const b = C.bolts.spawn(); // probe bolt — re-seated onto the target every tick until the scan kills it
+        b.position.copy(PU.target.position).addScaledVector(C.tmp, -0.2);
+        b.userData.dir.copy(C.tmp);
+        b.userData.life = env.BOLT_LIFE;
+        b.userData.dmg = 1;
+        b.lookAt(C.tmp2.copy(b.position).add(b.userData.dir));
+        PU.bolt = b;
+        if (!PU.mark2) PU.mark2 = PU.t; // the stage-1 watchdog mark
+      } else {
+        env.forward(C.tmp);
+        PU.target.position.copy(C.tmp2.copy(C.pos).addScaledVector(C.tmp, 8)); // pinned
+        if (PU.bolt && PU.bolt.userData.alive) { // re-seat the probe bolt onto the kill window
+          PU.bolt.position.copy(PU.target.position).addScaledVector(C.tmp, -0.2);
+          PU.bolt.userData.life = env.BOLT_LIFE; // it dies of old age otherwise — re-arm it
+        } else PU.bolt = null;
+        if (!PU.target.userData.alive) { PU.kills++; PU.target = null; }
+      }
+      if (PU.kills >= 100 || (PU.mark2 && PU.t > PU.mark2 + 40)) { // watchdog: record honestly, never hang
+        const s = POWERUPS.stats();
+        PU.rate = { kills: PU.kills, drops: s.dropped - PU.stats0.dropped };
+        if (PU.kills < 100) PU.rate.timeout = true;
+        PU.target = null; PU.bolt = null; PU.mark2 = 0;
+        POWERUPS.clearPowerups();
+        PU.kinds0 = POWERUPS.stats();
+        PU.kills = 0; PU.stage = 2;
+      }
+      return;
+    case 2: // the uniform 1/3 kind split over M = 300 REAL DROPS (not rolls — 300 rolls at p=0.18
+      // yields only ~54 drops and the per-kind binomial band assumes M drops; 10 rolls/tick keeps
+      // the frame honest; ~1670 rolls ≈ 3 s at the 18% rate)
+      for (let i = 0; i < 10; i++) {
+        env.forward(C.tmp);
+        POWERUPS.maybeDrop(C.tmp2.copy(C.pos).addScaledVector(C.tmp, 8));
+      }
+      if (POWERUPS.stats().dropped - PU.kinds0.dropped >= 300) {
+        const s = POWERUPS.stats();
+        PU.kinds = {
+          SPREAD: s.byKind.SPREAD - PU.kinds0.byKind.SPREAD,
+          OVERDRIVE: s.byKind.OVERDRIVE - PU.kinds0.byKind.OVERDRIVE,
+          SHIELD: s.byKind.SHIELD - PU.kinds0.byKind.SHIELD,
+          drops: s.dropped - PU.kinds0.dropped, // the ACTUAL drop count (the 10-per-tick loop overshoots 300 by ≤ 10)
+        };
+        POWERUPS.clearPowerups();
+        PU.stage = 3;
+      }
+      return;
+    case 3: { // despawn + blink — one forced SPREAD pickup, tracked for 8.6 s
+      POWERUPS.clearPowerups();
+      C.effects.SPREAD = 0; C.effects.OVERDRIVE = 0; C.effects.SHIELD = 0; // probe-owned reset between stages
+      env.forward(C.tmp);
+      PU.drop = POWERUPS.forceDropForProbe(C.tmp2.copy(C.pos).addScaledVector(C.tmp, 12), 'SPREAD'); // 12 u out — never picked
+      PU.mark = PU.t; PU.despawn = { aliveAt79: false, goneAt81: false, blinkAt55: null, blinkAt65: null, minO: 1, maxO: 0 };
+      PU.stage = 4;
+      return;
+    }
+    case 4: { // sample the pickup's life window (lastT tracks the despawn: vanished after ≥7.85 while tracked = the 8 s despawn — nothing else can remove it at 12 u)
+      let found = null;
+      POWERUPS.eachAlive((it) => { if (it === PU.drop && it.userData.alive) found = it; });
+      if (found) {
+        const t = found.userData.t;
+        PU.lastT = t;
+        const o = found.userData.core.material.opacity;
+        if (o < PU.despawn.minO) PU.despawn.minO = o;
+        if (o > PU.despawn.maxO) PU.despawn.maxO = o;
+        if (t >= 5.5 && PU.despawn.blinkAt55 === null) PU.despawn.blinkAt55 = found.userData.blink; // < 6.0: blink must be OFF (blink starts at LIFE − BLINK = 6.0)
+        if (t >= 6.4 && PU.despawn.blinkAt65 === null) PU.despawn.blinkAt65 = found.userData.blink; // > 6.0: blink must be ON
+        if (t >= 7.85 && t < 7.95) PU.despawn.aliveAt79 = true;
+      } else if (typeof PU.lastT === 'number' && PU.lastT >= 7.85) {
+        PU.despawn.goneAt81 = true;
+      }
+      if (PU.t >= PU.mark + 8.6) {
+        PU.despawn.opacitySwing = +(PU.despawn.maxO - PU.despawn.minO).toFixed(2);
+        PU.stage = 5;
+      }
+      return;
+    }
+    case 5: // pickup radius — 1.3 from the SHIP CENTER picks up (the check is ship↔pickup, full 3D)
+      POWERUPS.clearPowerups();
+      C.effects.SPREAD = 0;
+      env.forward(C.tmp);
+      PU.drop = POWERUPS.forceDropForProbe(C.tmp2.copy(C.pos).addScaledVector(C.tmp, 1.3), 'SPREAD');
+      PU.mark = PU.t; PU.dropsMark = POWERUPS.stats().picked; PU.stage = 6;
+      return;
+    case 6:
+      if (PU.t >= PU.mark + 0.5) {
+        PU.radius = { pickedAt13: POWERUPS.stats().picked > PU.dropsMark };
+        PU.stage = 7;
+      }
+      return;
+    case 7: { // 1.6 from the ship center does NOT (ship static, pickup static — distance never closes)
+      POWERUPS.clearPowerups();
+      env.forward(C.tmp);
+      PU.drop = POWERUPS.forceDropForProbe(C.tmp2.copy(C.pos).addScaledVector(C.tmp, 1.6), 'OVERDRIVE');
+      PU.mark = PU.t; PU.dropsMark = POWERUPS.stats().picked; PU.stage = 8;
+      return;
+    }
+    case 8:
+      if (PU.t >= PU.mark + 1.0) {
+        PU.radius.pickedAt16 = POWERUPS.stats().picked > PU.dropsMark;
+        PU.stage = 9;
+      }
+      return;
+    case 9: { // full-3D proof: 0.9 along the ray + 1.0 straight up = 1.345 < 1.4 — the y-axis counts
+      POWERUPS.clearPowerups();
+      env.forward(C.tmp);
+      PU.drop = POWERUPS.forceDropForProbe(C.tmp2.copy(C.pos).addScaledVector(C.tmp, 0.9).add(PU.upVec || (PU.upVec = { x: 0, y: 1.0, z: 0 })), 'SHIELD'); // from the ship center: 0.9 along + 1.0 up = 1.345 < 1.4 — the y-axis counts (full-3D proof)
+      PU.mark = PU.t; PU.dropsMark = POWERUPS.stats().picked; PU.stage = 10;
+      return;
+    }
+    case 10:
+      if (PU.t >= PU.mark + 0.5) {
+        PU.radius.pickedAt3D = POWERUPS.stats().picked > PU.dropsMark;
+        POWERUPS.clearPowerups();
+        C.effects.SPREAD = 0; C.effects.OVERDRIVE = 0; C.effects.SHIELD = 0;
+        PU.stage = 11;
+      }
+      return;
+    case 11: // SPREAD: drop 1.0 u ahead of the SHIP CENTER (the radius-stage pattern — proven
+      // picked; the noseWorld seat is the suspect seam this bypasses) → picked → one shot = 3 bolts at ±6°
+      POWERUPS.clearPowerups();
+      env.forward(C.tmp);
+      PU.drop = POWERUPS.forceDropForProbe(C.tmp2.copy(C.pos).addScaledVector(C.tmp, 1.0), 'SPREAD');
+      PU.mark = PU.t; PU.stage = 12;
+      return;
+    case 12:
+      if (C.effects.SPREAD > 0) {
+        C.api.input.fire = true; PU.mark = PU.t; PU.bStream = C.fired.stream; PU.stage = 13;
+      } else if (PU.t > PU.mark + 2) {
+        PU.spread = { fan: 0, timeout: true, diag: { // one-shot diagnostic: where did the pickup actually land?
+          live: POWERUPS.liveCount(),
+          dropAlive: !!PU.drop && PU.drop.userData.alive,
+          dropPos: PU.drop ? PU.drop.position.toArray().map((v) => +v.toFixed(2)) : null,
+          shipPos: C.pos.toArray().map((v) => +v.toFixed(2)),
+          picked: POWERUPS.stats().picked,
+        } };
+        PU.stage = 16;
+      }
+      return;
+    case 13: // the shot fires the frame after fire=true — capture the 3 fan dirs while they live
+      if (C.fired.stream > PU.bStream) {
+        const dirs = [];
+        C.bolts.update(0, (b) => { if (b.userData.alive && !b.userData.charged) dirs.push([b.userData.dir.x, b.userData.dir.y, b.userData.dir.z]); });
+        env.forward(C.tmp);
+        const center = [C.tmp.x, C.tmp.y, C.tmp.z];
+        const ang = (d) => {
+          const dot = Math.max(-1, Math.min(1, d[0] * center[0] + d[1] * center[1] + d[2] * center[2]));
+          return +(Math.acos(dot) * 180 / Math.PI).toFixed(2);
+        };
+        const angles = dirs.map(ang).sort((a, b) => a - b);
+        PU.spread = {
+          fan: dirs.length,
+          centerAngle: angles.length ? angles[0] : 99,
+          anglePlus: angles.length > 2 ? angles[2] : 99,
+          angleMinus: angles.length > 1 ? angles[1] : 99,
+        };
+        C.api.input.fire = false;
+        PU.bCharged = C.fired.charged; PU.mark = PU.t; PU.stage = 14;
+      } else if (PU.t > PU.mark + 1.5) { PU.spread = { fan: 0, timeout: true }; C.api.input.fire = false; PU.stage = 16; }
+      return;
+    case 14: // charged stays single under SPREAD: hold past the threshold, release
+      if (PU.t >= PU.mark + 0.1) { C.api.input.fire = true; PU.mark = PU.t; PU.stage = 15; }
+      return;
+    case 15:
+      if (PU.t >= PU.mark + 0.7) {
+        C.api.input.fire = false; PU.mark = PU.t; PU.stage = 16;
+      }
+      return;
+    case 16:
+      if (PU.t >= PU.mark + 0.3) {
+        if (PU.spread && !PU.spread.timeout) PU.spread.chargedSingle = C.fired.charged - PU.bCharged;
+        POWERUPS.clearPowerups();
+        C.effects.SPREAD = 0; C.effects.OVERDRIVE = 0; C.effects.SHIELD = 0;
+        PU.stage = 17;
+      }
+      return;
+    case 17: // OVERDRIVE: pickup, then a 1.2 s hold with per-shot timestamps
+      POWERUPS.clearPowerups();
+      env.forward(C.tmp);
+      PU.drop = POWERUPS.forceDropForProbe(C.tmp2.copy(C.pos).addScaledVector(C.tmp, 1.0), 'OVERDRIVE');
+      PU.mark = PU.t; PU.stage = 18;
+      return;
+    case 18:
+      if (C.effects.OVERDRIVE > 0) {
+        C.api.input.fire = true;
+        PU.mark = PU.t; PU.bStream = C.fired.stream; PU.bCharged = C.fired.charged;
+        PU.shotTimes = []; PU.lastCount = C.fired.stream; PU.overdrive = { suppressAt: null };
+        PU.odFrames = 0; PU.odDt = 0; // frame-rate accounting — see the frameDt note at stage 20
+        PU.stage = 19;
+      } else if (PU.t > PU.mark + 2) { PU.overdrive = { interval: 0, timeout: true }; PU.stage = 22; }
+      return;
+    case 19: { // the rate window + the suppression mark (T_CHARGE unchanged under OVERDRIVE)
+      PU.odFrames++; PU.odDt += dt; // the measured interval is FRAME-CAPPED at low fps (see stage 20)
+      if (C.fired.stream > PU.lastCount) { PU.shotTimes.push(PU.t); PU.lastCount = C.fired.stream; }
+      if (C.charging && PU.overdrive.suppressAt === null) PU.overdrive.suppressAt = +C.chargeT.toFixed(3);
+      if (PU.t >= PU.mark + 1.2) {
+        C.api.input.fire = false; PU.mark = PU.t; PU.stage = 20;
+      }
+      return;
+    }
+    case 20:
+      if (PU.t >= PU.mark + 0.3) {
+        const st = PU.shotTimes;
+        if (st.length >= 2) {
+          PU.overdrive.interval = +((st[st.length - 1] - st[0]) / (st.length - 1)).toFixed(4);
+          PU.overdrive.windowS = +(st[st.length - 1] - st[0]).toFixed(3);
+        } else PU.overdrive.interval = 0;
+        PU.overdrive.chargedSingle = C.fired.charged - PU.bCharged;
+        // EXACT counter form: the 0.6 s suppression caps the stream at ~10-11 shots per hold and
+        // frame quantization (dt 0.017-0.067 vs the 0.0568 interval) makes per-shot timestamps
+        // noisy — the fired.stream counter misses nothing, so the assert reads the COUNT against
+        // the design rate (see the harness block for the band derivation).
+        PU.overdrive.shots = C.fired.stream - PU.bStream;
+        // FRAME-CAP note: the headless page can run at ~15 fps where dt (0.0667 s) EXCEEDS the
+        // OVERDRIVE interval (0.0568 s) — the stream then fires every frame and the measured
+        // shot-to-shot interval reads dt, not the design interval. frameDt lets the harness
+        // accept the frame-capped reading without weakening the discriminative bound (a missing
+        // OVERDRIVE still reads FIRE_INTERVAL 0.125 > dt + margin → red).
+        PU.overdrive.frameDt = PU.odFrames ? +(PU.odDt / PU.odFrames).toFixed(4) : 0;
+        POWERUPS.clearPowerups();
+        C.effects.SPREAD = 0; C.effects.OVERDRIVE = 0; C.effects.SHIELD = 0;
+        PU.stage = 21;
+      }
+      return;
+    case 21: // SHIELD: refill 50 → hit mimic → immediate regen → expiry → delay restored
+      POWERUPS.clearPowerups();
+      C.shield = 10; // probe-owned precondition — the refill must read 50, not the healed value
+      env.forward(C.tmp);
+      PU.drop = POWERUPS.forceDropForProbe(C.tmp2.copy(C.pos).addScaledVector(C.tmp, 1.0), 'SHIELD');
+      PU.mark = PU.t; PU.stage = 22;
+      return;
+    case 22:
+      if (C.effects.SHIELD > 0) {
+        PU.shield = { refill50: C.shield === 50 };
+        C.shield = 30; C.regenT = 0; // hit mimic: damagePlayer zeroes regenT (the hit itself is not needed)
+        PU.mark = PU.t; PU.stage = 23;
+      } else if (PU.t > PU.mark + 2) { PU.shield = { refill50: false, timeout: true }; PU.stage = 26; }
+      return;
+    case 23: // in-window: the zero regen delay means regen resumes on the FIRST tick
+      if (PU.t >= PU.mark + 0.3) {
+        PU.shield.regenInWindow = C.shield > 30;
+        PU.shield.regenAmount = +(C.shield - 30).toFixed(1);
+        C.effects.SHIELD = 0.05; // probe-owned fast-forward to expiry (the 8 s wait is the despawn stage's job)
+        PU.mark = PU.t; PU.stage = 24;
+      }
+      return;
+    case 24: // expired — the 3 s delay must be RESTORED
+      if (PU.t >= PU.mark + 0.3) {
+        PU.shield.expired = C.effects.SHIELD === 0;
+        C.shield = 30; C.regenT = 0;
+        PU.mark = PU.t; PU.stage = 25;
+      }
+      return;
+    case 25: // 1.0 s: no regen (the restored 3 s delay has not elapsed); then wait out the delay
+      if (PU.t >= PU.mark + 1.0) {
+        PU.shield.delayRestored = C.shield === 30;
+        PU.mark2 = PU.t; PU.stage = 26;
+      }
+      return;
+    case 26:
+      if (C.regenT >= 3.2 || PU.t > PU.mark2 + 5) {
+        PU.shield.regenResumed = C.regenT >= 3.2 && C.shield > 30;
+        if (!PU.shield.regenResumed) PU.shield.timeout = true;
+        POWERUPS.clearPowerups();
+        C.effects.SPREAD = 0; C.effects.OVERDRIVE = 0; C.effects.SHIELD = 0;
+        PU.stage = 27;
+      }
+      return;
+    case 27: // refresh-not-stack + concurrency + chips
+      POWERUPS.clearPowerups();
+      C.shield = 50;
+      env.forward(C.tmp);
+      PU.drop = POWERUPS.forceDropForProbe(C.tmp2.copy(C.pos).addScaledVector(C.tmp, 1.0), 'SPREAD');
+      PU.mark = PU.t; PU.stage = 28;
+      return;
+    case 28:
+      if (C.effects.SPREAD > 0) { PU.mark = PU.t; PU.refresh = {}; PU.stage = 29; }
+      else if (PU.t > PU.mark + 2) { PU.refresh = { refreshed: false, timeout: true }; PU.stage = 33; }
+      return;
+    case 29: // let the timer run down 1.5 s, then re-pick the SAME kind
+      if (PU.t >= PU.mark + 1.5) {
+        PU.refresh.before = +C.effects.SPREAD.toFixed(2);
+        env.forward(C.tmp); // re-seat the spawn point — C.tmp2 is clobbered every frame by the chase-cam
+        PU.drop = POWERUPS.forceDropForProbe(C.tmp2.copy(C.pos).addScaledVector(C.tmp, 1.0), 'SPREAD');
+        PU.mark = PU.t; PU.stage = 30;
+      }
+      return;
+    case 30:
+      if (PU.t >= PU.mark + 0.2) {
+        PU.refresh.after = +C.effects.SPREAD.toFixed(2);
+        // the pick lands 1-3 frames after the re-seat, so `after` reads ≤ 0.2 s under 8 — the
+        // refresh band is [7.5, 8.5]; a STACK (before + 8 ≈ 14.5) or a no-op (≤ before) fails it
+        PU.refresh.refreshed = PU.refresh.after > 7.5 && PU.refresh.after <= 8.5;
+        PU.refresh.stacked = PU.refresh.after > 8.5; // must be FALSE — refresh, never stack
+        env.forward(C.tmp);
+        PU.drop = POWERUPS.forceDropForProbe(C.tmp2.copy(C.pos).addScaledVector(C.tmp, 1.0), 'OVERDRIVE'); // a DIFFERENT kind mid-window
+        PU.mark = PU.t; PU.stage = 31;
+      }
+      return;
+    case 31: // concurrency + chips (both active at once; the chip line carries both names)
+      if (PU.t >= PU.mark + 0.2) {
+        PU.refresh.concurrent = C.effects.SPREAD > 0 && C.effects.OVERDRIVE > 0;
+        try { PU.refresh.chipsActive = document.getElementById('hud-chips').textContent; } catch { PU.refresh.chipsActive = null; }
+        C.effects.SPREAD = 0.03; C.effects.OVERDRIVE = 0.03; // probe-owned fast-forward — the chips must empty
+        PU.mark = PU.t; PU.stage = 32;
+      }
+      return;
+    case 32:
+      if (PU.t >= PU.mark + 0.3) {
+        try { PU.refresh.chipsGone = document.getElementById('hud-chips').textContent; } catch { PU.refresh.chipsGone = null; }
+        POWERUPS.clearPowerups();
+        PU.stage = 33;
+      }
+      return;
+    case 33: { // effects during the boss fight — the boss itself never drops (no call site in the boss path)
+      POWERUPS.clearPowerups();
+      C.effects.SPREAD = 0; C.effects.OVERDRIVE = 0; C.effects.SHIELD = 0;
+      env.forward(C.tmp);
+      BOSS.spawnForProbe(C.tmp2.copy(C.pos).addScaledVector(C.tmp, 20).setY(env.ARENA_Y));
+      BOSS.probeHold(true);
+      env.forward(C.tmp);
+      PU.drop = POWERUPS.forceDropForProbe(C.tmp2.copy(C.pos).addScaledVector(C.tmp, 1.0), 'OVERDRIVE');
+      PU.mark = PU.t; PU.stage = 34;
+      return;
+    }
+    case 34: // picked while BOSS.alive() — then the 0.5 s rate window (OVERDRIVE matters most there, GDD §6)
+      if (C.effects.OVERDRIVE > 0 && BOSS.alive()) {
+        PU.boss = { bossAliveAtPickup: true };
+        C.api.input.fire = true;
+        PU.mark = PU.t; PU.bStream = C.fired.stream; PU.shotTimes = []; PU.lastCount = C.fired.stream;
+        PU.odFrames = 0; PU.odDt = 0; // frame-rate accounting (see the stage-20 FRAME-CAP note)
+        PU.stage = 35;
+      } else if (PU.t > PU.mark + 2) {
+        // timeout lands in the SAME latch stage (35 does the cleanup + report) — never a dead end
+        PU.boss = { bossAliveAtPickup: false, timeout: true };
+        PU.mark = PU.t; PU.stage = 35;
+      }
+      return;
+    case 35: { // the rate window with the boss alive (or the timeout's cleanup path — honest fields)
+      if (PU.boss && PU.boss.bossAliveAtPickup === true) {
+        PU.odFrames++; PU.odDt += dt;
+        if (C.fired.stream > PU.lastCount) { PU.shotTimes.push(PU.t); PU.lastCount = C.fired.stream; }
+      }
+      if (PU.t >= PU.mark + 0.5) {
+        C.api.input.fire = false;
+        const st = PU.shotTimes;
+        PU.boss.interval = st.length >= 2 ? +((st[st.length - 1] - st[0]) / (st.length - 1)).toFixed(4) : 0;
+        PU.boss.frameDt = PU.odFrames ? +(PU.odDt / PU.odFrames).toFixed(4) : 0;
+        PU.boss.shots = C.fired.stream - PU.bStream; // exact counter (see the stage-20 note)
+        BOSS.clearBoss();
+        cpFieldClear(C);
+        POWERUPS.clearPowerups();
+        PU.done = true;
+        const probe = {
+          rate: PU.rate, kinds: PU.kinds, despawn: PU.despawn, radius: PU.radius,
+          spread: PU.spread, overdrive: PU.overdrive, shield: PU.shield, refresh: PU.refresh,
+          boss: PU.boss, baselineEntities: PU.baselineEntities,
+        };
+        window.__stage2.powerupProbe = probe;
+        C.api.report({ powerupProbe: probe }); // parity — lands on lastReport too
+      }
+      return;
+    }
+  }
 }
 
 /* ---------- story-012 drone probe (?droneProbe=1) ----------
