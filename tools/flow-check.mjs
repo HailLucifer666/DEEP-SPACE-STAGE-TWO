@@ -993,9 +993,24 @@ try {
      but reads undefined. Full output: production/qa/evidence/story-018-charged-shot-pickups/flow-red-story018.txt.
      MUTATIONS (branch, post-green, each: mutate → npm run build → full flow-check →
      restore → rebuild; the mutation is VERIFIED applied by reading its red output — a
-     silent no-op proves nothing): PENDING at first commit of this block — the verified
-     records are appended here after the mutation runs land (they also live in the
-     story-018 programmer report). */
+     silent no-op proves nothing):
+       1. combat.js T_CHARGE 0.6 → 0.06 (2026-11-06) → RED `tap 0.2s → stream fires, 0
+          charged` (tap.charged 1 — a tap now crosses the threshold and fires a charged
+          bolt; flow-mutation-tcharge.txt, 141/4). The 3 other reds are the same-root
+          cascade (hold1 / charged identity / OVERDRIVE shot count all read the threshold).
+          Adjacent keep-passing: `charged weak-point hit does 18` stays GREEN (delta 18 —
+          the dmg param is independent of the threshold) + the one-shots, burst, pause and
+          death cancels all green.
+       2. powerups.js drop roll removed — maybeDrop returns false unconditionally
+          (2026-11-06) → RED `drop rate p=0.18 within the binomial 95% band` with the real
+          value {kills: 100, drops: 0} + the same-root `kind split χ²` ({drops: 0, timeout:
+          true}) (flow-mutation-droproll.txt, 143/2). Adjacent keep-passing: the pickup
+          radius / SPREAD fan / OVERDRIVE / SHIELD / refresh / chips / boss asserts stay
+          GREEN — forceDropForProbe bypasses the roll, exactly the seam the mutation
+          isolates. FIRST application record: the same mutation pre-watchdog went red-by-
+          NULL (the drive hung in the 300-drop stage) — that hang is itself mutation
+          evidence and drove commit 3's watchdogs (the second application reads by value).
+     Full outputs: production/qa/evidence/story-018-charged-shot-pickups/. */
   await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat&chargeProbe=1' });
   let cp = null;
   {
