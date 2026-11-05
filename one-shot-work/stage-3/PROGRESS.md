@@ -9,10 +9,9 @@ Baseline verified 2026-11-05: master bd79b79, tag good-2026-11-05-c, flow-check 
 EPIC 001–014 Complete, stage-2 GATE PASS.
 Merge grant: GRANTED 2026-11-05 — the Stage-2 pattern (machine-gate merges with look/feel
 review at stage close; ASSUMPTIONS.md item d resolved).
-Assert growth: 76 → 99 (015) → 106 ACTUAL (016 — plan said ~104; +1 boss-pole guard and
-+1 from the 015 riders landed in 016). Remaining estimate: ~113 (017). Two pre-declared
-flagged-semantics changes were executed in the 016 step (probes 7/7b/8 re-derived r → r3;
-the 015 band asserts retired) — never quiet edits.
+Assert growth: 76 → 99 (015) → 106 (016) → 114 ACTUAL (017 — plan said ~113; +1 net).
+Two pre-declared flagged-semantics changes were executed in the 016 step (probes 7/7b/8
+re-derived r → r3; the 015 band asserts retired) — never quiet edits.
 
 - [x] Setup: story-015..017 files + EPIC.md rows (013/014 stale Pending → Complete; 015/016/
       017 appended) + stage-3 SPEC/PLAN/PROGRESS/ASSUMPTIONS (branch stage-3-setup,
@@ -70,8 +69,30 @@ the 015 band asserts retired) — never quiet edits.
       mutation records incl. dy3 truth, green records).
       Commits: 02d1ff2 (red-first) · a5f2270 (feat) · 203e090 (protocol completion) ·
       0bf6222 (R-e extraction) · 30da6a5 (quality fix pass) · f9b7f66 (record-honesty fix).
-- [ ] Slice 3: story-017 — world goes 3D (ambient field ~120 instanced + shell visual,
+- [x] Slice 3: story-017 — world goes 3D (ambient field ~120 instanced + shell visual,
       rim-ring lifecycle; zero src/launch.js changes)
+      Orchestrator verification 2026-11-05: implementer DONE (red-first 107/7 on 6705142 →
+      feat 8c881ae → docs 3222ab4). Spec review ✅ (mechanics verified independently:
+      deterministic seed proven across runs, true baseline membership at prepare*, material
+      grammar exact, forbidden set zero-diff) — three doc-level caveats → text-accuracy pass
+      b21f879 (phase-machine description corrected to the real exit-before-enter machine;
+      red-record witness provenance stated precisely; clearance wording cites numbers).
+      Quality review APPROVE — zero CRITICAL/IMPORTANT; batching/lifecycle/mutation proof
+      all confirmed (one InstancedMesh = one draw call, group-node rotation, hide-never-
+      dispose, restart baseline 33 identical ×3).
+      Advisory riders recorded (dedicated hardening dispatch declined — land at stage close
+      or with the next story touching these files):
+      R17-a `field fills the shell` assert validates band bounds only — pin distribution
+      spread (min ≤ 30, max ≥ 70); R17-b arena-dressing.js `Object.defineProperty(window.
+      __stage2, …)` unguarded against a future __stage2 init move; R17-c dead export
+      `shellVisible()` + report file-size figure wrong (says 226, actual 136); R17-d
+      flow-red-story017.txt artifact still shows the pre-correction witness — regenerate or
+      drop the re-confirmation claim; R17-e clearance framing: "dt-variable but geometrically
+      bounded", not "deterministic".
+      Evidence: production/qa/evidence/story-017-world-3d/ (report.md, flow-red, 3 mutation
+      records, green records, s17-dressing.png + s17-high-altitude-backdrops.png for the
+      manual stage-close gate).
+      Commits: 8c881ae (feat) · 3222ab4 (docs) · b21f879 (doc accuracy).
 - [ ] Stage close: independent review + smoke record + changelog + GATE.md (this folder);
       S3X experiential gate + backdrop screenshot + open tuning items collected here
       (013/014 full-auto grant convention)
