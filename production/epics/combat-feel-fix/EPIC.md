@@ -24,6 +24,8 @@
 | 015 | pitch-drift | Logic/Feel | L | Complete |
 | 016 | spherical-arena | Logic/Feel | M | Complete |
 | 017 | world-3d | Visual/Feel | M | Complete |
+| 018 | charged-shot-pickups | Logic/Feel + UI | L | Pending |
+| 019 | elites-waves-telemetry | Logic | M | Pending |
 
 ## Notes
 
@@ -44,6 +46,11 @@
   `design/gdd/full-3d-flight.md`, ledger `one-shot-work/stage-3/`. Rows 013/014 were
   corrected from the stale "Pending" to Complete (merged ce4f1ea / tag good-2026-11-04-j
   and ca3c2d8 / tag good-2026-11-05).
+- Stories 018–019 = Stage 4 — balance + telemetry (opened 2026-11-05): ledger
+  `one-shot-work/stage-4/`. The conversation-only gate is CLOSED — both stories' scope +
+  the boss reward (1000 flat) are recorded in the story files BEFORE any Stage 4 code
+  (stage-3 GATE.md known-limitation). R-c main.js refactor is mandatory FIRST (500/500).
+  Charged-shot parameters pending the Stage 4 GDD pass (`design/gdd/stage-4-balance.md`).
 - **Backlog (player screenshots, 2026-11-04): title screen barely shows the hero ship** —
   small, dark, hidden behind the title text and HIGH SCORE line (pre-existing camera framing;
   tickTitle orbits at r=6.8 with the ship centered behind the UI stack). Fix rides with
