@@ -968,6 +968,48 @@ try {
     JSON.stringify(lcSeen));
   ok('CONSOLE [] (dressingProbe page)', errs.length === 0, errs.join(' | '));
 
+  /* --- R-c commit 4: SPIN N-key regression probe (?debug=1&spin=1, page over the SAME CDP session) ---
+     input.js 30-31 dereferences ctx.activeFix (the SHIP1 closed-viewer N/T path), but story-011
+     never wired the property onto ctx — pressing N on the title screen threw inside the keydown
+     listener and the label never cycled. R-c commit 2 wires it: activeFix moves to src/rocket.js
+     and main.js puts the imported object on ctx.
+     RED on master 4b08fd0, 2026-11-06 — N press threw Uncaught TypeError: Cannot read properties
+     of undefined (reading 'nose'); the activeFix wiring commit fixes it. Adjacent keep-passing:
+     title phase, rocket:glb, rocketMetrics unchanged (verified identical on both sides: phase
+     title, rocket glb, size [1.418,1.6,0.651], label initial axes 'nose=-Z top=+Y').
+     RED-run mechanics: master checkout in the main tree + master `npm run build`, THIS exact
+     harness file (scratch copy, byte-identical to the committed one) — the harness's fixed
+     E:\Game Build paths load the main tree's index.html, so the master bundle is what runs.
+     One new assert — the harness goes 114 → 115. */
+  await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&spin=1' });
+  let spin0 = null;
+  {
+    const t0 = Date.now();
+    for (;;) {
+      // guarded + thrown-tolerant (droneProbe pattern): across Page.navigate the old execution
+      // context dies and the fresh document has no spin label until setupSpinViewer runs
+      try { spin0 = await J(`({ label: document.getElementById('spin-label')?.textContent || null,
+        phase: (window.__stage2 && __stage2.phase) || null,
+        rocket: (window.__stage2 && __stage2.rocket) || null,
+        size: (window.__stage2 && __stage2.rocketMetrics) ? __stage2.rocketMetrics().size : null })`); } catch { spin0 = null; }
+      if (spin0 && spin0.label) break;
+      if (Date.now() - t0 > 60000) break; // deadline — the assert below records the red
+      await sleep(300);
+    }
+  }
+  const errsBeforeSpin = errs.length;
+  await key('KeyN', 'keydown');
+  await key('KeyN', 'keyup');
+  await sleep(200);
+  const spin1 = await J(`({ label: document.getElementById('spin-label')?.textContent || null,
+    shipFix: (window.__stage2 && __stage2.rocketMetrics) ? __stage2.rocketMetrics().shipFix : null })`);
+  ok('SPIN N-key cycles the label, no console error (ctx.activeFix wired)',
+    !!spin0 && !!spin0.label && spin0.label.startsWith('nose=-Z') && spin0.phase === 'title' && spin0.rocket === 'glb' &&
+    Array.isArray(spin0.size) && spin0.size.length === 3 &&
+    !!spin1.label && spin1.label !== spin0.label && !!spin1.shipFix && spin1.shipFix.nose !== '-Z' &&
+    errs.length === errsBeforeSpin,
+    JSON.stringify({ before: spin0, after: spin1, newErrs: errs.slice(errsBeforeSpin) }));
+
   await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat&composerFault=1' });
   let td13 = null;
   {
