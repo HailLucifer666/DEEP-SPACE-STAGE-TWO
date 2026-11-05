@@ -100,17 +100,22 @@ asserts: zero semantic changes; only additions.
 ## 6. Deviations and flagged items
 
 1. **Harness lifecycle witness corrected (not product).** The first witness asserted the field
-   hidden at the gameover phase; the actual architecture (phases.js `setPhase`) only runs the
-   TARGET phase's hooks — `clearCombat` runs on entering combat (`combat.exit`) and pad
-   (`pad.enter`), NOT on exit-to-gameover, so combat scene state (rim ring included) persists
-   behind the death card. The shipped witness: death → SKIP → combat re-entry (re-shown),
-   death → REPLAY → pad (hidden after clearCombat). Product code unchanged; the harness comment
-   documents the architecture note. The red run and all mutations were captured with the final
-   witness.
-2. **Clearance margin.** The 10 s drive's measured min instance clearance is ≈ 10.8-11.3 u
-   across runs (threshold 10). It is geometric (orbit radius ≈7 u vs the shell's inner edge 25 u)
-   and deterministic (fixed seed), but the margin is ~1 u rather than the ~15-18 u I expected
-   from the simple bound — the pitch pulses push the orbit outward, and the nearest rock sits at
+   hidden at the gameover phase; `setPhase` (phases.js) is exit-before-enter — the current
+   phase's `exit()` runs before the target's `enter()`, and `combat.exit()` calls
+   `clearCombat()`. So `clearCombat` runs on ANY combat exit, including death-to-gameover
+   (`combat.js` `api.go('gameover')`): the hide happens during the death transition itself, and
+   combat scene state does not persist behind the death card. The hide witnesses sample the
+   state at phase re-entry, not during the transition: death → SKIP → combat re-entry (re-shown
+   after enterCombat), death → REPLAY → pad (hidden after clearCombat) — both samples remain
+   truthful. Product code unchanged; the harness comment documents the architecture note. The
+   red run used the pre-correction witness (`lc.atGameover`); the 7 reds were re-confirmed
+   post-correction with the final witness, and the mutation records use the final witness
+   (`lc.atPad`).
+2. **Clearance margin.** Min clearance observed 10.96-11.17 u across runs (threshold 10; the
+   verification run after this edit recorded 10.89). It is
+   geometric (orbit radius ≈7 u vs the shell's inner edge 25 u) and deterministic (fixed seed),
+   but the observed minimum sits only ≈1 u above the threshold rather than the ≈15-18 u the
+   simple bound suggests — the pitch pulses push the orbit outward, and the nearest rock sits at
    the shell's inner edge. Stable and reproducible; flagged as a watch item for the stage-close
    playtest.
 3. **`lifecycle` report split.** The probe reports `shownOnEnter`; the clear/re-show flips are
@@ -128,4 +133,5 @@ R_HARD shell visual (opacity driver, max 0.18, no emissive), zero launch.js/phas
 changes, backdrops untouched (screenshots left for the manual gate). Gates: flow 114/114 with
 every page CONSOLE [], dep-check PASS, restartProbe=3 clean:true (entities 33), boot 478 ms;
 red-first 107/7 recorded; three mutations verified red with adjacency green. The only flagged
-item is the ~1 u clearance margin (deterministic, §6.2).
+item is the clearance margin — min observed 10.96-11.17 u vs threshold 10 (deterministic,
+§6.2).

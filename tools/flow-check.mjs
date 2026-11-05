@@ -859,13 +859,16 @@ try {
                      set, vel/speed zeroed, keys released).
        lifecycle   — shownOnEnter: the field/shell visibility sampled at combat entry.
      The clear/re-show half of the lifecycle is a HARNESS-verified phase walk on this same
-     page. NOTE (architecture §5 / phases.js): setPhase only runs the TARGET phase's hooks —
-     combat.exit/clearCombat runs on ENTERING combat (combat.exit) and on pad (pad.enter), not
-     on exit-to-gameover; the combat scene state (rim ring included) persists behind the death
-     card. So the hide is witnessed at the PAD after REPLAY, the re-show at combat re-entry
-     after SKIP: probeDamagePlayer(500) → gameover → go-skip → combat (enterCombat re-shows:
-     sample) → probeDamagePlayer(500) again → gameover → go-replay → pad (clearCombat hides:
-     sample). Read via __stage2.dressingLive() (installed by arena-dressing.js at
+     page. NOTE (architecture §5 / phases.js): setPhase is exit-before-enter — the current
+     phase's exit() runs before the target's enter(), and combat.exit() calls clearCombat().
+     So clearCombat runs on ANY combat exit, including death-to-gameover (combat.js
+     api.go('gameover')): the hide happens during the death transition itself, and combat
+     scene state (rim ring included) does not persist behind the death card. The witnesses
+     therefore sample at phase re-entry — the PAD after REPLAY (hidden) and combat re-entry
+     after SKIP (re-shown) — not during the transition: probeDamagePlayer(500) → gameover →
+     go-skip → combat (enterCombat re-shows: sample) → probeDamagePlayer(500) again → gameover
+     → go-replay → pad (clearCombat ran at the death transition; still hidden: sample). Read
+     via __stage2.dressingLive() (installed by arena-dressing.js at
      prepareDressing; main.js untouched), which mirrors the visibility flags at any phase.
      RED record 2026-11-05 (story-016 close build 6705142, product code untouched, only this
      harness differs): ?dressingProbe=1 is unread so window.__stage2.dressingProbe never
@@ -879,10 +882,11 @@ try {
           (count 30 < 100). Adjacent keep-passing: `field fills the shell` stays green (the
           survivors still fill the 25-75 band).
        2. combat.js hide-on-clear removed (hideDressing dropped from clearCombat)
-          (2026-11-05) → RED `field lifecycle` (dressingLive().fieldVisible reads true at
-          gameover) + same-root `shell visual exists in combat only` (shellVisible true at
-          gameover). Adjacent keep-passing: restartProbe stays green — hiding is visual
-          lifecycle, not pool drain; that separation is exactly what the mutation demonstrates.
+          (2026-11-05) → RED `field lifecycle` (dressingLive().fieldVisible reads true at the
+          pad after REPLAY — nothing hid it on the death transition) + same-root `shell visual
+          exists in combat only` (shellVisible true at the pad). Adjacent keep-passing:
+          restartProbe stays green — hiding is visual lifecycle, not pool drain; that separation
+          is exactly what the mutation demonstrates.
        3. combat.js shell opacity driver zeroed (tickDressing opacity forced 0) (2026-11-05)
           → RED `shell opacity tracks 3D proximity` (opacityAt78 0). Adjacent keep-passing:
           `shell visual exists in combat only` stays green (the mesh exists; only its driver
@@ -901,8 +905,9 @@ try {
     }
   }
   // lifecycle half: death → gameover → SKIP → combat re-entry (re-shown), then death again →
-  // gameover → REPLAY → pad (hidden after clearCombat). See the block comment for why the pad
-  // — not gameover — is the hide witness.
+  // gameover → REPLAY → pad (hidden after clearCombat — the hide runs on the death transition
+  // via combat.exit; the pad sample confirms it). See the block comment for the
+  // exit-before-enter machine (why the witnesses sample at re-entry, not during transitions).
   let lcSeen = { atReenter: null, atPad: null };
   await evl(`(window.__stage2 && __stage2.probeDamagePlayer) ? (__stage2.probeDamagePlayer(500), true) : false`);
   {
