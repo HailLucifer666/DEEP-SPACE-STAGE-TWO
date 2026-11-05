@@ -842,6 +842,127 @@ try {
   ok('camera look-target rides the pitched nose (R1: view ≥10° off vertical at max pitch both ways, ≤35° up AND down — 016 rider R-a: the down-side ceiling closes the flatten-during-DOWN-pitch regression class)', typeof cu.down === 'number' && typeof cu.up === 'number' && cu.down >= 10 && cu.up >= 10 && cu.up <= 35 && cu.down <= 35, JSON.stringify(cu));
   ok('CONSOLE [] (pitchProbe page)', errs.length === 0, errs.join(' | '));
 
+  /* --- story-017 world goes 3D (?dressingProbe=1): combat-only ambient field + shell visual ---
+     Deterministic drive (pitchProbe pattern, in-page, src/probes.js dressingProbeTick):
+     reports window.__stage2.dressingProbe = { ambientCount, shellFill, clearance, shell,
+     lifecycle }:
+       ambientCount — instanced rock instances on the combat-only ambient field (design 120).
+       shellFill   — sampled min/max radial distance from O across all instances (construction
+                     band 25-75, fixed PRNG seed AMBIENT_FIELD_SEED — stable across runs).
+       clearance   — nearest instance-to-ship distance min'd over a 10 s drive at cruise with a
+                     full-yaw orbit + varied-pitch pulses (R/F). The orbit holds radius ≈7 u
+                     around O (the drift circle), so the geometric margin to the shell's inner
+                     edge (25 u) is ~18 u; the assert requires > 10 u.
+       shell       — material grammar (additive/transparent/depthWrite:false, the rim-ring/rift
+                     family) + opacity sampled at two probe-owned parks: r3 78 (> 0, design
+                     0.162) and r3 60 (== 0), teleported like the bossProbe shell park (C.pos
+                     set, vel/speed zeroed, keys released).
+       lifecycle   — shownOnEnter: the field/shell visibility sampled at combat entry.
+     The clear/re-show half of the lifecycle is a HARNESS-verified phase walk on this same
+     page. NOTE (architecture §5 / phases.js): setPhase only runs the TARGET phase's hooks —
+     combat.exit/clearCombat runs on ENTERING combat (combat.exit) and on pad (pad.enter), not
+     on exit-to-gameover; the combat scene state (rim ring included) persists behind the death
+     card. So the hide is witnessed at the PAD after REPLAY, the re-show at combat re-entry
+     after SKIP: probeDamagePlayer(500) → gameover → go-skip → combat (enterCombat re-shows:
+     sample) → probeDamagePlayer(500) again → gameover → go-replay → pad (clearCombat hides:
+     sample). Read via __stage2.dressingLive() (installed by arena-dressing.js at
+     prepareDressing; main.js untouched), which mirrors the visibility flags at any phase.
+     RED record 2026-11-05 (story-016 close build 6705142, product code untouched, only this
+     harness differs): ?dressingProbe=1 is unread so window.__stage2.dressingProbe never
+     appears and the deadline expires (each probe assert records its red from the null probe);
+     dressingLive is absent so the lifecycle reads return null (red by absence). 7 of the 8
+     new asserts FAIL for these reasons; the 8th (`CONSOLE []`) is green by design — the
+     unmodified page ignores the unknown query flag. The existing 106 stay green.
+     MUTATIONS (branch, post-green, each: mutate → npm run build → full flow-check → restore;
+     the mutation is VERIFIED applied by reading its red output — a silent no-op proves nothing):
+       1. combat.js AMBIENT_FIELD_COUNT 120 → 30 (2026-11-05) → RED `ambient field present`
+          (count 30 < 100). Adjacent keep-passing: `field fills the shell` stays green (the
+          survivors still fill the 25-75 band).
+       2. combat.js hide-on-clear removed (hideDressing dropped from clearCombat)
+          (2026-11-05) → RED `field lifecycle` (dressingLive().fieldVisible reads true at
+          gameover) + same-root `shell visual exists in combat only` (shellVisible true at
+          gameover). Adjacent keep-passing: restartProbe stays green — hiding is visual
+          lifecycle, not pool drain; that separation is exactly what the mutation demonstrates.
+       3. combat.js shell opacity driver zeroed (tickDressing opacity forced 0) (2026-11-05)
+          → RED `shell opacity tracks 3D proximity` (opacityAt78 0). Adjacent keep-passing:
+          `shell visual exists in combat only` stays green (the mesh exists; only its driver
+          broke). */
+  await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat&dressingProbe=1' });
+  let dp17 = null;
+  {
+    const t0 = Date.now();
+    for (;;) {
+      // guarded + thrown-tolerant (droneProbe pattern): across Page.navigate the old
+      // execution context dies — raw reads throw and would kill the run before the asserts
+      try { dp17 = await J(`(window.__stage2 && window.__stage2.dressingProbe) || null`); } catch { dp17 = null; }
+      if (dp17) break;
+      if (Date.now() - t0 > 120000) break; // deadline — the asserts below record the red
+      await sleep(300);
+    }
+  }
+  // lifecycle half: death → gameover → SKIP → combat re-entry (re-shown), then death again →
+  // gameover → REPLAY → pad (hidden after clearCombat). See the block comment for why the pad
+  // — not gameover — is the hide witness.
+  let lcSeen = { atReenter: null, atPad: null };
+  await evl(`(window.__stage2 && __stage2.probeDamagePlayer) ? (__stage2.probeDamagePlayer(500), true) : false`);
+  {
+    const t0 = Date.now();
+    for (;;) {
+      try { if (await J(`(window.__stage2 && __stage2.phase) || 'boot'`) === 'gameover') break; } catch {}
+      if (Date.now() - t0 > 20000) break; // deadline — the asserts below record the red
+      await sleep(200);
+    }
+  }
+  await evl(`document.getElementById('go-skip').click()`);
+  {
+    const t0 = Date.now();
+    for (;;) {
+      try {
+        const g = await J(`({ p: (window.__stage2 && __stage2.phase) || 'boot', dl: (window.__stage2 && window.__stage2.dressingLive) ? __stage2.dressingLive() : null })`);
+        if (g.p === 'combat') { if (g.dl) lcSeen.atReenter = { fv: g.dl.fieldVisible, sv: g.dl.shellVisible }; break; }
+      } catch {}
+      if (Date.now() - t0 > 20000) break; // deadline — the asserts below record the red
+      await sleep(200);
+    }
+  }
+  await evl(`(window.__stage2 && __stage2.probeDamagePlayer) ? (__stage2.probeDamagePlayer(500), true) : false`);
+  {
+    const t0 = Date.now();
+    for (;;) {
+      try { if (await J(`(window.__stage2 && __stage2.phase) || 'boot'`) === 'gameover') break; } catch {}
+      if (Date.now() - t0 > 20000) break; // deadline — the asserts below record the red
+      await sleep(200);
+    }
+  }
+  await evl(`document.getElementById('go-replay').click()`);
+  {
+    const t0 = Date.now();
+    for (;;) {
+      try {
+        const g = await J(`({ p: (window.__stage2 && __stage2.phase) || 'boot', dl: (window.__stage2 && window.__stage2.dressingLive) ? __stage2.dressingLive() : null })`);
+        if (g.p === 'pad') { if (g.dl) lcSeen.atPad = { fv: g.dl.fieldVisible, sv: g.dl.shellVisible }; break; }
+      } catch {}
+      if (Date.now() - t0 > 20000) break; // deadline — the asserts below record the red
+      await sleep(200);
+    }
+  }
+  const dp17X = dp17 || {};
+  const sf = dp17X.shellFill || {}, cl = dp17X.clearance || {}, sh = dp17X.shell || {}, lc = dp17X.lifecycle || {}, mt = sh.material || {};
+  ok('dressingProbe reports (story-017)', !!dp17, JSON.stringify(dp17));
+  ok('ambient field present (≥ 100 instances)', dp17X.ambientCount >= 100, `count=${dp17X.ambientCount}`);
+  ok('field fills the shell (min ≥ 25, max ≤ 75)', typeof sf.minR3 === 'number' && sf.minR3 >= 25 && sf.maxR3 <= 75, JSON.stringify(sf));
+  ok('field never crowds the ship (clearance > 10u over 10s varied-pitch drive)', typeof cl.min === 'number' && cl.min > 10, `minClear=${cl.min} samples=${cl.samples}`);
+  ok('shell visual exists in combat only (additive/transparent/depthWrite:false + lifecycle)',
+    mt.additive === true && mt.transparent === true && mt.depthWrite === false && lc.shownOnEnter === true &&
+    !!lcSeen.atPad && lcSeen.atPad.sv === false && !!lcSeen.atReenter && lcSeen.atReenter.sv === true,
+    `mat=${JSON.stringify(mt)} lc=${JSON.stringify(lcSeen)}`);
+  ok('shell opacity tracks 3D proximity (>0 at r3 ≥ 78, ==0 at r3 ≤ 60)',
+    typeof sh.opacityAt78 === 'number' && sh.opacityAt78 > 0 && sh.opacityAt60 === 0, `at78=${sh.opacityAt78} at60=${sh.opacityAt60}`);
+  ok('field lifecycle: hidden on clearCombat (pad), re-shown on enterCombat',
+    !!lcSeen.atPad && lcSeen.atPad.fv === false && !!lcSeen.atReenter && lcSeen.atReenter.fv === true,
+    JSON.stringify(lcSeen));
+  ok('CONSOLE [] (dressingProbe page)', errs.length === 0, errs.join(' | '));
+
   await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat&composerFault=1' });
   let td13 = null;
   {

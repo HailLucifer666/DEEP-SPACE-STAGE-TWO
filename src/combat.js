@@ -14,7 +14,8 @@ import * as EFFECTS from './effects.js';
 import { makePool } from './pool.js';
 import { beep, sweep, noiseBurst, loopStart, musicEvict, musicSetDuck, alarmTick, proximityTick } from './audio.js';
 import { stageShip, combatFlow } from './launch.js';
-import { droneProbeTick, bossProbeTick, pitchProbeTick, resetProbes } from './probes.js'; // rider R-e: the three probe drives + their state live in probes.js — combat calls them, never the reverse (dep-check: acyclic)
+import { droneProbeTick, bossProbeTick, pitchProbeTick, dressingProbeTick, resetProbes } from './probes.js'; // rider R-e: the probe drives + their state live in probes.js — combat calls them, never the reverse (dep-check: acyclic)
+import * as DRESSING from './arena-dressing.js'; // story-017: combat-only ambient field + shell visual (GDD §3.6)
 
 const ARENA_Y = 18; // story-016: re-anchored as the sphere CENTER's y — O = (0, ARENA_Y, 0) (the spawn point)
 // Sector boundary (story-005 rim → story-016 SPHERE): a soft spherical arena centered on the
@@ -30,6 +31,13 @@ const ARENA_Y = 18; // story-016: re-anchored as the sphere CENTER's y — O = (
 // replaces it with this sphere (documented in the story record and the harness comment; never
 // a quiet edit).
 const R_SOFT = 60, R_HARD = 80;
+// story-017 (full-3d-flight GDD §3.6/§7): combat-only ambient dressing — the world reads as
+// a volume. Knobs live HERE (the owning-module convention): ambient field count (range 80-200)
+// + the fixed PRNG seed (deterministic — probe asserts stable), and the boundary-shell max
+// opacity (range 0.1-0.3; R8: ≤ the 0.85 bloom threshold, additive/non-emissive).
+const AMBIENT_FIELD_COUNT = 120;
+const AMBIENT_FIELD_SEED = 17017;
+const SHELL_VISUAL_MAX_OPACITY = 0.18;
 const MAX_SPEED = 17;        // bumped with the arena — same crossing time as the old 26 arena at 14
 const BOOST_MULT = 1.9;
 const TURN_RATE = 2.2;       // commanded yaw (rad/s) — full circle ≈ 3 s (story-004: heading is player-owned)
@@ -108,6 +116,7 @@ export function prepareCombat(scene, camera, rocket, ui, api) {
   ENEMIES.prepareEnemies(scene);
   DRONES.prepareDrones(scene); // story-012: orbs join the wave layer; GLB decode starts here if inlined
   BOSS.prepareBoss(scene); // story-013: the single-entity boss joins the scene at prepare (baseline-stable mesh count)
+  DRESSING.prepareDressing(scene, { AMBIENT_FIELD_COUNT, AMBIENT_FIELD_SEED, SHELL_VISUAL_MAX_OPACITY, R_SOFT, R_HARD, ARENA_Y }); // story-017: baseline member — the ambient field + shell visual are created ONCE here (never per-entry allocation) and hide/show with the combat lifecycle
   C.bossApi = { // the boss's tick/death api — EFFECTS + the combat probe surfaces, drone-tick api shape extended for slow-mo + report
     damagePlayer, explosion: (p) => EFFECTS.explosion(p), shake: (a) => EFFECTS.shake(a),
     setTimeScale: (v) => C.api.setTimeScale(v), getTimeScale: () => C.api.getTimeScale(),
@@ -435,6 +444,7 @@ export function enterCombat(scene, camera, rocket, ui, api) {
     C.rim = ring;
   }
   C.rim.visible = true;
+  DRESSING.showDressing(); // story-017: the ambient field + shell visual join the fight (rim-ring lifecycle)
   C.pos.set(0, ARENA_Y, 0);
   C.vel.set(0, 0, 0);
   C.heading = 0; C.bank = 0; C.speed = 0; C.pitch = 0; // story-015: the replay never inherits a nose-up start (GDD §5.6); vel reset above covers drift
@@ -478,6 +488,8 @@ export function tickCombat(dt, t) {
   droneProbeTick(dt, C, probeEnv); // rider R-e: probes receive combat state + pure helpers (probes.js never imports combat.js)
   bossProbeTick(dt, C, probeEnv);
   pitchProbeTick(dt, C, probeEnv); // story-015: deterministic pitch+drift walk (?pitchProbe=1)
+  dressingProbeTick(dt, C, probeEnv); // story-017: deterministic dressing walk (?dressingProbe=1)
+  DRESSING.tickDressing(dt, Math.hypot(C.pos.x, C.pos.y - ARENA_Y, C.pos.z)); // story-017: slow whole-group rotation + shell opacity from 3D proximity (the ring's driver grammar)
 
   // shield regen after a clean 3 s
   C.regenT += dt;
@@ -587,6 +599,7 @@ export function clearCombat() {
   // clear above (pre-existing leak; the death-card REPLAY inherits this fix too)
   C.dead = false; C.deathT = 0; C.speed = 0;
   if (C.rim) { C.rim.material.opacity = 0; C.rim.visible = false; } // story-005: rim leaves the render list with combat (review R2-9)
+  DRESSING.hideDressing(); // story-017: the ambient field + shell visual leave the render list with combat (rim-ring lifecycle — hidden, never disposed)
 }
 
 /* ---------- probe surface (window.__stage2 reads these) ---------- */
