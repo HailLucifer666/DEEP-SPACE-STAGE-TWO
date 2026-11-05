@@ -93,6 +93,14 @@ re-derived r → r3; the 015 band asserts retired) — never quiet edits.
       records, green records, s17-dressing.png + s17-high-altitude-backdrops.png for the
       manual stage-close gate).
       Commits: 8c881ae (feat) · 3222ab4 (docs) · b21f879 (doc accuracy).
+      INCIDENT (recorded 2026-11-05): the post-review advisory-hardening dispatch was
+      rejected mid-run by the player — the agent had already landed three sound edits
+      (spread-pin assert, __stage2 guard, dead-export removal) AND its own F1 mutation
+      (field shell shrunk to 25-45, unrestored). First merged-master flow run caught it:
+      112/2 (spread assert red at maxR3 44.17; clearance 9.42 < 10 — both consequences of
+      the shrunk shell). Leftovers inspected, discarded; committed state re-verified
+      114/114; riders R17-a/b/c stand for stage close. Lesson: a rejected dispatch can
+      leave mid-mutation state — re-run the battery after ANY interruption.
 - [ ] Stage close: independent review + smoke record + changelog + GATE.md (this folder);
       S3X experiential gate + backdrop screenshot + open tuning items collected here
       (013/014 full-auto grant convention)
