@@ -55,6 +55,11 @@ const DEATH_SCALE = 0.3;                  // slow-mo timeScale (combat.js player
 const DEATH_T = 1.2;                      // seconds of REAL time
 const DEATH_BOOM_EVERY = 0.18;            // s between chained explosions
 const HALO_BASE = 4.4, HALO_RAGE = 5.8;   // boss halo; rage pushes the glow up (design)
+// story-016 (GDD §5.3 tuning table): the captured dash target's max 3D radius from the arena
+// center O = (0, 18, 0) — R_HARD (80, combat.js) − OVERSHOOT (10) − margin 2. The center is
+// mirrored here because boss.js must not import combat.js (dep-check: that edge is a cycle).
+const ARENA_O = new THREE.Vector3(0, 18, 0);
+const DASH_SHELL_R3 = 68;
 
 const B = {
   ready: false, scene: null, boss: null,
@@ -166,6 +171,12 @@ function launchDash(playerPos) {
   B.dashLaunched = true;
   B.ramHit = false;
   B.dashTarget.copy(playerPos);
+  // story-016 (GDD §5.3): a player hugging the shell could bait a dash whose captured target
+  // sits at r3 ≈ 78 — the 10 u overshoot would then exit the sphere. Clamp the captured
+  // dashTarget radially to DASH_SHELL_R3 from O — the ONE boss.js line story-016 adds; the
+  // overshoot stays honest (dashTick measures it from the CLAMPED target) and the state
+  // machine is otherwise untouched. Identity below the clamp radius; zero-length safe.
+  B.dashTarget.sub(ARENA_O).setLength(Math.min(ARENA_O.distanceTo(B.dashTarget), DASH_SHELL_R3)).add(ARENA_O);
   B.dashDir.copy(playerPos).sub(B.boss.position).normalize(); // full-3D — the CURRENT ship position
   // stage-2 review (finding 6): a ship parked exactly on the boss center normalizes to (0,0,0)
   // — `past` stays 0 forever and the dash never ends. Make the bad state unrepresentable: any
