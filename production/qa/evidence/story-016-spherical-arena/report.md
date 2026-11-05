@@ -244,3 +244,67 @@ flags removed); `src/probes.js` new, 513 lines.
 **Prime-rule note:** no new behavior was introduced — this is a pure move (extraction), so
 no regression test is required; the proof is the identical 105/105 flow-check and PASS
 dep-check on both sides of the move.
+
+## Fix pass (quality-review findings)
+
+Branch head `0bf6222` + this pass. Two findings from the independent stage review — one
+CRITICAL code defect, one IMPORTANT guard-strengthening — fixed red-first, both with
+regression asserts that red on the unfixed code.
+
+### Finding 1 — CRITICAL: boss dash-clamp operator-order bug (`src/boss.js` launchDash)
+
+The clamp chain `B.dashTarget.sub(ARENA_O).setLength(Math.min(ARENA_O.distanceTo(
+B.dashTarget), DASH_SHELL_R3)).add(ARENA_O)` called `.sub()` first: it MUTATED `dashTarget`
+before the `setLength` argument evaluated, so the measured distance was `|O − (P−O)|`, not
+`|P−O|`. It worked for exactly one point on the sphere — the equator park (0,18,78), where
+both 78 and the bogus 80.05 exceed 68 — and corrupted every other park: top-pole (0,96,0)
+measured 60 < 68 → `setLength(60)` pulled the captured target INWARD to r3 60 (no clamp),
+mid-sphere (0,60,30) measured 38.4 → pulled inward to 51.6. Fix computes the true radius
+before mutating (the prescribed 4-line form). The dash's OBSERVABLE endpoint is invariant to
+the clamp at the pole (the boss orbits AT the player's altitude, so the dash direction is
+flat and the overshoot projection along it cancels the vertical target delta) — so the assert
+reads the clamp's own computed radius via a probe seam (`B.dashCapR3`, set inside the clamp
+block, surfaced through `probeStats()`; zero gameplay impact).
+
+- RED-FIRST (`flow-red-bosspole.txt`): pole scenario added to the boss drive (after the
+  equator dash completes, re-park at (0,96,0), wait out the next periodic dash via a
+  median-filtered speed gate — headless micro-dt frames spike single-frame speeds, median
+  over 10 frames classifies true motion), assert `poleDashCapR3 ∈ 67.5–68.5`. Current code:
+  **105 passed / 1 failed** (`targetR3=null` — no seam yet; red by absence).
+- POST-FIX MUTATION (`flow-mutation-bosspole.txt`): operator-order chain restored (seam
+  kept) → **105/1, `targetR3=60`** — the assert discriminates the real defect number, not
+  just absence. Adjacent keep-passing all green (equator asserts, phases, ratio, slow-mo).
+- FIXED (`flow-green-fixpass.txt`): **106 passed / 0 failed**, `poleDashCapR3=68`.
+
+### Finding 2 — IMPORTANT: R-f raider separation-dy guard could not fail
+
+The guard asserted the coincident-stack probe pair separates > 1.5u, but LIVE wave raiders in
+scratch parted the pair in XZ regardless of dy (dy-removal stayed 105/105). Strengthened
+probe (`src/probes.js` stage 13): (a) `ENEMIES.clearEnemies()` at separation-window entry
+(bossProbeTick precedent); (b) window bound 2.2 → **1.2 s < 1.6 s** (wavesTick re-populates
+~1.6 s after emptiness); (c) movement keys released AND `C.speed`/`C.vel` zeroed — steer()
+re-lerps vel toward forward·speed, so cruise speed left by the W stage re-accelerated the
+ship and broke lockstep; (d) XZ lockstep enforced per frame (the pool's intra-tick update
+order lets raider A move before B reads it → sub-frame XZ offset the separation force
+amplifies; observed 2.33 with dy dropped); (e) ship frozen at center, pair spawned 50 u
+ahead (chase reaches ram range only after ~1.4 s > window).
+
+- RED-FIRST (with strengthened probe, dy PRESENT): `flow-red-bosspole.txt` — separation assert
+  green (105/1, pole red only) → strengthen does not false-red.
+- MUTATION (`flow-mutation-raidersepdy2.txt`): enemies.js separation `sy` accumulation +
+  y-application dropped → **104 passed / 2 failed**: `raider separation 3D` red with
+  `maxPairDist=0.49` (deterministic — XZ locked, dy the sole variable) + pole red. Verified
+  applied by reading the red.
+- RESTORED: full green **106/106**.
+
+### Gate battery (post-fix)
+
+| Gate | Result |
+|---|---|
+| `node tools/flow-check.mjs` | **PASS — 106 passed / 0 failed** (105 baseline + 1 new boss-pole assert) |
+| `node tools/dep-check.mjs` | **PASS** — acyclic, structural rules hold (main.js 500/500) |
+| `?goto=combat&restartProbe=3` (cdp-check) | **`{"runs":3,"left":0,"clean":true}`** — three identical entries, `CONSOLE []` |
+| `tools/boot-marks.mjs` (headed, RTX 3060) | MODULE → TITLE **132 ms** warm (first cold run 1680 ms — asset parse 1565 ms, within the documented GLB-cache variance band 158–2492 ms from the story-013 record); `CONSOLE []` |
+
+Evidence: `flow-red-bosspole.txt`, `flow-mutation-raidersepdy2.txt`,
+`flow-mutation-bosspole.txt`, `flow-green-fixpass.txt` (this folder).

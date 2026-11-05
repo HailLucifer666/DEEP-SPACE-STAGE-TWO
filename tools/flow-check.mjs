@@ -509,6 +509,30 @@ try {
     typeof bpX.dashPeakR3 === 'number' && bpX.dashPeakR3 <= 80, `peak=${bpX.dashPeakR3} park=${bpX.parkR3}`);
   ok('boss stays inside mid-dash and re-orbits inside (peak ≤ 92, re-orbit r3 ≤ 85)',
     typeof bpX.reorbitR3 === 'number' && bpX.dashPeakR3 <= 92 && bpX.reorbitR3 <= 85, `peak=${bpX.dashPeakR3} reorbit=${bpX.reorbitR3}`);
+  /* --- story-016 FIX PASS (quality-review finding 1): boss POLE-park dash guard ---
+     The shell-guard drive above parks the ship on the EQUATOR (0,18,78); the operator-order bug
+     in boss.js:179 (`.sub(ARENA_O)` mutates dashTarget before the setLength argument evaluates)
+     happens to clamp the equator case correctly — measured |O − (P−O)| = 80.05 ≥ 68, so the
+     clamp still fires. Verified on the buggy build: top-pole park (0,96,0) → the measured
+     distance collapses to 60 < 68, so Math.min(60,68) + setLength(60) pulls the captured target
+     INWARD to r3 60 instead of clamping to 68; mid-sphere (0,60,30) → measured 38.4 pulls
+     inward to r3 51.6. The line works for exactly one point on the sphere. The drive stages a
+     SECOND dash: after the equator dash completes it re-parks the ship at the top pole
+     (0,96,0), waits out the boss's altitude-climb transient (1 s sustained < 20 u/s), then
+     watches for the dash's 30 u/s burst (the pole dash launches from the top of the climb
+     orbit, so the dash direction is flat). The captured value is the clamp's own computed
+     radius — BOSS.probeStats().dashCapR3, set inside launchDash's clamp block (the probe seam;
+     the dash's OBSERVABLE endpoint is invariant to the clamp in this geometry because the
+     overshoot projection along the flat dash direction cancels the vertical target delta —
+     peak clause deviation: the phase-wide boss r3 peak legitimately reaches ~105 during the
+     post-arm orbit climb on the FIXED build too, so the ≤80 bound is only asserted for the
+     equator dash above).
+     RED-FIRST (2026-11-05): pole scenario added, current boss.js has no dashCapR3 seam → RED
+     (targetR3 null — red by absence). POST-FIX mutation (restored buggy chain, seam kept) →
+     RED with the real number: targetR3 60.0. flow-red-bosspole.txt / flow-mutation-bosspole.txt. */
+  ok('boss pole-park dashTarget clamped inside the shell (captured r3 68 ±0.5 — operator-order bands 60 and 78 both red)',
+    typeof bpX.poleDashCapR3 === 'number' && bpX.poleDashCapR3 >= 67.5 && bpX.poleDashCapR3 <= 68.5,
+    `targetR3=${bpX.poleDashCapR3} peak=${bpX.poleDashPeakR3}`);
   ok('boss death slow-mo engaged', bpX.deathSlowmo === true, `slowmo=${bpX.deathSlowmo}`);
   ok('bossDefeated reported via api.report', bpX.bossDefeated && bpX.bossDefeated.slowmo === true,
     JSON.stringify(bpX.bossDefeated || null)); // the drive observed the death report (lastReport is single-slot; the probe carries what it saw)
@@ -769,13 +793,25 @@ try {
   // separation stacks raiders vertically now that altitude-follow (015) exists. The probe
   // spawns two rammers at ONE XZ, 0.5 u apart vertically, wobble phase pinned equal
   // (probe-owned precondition: identical steering + XZ-only separation = lockstep, so only the
-  // dy term can part them) and measures the max pairwise 3D distance over 2.2 s.
+  // dy term can part them) and measures the max pairwise 3D distance over the window.
   // BLOCKED MUTATION FINDING (2026-11-05): dropping the dy term from the separation metric
   // produced NO red (105/105 — flow-mutation-raidersepdy.txt); disabling the WHOLE separation
   // block drops maxPairDist to 0.49 (would red). The lockstep precondition does not hold on
   // the live combat page: wave raiders in scratch (n=4) push the co-located pair apart in XZ
   // once sub-frame offsets appear (maxPairDist 2.26 without dy), so this dy-specific guard
   // cannot be proven failing under its named mutation — surfaced in the story-016 report.
+  // FIX PASS 2026-11-05 (quality-review finding 2): PROBE STRENGTHENED — at separation-window
+  // entry the probe now clears the enemy field (ENEMIES.clearEnemies(), the bossProbeTick
+  // precedent) and bounds the window to 1.2 s < 1.6 s (wavesTick re-populates ~1.6 s after
+  // emptiness — a naive clear alone would re-contaminate the old 2.2 s window). The ship is
+  // frozen at the center and the pair spawns 50 u ahead (chase at 34.5 u/s reaches ram range
+  // only after ~1.4 s > the window). With the field quiet, the pair's identical-steering
+  // lockstep holds exactly: XZ stays coincident, dy is the sole variable, and maxPairDist
+  // saturates at the SEP_RADIUS cap ≈ 2.4 (push odometer; > 1.5 threshold has 0.9 margin).
+  // MUTATION (2026-11-05, verified applied by reading the red): enemies.js separation `sy`
+  // accumulation + y-application dropped → RED `raider separation 3D` (maxPairDist 0.50 —
+  // the pair never parts; deterministic). flow-mutation-raidersepdy2.txt (104/2 with the
+  // boss-pole finding still red on that run; this guard alone 105/1).
   ok('raider separation 3D (coincident-stack pair separates > 1.5u)',
     typeof spx.maxPairDist === 'number' && spx.maxPairDist > 1.5, `maxPairDist=${spx.maxPairDist} samples=${spx.samples}`);
   // story-015 review rider R-g (landed in 016): the RENDERED nose sign — no state assert can

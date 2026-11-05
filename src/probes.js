@@ -18,12 +18,12 @@ const PITCH_PROBE = qs.get('pitchProbe') === '1'; // story-015: deterministic pi
 
 /* probe-owned state (the former C.dp* / C.bp* / C.pp fields in combat.js before R-e) — untouched by normal play */
 const DP = { t: -1, drone: null, win: 0, done: false, tele: false, dive: false, contact: false, samples: 0, mm: null };
-const BP = { t: -1, stage: 'spawn', stageT: 0, fired: 0, hpMark: 0, spawnWave: 0, hud: false, charged: false, raged: false, ragePinned: false, killed: false, done: false, dashPeakR3: 0, reorbitR3: 0 };
+const BP = { t: -1, stage: 'spawn', stageT: 0, fired: 0, hpMark: 0, spawnWave: 0, hud: false, charged: false, raged: false, ragePinned: false, killed: false, done: false, dashPeakR3: 0, reorbitR3: 0, poleArmed: false, poleDone: false, poleQuietT: null, poleQuietAt: null, poleInDash: false, polePrev: null, poleL: null, poleE: null, poleDashPeakR3: 0, poleDashCapR3: null };
 const PP = { state: null, done: false }; // the pitch walk's one probe-only object, rebuilt fresh on combat entry
 
 export function resetProbes() { // rider R-e: what enterCombat's inline probe resets did — same state, same window hygiene
   Object.assign(DP, { t: -1, drone: null, win: 0, done: false, tele: false, dive: false, contact: false, samples: 0, mm: null });
-  Object.assign(BP, { t: -1, stage: 'spawn', stageT: 0, fired: 0, hpMark: 0, spawnWave: 0, hud: false, charged: false, raged: false, ragePinned: false, killed: false, done: false, dashPeakR3: 0, reorbitR3: 0 });
+  Object.assign(BP, { t: -1, stage: 'spawn', stageT: 0, fired: 0, hpMark: 0, spawnWave: 0, hud: false, charged: false, raged: false, ragePinned: false, killed: false, done: false, dashPeakR3: 0, reorbitR3: 0, poleArmed: false, poleDone: false, poleQuietT: null, poleQuietAt: null, poleInDash: false, polePrev: null, poleL: null, poleE: null, poleDashPeakR3: 0, poleDashCapR3: null });
   PP.state = null; PP.done = false;
   window.__stage2.droneProbeLive = false;
   window.__stage2.bossProbeLive = false;
@@ -164,12 +164,64 @@ export function bossProbeTick(dt, C, env) {
       C.pos.set(0, env.ARENA_Y, 78); C.vel.set(0, 0, 0);
       BOSS.probeDamage(st.hp - 34, C.api); BP.charged = true; // 57% — below CHARGE_AT 0.66
     }
-    const bpPos = BOSS.probeTargets(C.pos).node; // story-016: sample the boss's world position every drive tick — the dash IS the r3 peak (pre-dash orbit holds ≤ ~48 from the parked ship)
-    BP.dashPeakR3 = Math.max(BP.dashPeakR3, +Math.hypot(bpPos.x, bpPos.y - env.ARENA_Y, bpPos.z).toFixed(2));
     const hold = BOSS_SHOT ? 2.2 : 0;
     const ps = BOSS.probeStats();
-    if (ps.chargeDash && ps.overshoot) { BP.stage = 'rage'; BP.stageT = 0; }
-    else if (BP.stageT > 6.0 + hold) { BP.stage = 'rage'; BP.stageT = 0; } // timeout — the asserts record what's missing
+    if (!BP.poleArmed && ps.chargeDash && ps.overshoot) {
+      // POLE scenario (fix-pass finding 1): the EQUATOR dash just completed — re-park the ship
+      // at the TOP POLE (0, 96, 0): r3 78 straight up +y, the EXACT escape the clamp exists to
+      // prevent — and wait out the next periodic dash (CHARGE_EVERY 5 s). The operator-order bug
+      // in boss.js launchDash measures |O − (P−O)| = 60 < 68 here, so its Math.min(60, 68) +
+      // setLength(60) pulls the captured target INWARD to r3 60 instead of clamping to 68.
+      // Sticky counters cannot tell the second dash from the first, so the drive waits for the
+      // boss's altitude-climb transient to settle (1 s sustained < 20 u/s, ~2 s after arming)
+      // then watches for the dash's 30 u/s burst. BOSS.probeStats().dashCapR3 — the clamp's
+      // own computed radius (boss.js launchDash, the ONE fixed line) — is captured at the
+      // launch frame. NOTE: the dash's OBSERVABLE endpoint is invariant to the clamp in this
+      // geometry (the boss orbits AT the player's altitude, so the dash direction is flat and
+      // the overshoot projection along it cancels the vertical target delta) — the captured-
+      // target value is the only seam that discriminates the operator-order bug.
+      BP.poleArmed = true; BP.poleDone = false;
+      BP.poleQuietT = null; BP.poleQuietAt = null; BP.poleInDash = false;
+      BP.polePrev = null; BP.poleL = null; BP.poleE = null; BP.poleSp = [];
+      BP.poleDashPeakR3 = 0; BP.poleDashCapR3 = null;
+      C.pos.set(0, 96, 0); C.vel.set(0, 0, 0);
+    }
+    const bpPos = BOSS.probeTargets(C.pos).node; // story-016: sample the boss's world position every drive tick — the dash IS the r3 peak (pre-dash orbit holds ≤ ~48 from the parked ship)
+    const r3Now = +Math.hypot(bpPos.x, bpPos.y - env.ARENA_Y, bpPos.z).toFixed(2);
+    if (BP.poleArmed && !BP.poleDone) {
+      BP.poleDashPeakR3 = Math.max(BP.poleDashPeakR3, r3Now);
+      if (BP.polePrev) {
+        const spRaw = bpPos.distanceTo(BP.polePrev) / Math.max(0.001, rdt);
+        BP.poleSp.push(spRaw); if (BP.poleSp.length > 10) BP.poleSp.shift();
+        let sp = 0;
+        if (BP.poleSp.length === 10) { // median over 10 frames — headless micro-dt frames (dt spikes) produce absurd single-frame speeds (observed spMax 7180); the median classifies the true motion
+          const s = [...BP.poleSp].sort((a, b) => a - b);
+          sp = s[5];
+        }
+        if (!BP.poleQuietAt && sp < 20) {
+          if (BP.poleQuietT === null) BP.poleQuietT = BP.stageT;
+          if (BP.stageT - BP.poleQuietT >= 1.0) BP.poleQuietAt = BP.t;
+        } else if (!BP.poleQuietAt) {
+          BP.poleQuietT = null;
+        } else if (sp > 20) {
+          if (!BP.poleInDash) { BP.poleInDash = true; BP.poleL = bpPos.clone(); }
+          else BP.poleE = bpPos.clone();
+        } else if (BP.poleInDash) {
+          // dash ended — the clamp's computed target radius was captured at the launch frame
+          BP.poleDashCapR3 = ps.dashCapR3 == null ? null : +ps.dashCapR3.toFixed(2);
+          BP.poleDone = true; BP.stage = 'rage'; BP.stageT = 0;
+        }
+        BP.polePrev = bpPos.clone(); // per-frame baseline — stale baselines (early return) read absurd speeds
+      } else {
+        BP.polePrev = bpPos.clone();
+      }
+      if (!BP.poleDone && BP.stageT > 16 + hold) { // pole timeout — the asserts record what's missing
+        BP.poleDone = true; BP.stage = 'rage'; BP.stageT = 0;
+      }
+    } else {
+      BP.dashPeakR3 = Math.max(BP.dashPeakR3, r3Now);
+      if (BP.stageT > 6.0 + hold) { BP.stage = 'rage'; BP.stageT = 0; } // timeout — the asserts record what's missing
+    }
     return;
   }
   if (BP.stage === 'rage') {
@@ -206,6 +258,7 @@ export function bossProbeTick(dt, C, env) {
         hudLine: BP.hud,
         dashPeakR3: +BP.dashPeakR3.toFixed(2), reorbitR3: +BP.reorbitR3.toFixed(2), // story-016 shell guard (GDD §5.3)
         parkR3: +Math.hypot(C.pos.x, C.pos.y - env.ARENA_Y, C.pos.z).toFixed(2), // the parked ship's r3 — provenance for the two asserts above
+        poleDashCapR3: BP.poleDashCapR3, poleDashPeakR3: +BP.poleDashPeakR3.toFixed(2), // pole scenario (fix-pass finding 1): captured dash-target r3 (clamp's own value) + sampled boss r3 peak over the phase
         bossDefeated: (rep && rep.bossDefeated) || null, // the death report the drive observed (lastReport is a single slot — the probe report lands after it)
       };
       window.__stage2.bossProbe = probe;
@@ -447,8 +500,22 @@ export function pitchProbeTick(dt, C, env) {
       // identical steering + XZ-only separation = lockstep, so only the new dy term can part
       // them). The 015 band-climb stage that lived here was RETIRED with the band scaffold —
       // the sphere probes run on the main flow page (story-016 record).
-      pp.sepA = ENEMIES.spawnForProbe(C.tmp2.set(C.pos.x + 24, C.pos.y, C.pos.z));
-      pp.sepB = ENEMIES.spawnForProbe(C.tmp2.set(C.pos.x + 24, C.pos.y + 0.5, C.pos.z));
+      // FIX PASS 2026-11-05 (quality-review finding 2): STRENGTHENED — the guard could not
+      // discriminate dy alone because LIVE wave raiders in scratch parted the co-located pair
+      // in XZ (dy-removal stayed 105/105). Clear the field at window entry (clearEnemies, the
+      // bossProbeTick precedent) so the pair's identical-steering lockstep holds exactly and dy
+      // is the sole variable. wavesTick re-populates ~1.6 s after emptiness, so the window is
+      // bound to 1.2 s < 1.6 s. The ship is frozen at the center: movement keys RELEASED and
+      // BOTH C.vel and C.speed zeroed — steer() re-lerps vel toward forward·speed every frame,
+      // so the cruise speed left by the earlier W stage re-accelerates the ship and the moving
+      // target would break the lockstep (observed) — and the pair spawns 50 u ahead; a chase at
+      // 34.5 u/s reaches ram range only after ~1.4 s > the window, so the pair survives
+      // untouched to the release kill.
+      ENEMIES.clearEnemies();
+      keys.delete('KeyW'); keys.delete('KeyR'); keys.delete('KeyA'); keys.delete('KeyD');
+      C.pos.set(0, env.ARENA_Y, 0); C.vel.set(0, 0, 0); C.speed = 0;
+      pp.sepA = ENEMIES.spawnForProbe(C.tmp2.set(50, env.ARENA_Y, 0));
+      pp.sepB = ENEMIES.spawnForProbe(C.tmp2.set(50, env.ARENA_Y + 0.5, 0));
       pp.sepA.userData.phase = 0; pp.sepB.userData.phase = 0;
       pp.sepMax = 0; pp.sepSamples = 0;
       pp.mark = pp.t;
@@ -456,13 +523,19 @@ export function pitchProbeTick(dt, C, env) {
     }
     return;
   }
-  if (pp.stage === 13) { // separation window: 2.2 s — the pair must push apart in FULL 3D
+  if (pp.stage === 13) { // separation window: 1.2 s (< 1.6 s wavesTick re-population — fix-pass strengthen) — the pair must push apart in FULL 3D
+    // enforce the probe-owned lockstep: identical XZ every frame — the pool's intra-tick
+    // update order lets raider A move before B reads it, so a sub-frame XZ offset appears and
+    // the separation force amplifies it (observed: maxPairDist 2.33 with dy dropped) — with
+    // XZ forced equal, dy is the sole variable and the 3D distance IS |Δy|.
+    pp.sepA.position.x = pp.sepB.position.x;
+    pp.sepA.position.z = pp.sepB.position.z;
     const dxs = pp.sepA.position.x - pp.sepB.position.x,
       dys = pp.sepA.position.y - pp.sepB.position.y,
       dzs = pp.sepA.position.z - pp.sepB.position.z;
     pp.sepMax = Math.max(pp.sepMax, +Math.hypot(dxs, dys, dzs).toFixed(3));
     pp.sepSamples++;
-    if (pp.t >= pp.mark + 2.2) {
+    if (pp.t >= pp.mark + 1.2) {
       ENEMIES.hitDrone(pp.sepA, 99); ENEMIES.hitDrone(pp.sepB, 99); // release the field
       pp.sepA = null; pp.sepB = null;
       pp.sep.maxPairDist = +pp.sepMax.toFixed(3);
