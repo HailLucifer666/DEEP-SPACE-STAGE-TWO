@@ -144,6 +144,9 @@ Machine-checkable items run against `tools/flow-check.mjs` (`ok(name, cond, extr
 
 **Success criteria.** All 3 stories COMPLETE with evidence receipts; flow-check 76 → 111
 green after every slice and on every merged master (98 after 015, 103 after 016, 111 after
-017 — the 016 step is +8 new/re-derived − 3 band retirement); per-page `CONSOLE []` clean;
+017 — the 016 step is +8 new/re-derived − 3 band retirement) — ACTUALS 2026-11-05: **99
+after 015** (+1 camera guard from the quality review), **106 after 016** (+1 boss-pole
+assert + landed riders), **114 after 017** (+1 net dressing); arithmetic reconciles
+(76+23=99; 99−3+10=106; 106+8=114); per-page `CONSOLE []` clean;
 restartProbe and boot-marks inside their gates; M1-M10 hold at every merge; the S3X
 experiential gate recorded at stage close; one-shot gate PASS.

@@ -1,7 +1,7 @@
 # Story 015: pitch + drift — the keystone (full 3D flight begins)
 
 > **Epic**: combat-feel-fix (Stage 3 — full 3D flight)
-> **Status**: Pending
+> **Status**: Complete — merged cf4b904, tagged good-2026-11-05-d (2026-11-05)
 > **Layer**: Logic/Feel
 > **Type**: Logic
 > **Estimate**: L

@@ -1,7 +1,7 @@
 # Story 016: spherical arena — the disc becomes a volume
 
 > **Epic**: combat-feel-fix (Stage 3 — full 3D flight)
-> **Status**: Pending
+> **Status**: Complete — merged 6705142, tagged good-2026-11-05-e (2026-11-05)
 > **Layer**: Logic/Feel
 > **Type**: Logic
 > **Estimate**: M

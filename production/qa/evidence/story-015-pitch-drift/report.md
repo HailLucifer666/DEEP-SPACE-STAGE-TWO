@@ -284,3 +284,8 @@ clean, meanDelta 5.32.
 verified red, 99/99 flow green, all gates green. The one deviation (finding 3's added
 `up ≤ 35°` bound) is mutation-proven necessary and recorded above; the §7.1 designer
 decision on the drift-radius AC remains open from the original pass.
+
+## Errata (stage close, 2026-11-05)
+
+- §7.1 formula string: the printed `speed · ALIGN²/(ALIGN² + ω²)` is a typo (= 0.807); the correct closed form — which every traced number in this report uses — is `speed · ALIGN/√(ALIGN² + ω²)` = cos β = 0.898. The GDD §4.3 errata (commit 60a304f) carries the adjudicated form.
+- Review-fix numbering reconciliation: inline `review fix N` tags in src (fireT=5, KeyW=7, followN=8) map to this report §9 headings (fireT→11, KeyW→12, followN→14) and to the dispatch-brief numbering (7/12/14); all three numberings denote the same eight fixes — the substance mapping lives in §9.

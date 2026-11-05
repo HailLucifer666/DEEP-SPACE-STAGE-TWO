@@ -21,9 +21,9 @@
 | 012 | vi3w-drone | Logic | M | Complete |
 | 013 | boss-fight | Logic/Feel | L | Complete |
 | 014 | victory-card | UI/Logic | M | Complete |
-| 015 | pitch-drift | Logic/Feel | L | Pending |
-| 016 | spherical-arena | Logic/Feel | M | Pending |
-| 017 | world-3d | Visual/Feel | M | Pending |
+| 015 | pitch-drift | Logic/Feel | L | Complete |
+| 016 | spherical-arena | Logic/Feel | M | Complete |
+| 017 | world-3d | Visual/Feel | M | Complete |
 
 ## Notes
 

@@ -98,3 +98,5 @@ PASS  review: bossDefeated reported exactly once (completion re-fire class)  [re
 PASS  CONSOLE []
 
 FLOW-CHECK PASS — 98 passed, 0 failed
+
+ANNOTATION 2026-11-05 (stage close): this record PREDATES the story fix pass (578777c) — it shows the pre-fix 98-assert suite and lacks the camera look-target assert. The post-fix merged-master result (99/99) was orchestrator-verified at merge cf4b904 and is attested by the ledger; the stage-close smoke record production/qa/smoke-2026-11-05-stage3.md carries the final 114/114. Kept unmodified per the dy2 annotation precedent.

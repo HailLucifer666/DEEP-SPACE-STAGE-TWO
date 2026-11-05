@@ -105,3 +105,5 @@ PASS  review: bossDefeated reported exactly once (completion re-fire class)  [re
 PASS  CONSOLE []
 
 FLOW-CHECK PASS — 105 passed, 0 failed
+
+ANNOTATION 2026-11-05 (stage close): this record PREDATES the story fix passes (30da6a5, f9b7f66) — it shows the pre-fix 105-assert suite and lacks the boss pole-park assert. The post-fix merged-master result (106/106) was orchestrator-verified at merge 6705142 and is attested by the ledger; the stage-close smoke record production/qa/smoke-2026-11-05-stage3.md carries the final 114/114. Kept unmodified per the dy2 annotation precedent.

@@ -1,7 +1,7 @@
 # Story 017: world goes 3D — the sphere reads as a place
 
 > **Epic**: combat-feel-fix (Stage 3 — full 3D flight)
-> **Status**: Pending
+> **Status**: Complete — merged a3ade86, tagged good-2026-11-05-f (2026-11-05)
 > **Layer**: Visual/Feel
 > **Type**: Visual
 > **Estimate**: M

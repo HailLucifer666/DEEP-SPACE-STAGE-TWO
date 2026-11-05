@@ -7,6 +7,36 @@ good-pips → good-studio).
 
 ## [Unreleased]
 
+### Stage 3 — full 3D flight (2026-11-05, tags good-2026-11-05-c…good-2026-11-05-f)
+- **story-015 pitch + drift** — the ship leaves the plane: `forward()` goes 3D
+  `(sin h·cos φ, sin φ, cos h·cos φ)` (the keystone — velocity, bolts, camera and probes
+  inherit the vertical axis from one change); pitch on pointer-Y (direct) + R/F keys, ±72°
+  envelope (no loops, by design — camera up-vector safety); drift = persistent velocity
+  realigning to the nose (`ALIGN_RATE 4.5/s`, ≈26° slip at full turn; sustained-turn radius
+  TIGHTENS to ≈6.9 u — GDD §4.3 errata, designer-adjudicated from implementation
+  measurement); chase-cam look-target un-pinned from ARENA_Y; raider altitude-follow + all
+  three XZ-only collision scans → full-3D (the anti-camp fix); temporary altitude-band
+  scaffold (retired by 016); `?pitchProbe=1`. flow-check 76 → 99.
+- **story-016 spherical arena** — the flat disc becomes a soft sphere at O=(0,18,0), same
+  numbers (R_SOFT 60 / R_HARD 80, the load-bearing 3 u/s bleed floor, tangential preserved,
+  hard clamp); band scaffold retired (flagged); boundary probes re-derived r → r3 (flagged);
+  boss dashTarget clamped inside the shell — the review chain caught the operator-order bug
+  (measure-after-mutate was a silent no-op at the pole) and fixed it with a pole-park
+  regression assert; probes extracted to `src/probes.js` (combat.js 1100 → 614); riders
+  landed (camera down-ceiling, rate-consistency pitch windows, raider separation dy).
+  flow-check 99 → 106.
+- **story-017 world goes 3D** — combat dressing goes volumetric: ambient InstancedMesh
+  (120 rocks, deterministic seed, shell 25-75 u, one draw call, slow group rotation) + faint
+  additive boundary shell (rim-ring material grammar, ≤ 0.18 opacity, 3D proximity driver),
+  both prepare-once baseline members; `?dressingProbe=1`; ZERO src/launch.js changes (cruise
+  untouched). flow-check 106 → 114.
+- **Stage-3 review** (per-story chains + independent stage pass): story-016's chain caught
+  a CRITICAL clamp bug AND a falsified mutation record — both re-proven with true red-first
+  records. One rejected dispatch left an unrestored mutation in the tree; the merged-master
+  battery caught it (112/2), the leftovers were inspected + discarded, 114/114 re-verified.
+  Residual debt tabled in `one-shot-work/stage-3/PROGRESS.md` (R-c main.js refactor is
+  mandatory before the next main.js line; mirrored arena consts defer on any R_HARD retune).
+
 ### Stage 2 — boss + victory, the take-home P0 (2026-11-04/05, tags good-2026-11-04-h…good-2026-11-05-b)
 - **story-011 main.js split (TD-003 closed)** — 791→500 lines: STORE/PHASES/INPUT/LOOP into
   `src/store.js`/`phases.js`/`input.js`/`loop.js`, ONE late-bound ctx object, zero behavior
