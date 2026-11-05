@@ -128,7 +128,7 @@ try {
        rim slides             pinned dead at the corner, d=2.1 (no slide at all)
      All 9 red on old — the full set discriminates old from new (mutation run, 2026-11-03). */
   const keyHold = async (code, ms) => { await key(code, 'keydown'); await sleep(ms); await key(code, 'keyup'); };
-  const cs = async () => J(`({ s: __stage2.combatState().speed, h: __stage2.combatState().heading, x: __stage2.combatState().pos[0], z: __stage2.combatState().pos[2] })`);
+  const cs = async () => J(`({ s: __stage2.combatState().speed, h: __stage2.combatState().heading, x: __stage2.combatState().pos[0], y: __stage2.combatState().pos[1], z: __stage2.combatState().pos[2] })`);
   const alive = async (at) => { if (await evl(`__stage2.combatState().dead`)) throw new Error('player died during probes at ' + at); };
   const pointer = async (ndcX) => {
     await evl(`window.dispatchEvent(new PointerEvent('pointermove', {clientX: Math.round((${ndcX} + 1) / 2 * window.innerWidth), clientY: Math.round(window.innerHeight / 2), bubbles: true}))`);
@@ -179,36 +179,50 @@ try {
   ok('pointer leave stops steering (|Δh|<0.15 over 0.5s)', Math.abs(q6b.h - q6.h) < 0.15, `Δh=${(q6b.h - q6.h).toFixed(2)}`);
   await pointer(0); // neutralize for the next probes
 
-  /* --- boundary probes (story-005 soft circular boundary) --- */
+  /* --- boundary probes (story-005 soft rim → story-016 SPHERE) ---
+     FLAGGED RE-DERIVATION (story-016 record, never a quiet edit): the three story-005 probes
+     keep their thresholds but their measurement goes 2D → 3D — r3 = |pos − O| with
+     O = (0, ARENA_Y, 0) — and the sphere walk ADDS the pitched-clamp drive (S16 sphere section
+     below). On the 015 build these re-derived asserts stay GREEN by design: their drives are
+     planar (pitch 0, y ≡ 18) so r3 ≡ hypot(x,z) there; the r3 form is what lets the pitched
+     drives discriminate (the 015 band build reached r3 ≈ 82.5 = hypot(80, 20) legally). */
+  const r3Of = (p) => Math.hypot(p.x, p.y - 18, p.z);
+  const dist3 = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
   // 7 — boosted straight out: (a) boost expiry BLEEDS, never snaps (review R2-1: the old branch
   // order snap-clamped 32→17 in one frame — assert drop rate ≤ 25 u/s², bleed is 22, snap ~38);
-  // (b) radial speed bleeds inside the soft ring (design cap 17·(80−r)/20 floored at 3 — old
-  // build measured 29.8 here). alive() runs INSIDE the loop: a mid-probe death would otherwise
-  // let slow-mo trivially pass both (review R2-5).
+  // (b) radial speed bleeds inside the soft shell (design cap 17·(80−r3)/20 floored at 3 — old
+  // build measured 29.8 here); (c) NEW (story-016): the 3 u/s floor is LOAD-BEARING at the deep
+  // shell (r3 ≥ 77.8, where the linear cap alone drops below 3) — story-005 measured the pure
+  // linear cap creeping 79.06 → 78.67 → 78.11 ("stuck" in softer clothing); the floor keeps
+  // ≥ 2.5 u/s of outward progress there. alive() runs INSIDE the loop: a mid-probe death would
+  // otherwise let slow-mo trivially pass all three (review R2-5).
   await alive('boundary probe');
-  let maxRadial = 0, rimSamples = 0, maxDropRate = 0, prev = await cs(), prevT = Date.now();
+  let maxRadial = 0, rimSamples = 0, maxDropRate = 0, maxDeepRadial = 0, deepSamples = 0,
+    prev = await cs(), prevT = Date.now();
   await key('KeyW', 'keydown'); await key('Space', 'keydown');
   for (let i = 0; i < 20; i++) {
     await alive('boundary loop');
     await sleep(250);
     const s = await cs(); const t = Date.now();
     const dtS = (t - prevT) / 1000;
-    const r = Math.hypot(s.x, s.z), pr = Math.hypot(prev.x, prev.z);
-    if (pr < 60) maxDropRate = Math.max(maxDropRate, Math.abs(s.s - prev.s) / dtS);
-    if (pr > 65 && pr < 78 && r > pr) { rimSamples++; maxRadial = Math.max(maxRadial, (r - pr) / dtS); }
+    const r3 = r3Of(s), pr3 = r3Of(prev);
+    if (pr3 < 60) maxDropRate = Math.max(maxDropRate, Math.abs(s.s - prev.s) / dtS);
+    if (pr3 > 65 && pr3 < 78 && r3 > pr3) { rimSamples++; maxRadial = Math.max(maxRadial, (r3 - pr3) / dtS); }
+    if (pr3 >= 77.8 && r3 > pr3) { deepSamples++; maxDeepRadial = Math.max(maxDeepRadial, (r3 - pr3) / dtS); }
     prev = s; prevT = t;
-    if (r >= 79) break;
+    if (r3 >= 79) break;
   }
   await key('Space', 'keyup');
   ok('boost expiry bleeds (drop ≤25 u/s², no snap)', maxDropRate <= 25, `maxDropRate=${maxDropRate.toFixed(1)}`);
-  ok('soft rim bleeds radial speed (≤13, sampled in r 65–78)', rimSamples > 0 && maxRadial <= 13, `maxRadial=${maxRadial.toFixed(1)} samples=${rimSamples}`);
+  ok('soft shell bleeds radial speed in 3D (≤13, sampled r3 65–78)', rimSamples > 0 && maxRadial <= 13, `maxRadial=${maxRadial.toFixed(1)} samples=${rimSamples}`);
+  ok('rim floor keeps progress at the deep shell (≥2.5 u/s, sampled r3 ≥ 77.8)', deepSamples > 0 && maxDeepRadial >= 2.5, `deepRadial=${maxDeepRadial.toFixed(2)} samples=${deepSamples}`);
 
-  // 7b — the hard clamp is a circle: diagonal flight can't reach a square corner
+  // 7b — the hard clamp is a sphere: diagonal flight can't reach a corner
   await keyHold('KeyD', 4000); // W still held; new scheme arcs, old scheme pinned r≈113 here
   const p7 = await cs();
-  ok('boundary is a circle (r≤81)', Math.hypot(p7.x, p7.z) <= 81, `r=${Math.hypot(p7.x, p7.z).toFixed(1)}`);
+  ok('boundary is a sphere (r3 ≤ 81)', r3Of(p7) <= 81, `r3=${r3Of(p7).toFixed(1)}`);
 
-  // 8 — rim slides, never pins. Deterministic rim approach (review R2-6: the 7b arc can end
+  // 8 — shell slides, never pins. Deterministic rim approach (review R2-6: the 7b arc can end
   // anywhere, and a slide assert from mid-field proves nothing): brake, face outward, boost to
   // the rim, THEN measure the carry.
   await alive('rim approach');
@@ -222,17 +236,80 @@ try {
     await alive('rim approach loop');
     await sleep(300);
     const s = await cs();
-    if (Math.hypot(s.x, s.z) >= 75) break;
+    if (r3Of(s) >= 75) break;
   }
   await key('Space', 'keyup');
   const p8 = await cs();
-  ok('rim precondition (ship at the rim, r≥72)', Math.hypot(p8.x, p8.z) >= 72, `r=${Math.hypot(p8.x, p8.z).toFixed(1)}`);
+  ok('rim precondition (ship at the rim, r3 ≥ 72)', r3Of(p8) >= 72, `r3=${r3Of(p8).toFixed(1)}`);
   await keyHold('KeyD', 300); // ~0.66 rad oblique
   const p8b = await cs();
   await sleep(1600); // W still held
   const q8 = await cs();
   await key('KeyW', 'keyup');
-  ok('rim slides (carry >5u over 1.6s)', dist(p8b, q8) > 5, `d=${dist(p8b, q8).toFixed(1)}`);
+  ok('rim slides along the shell (carry >5u over 1.6s)', dist3(p8b, q8) > 5, `d=${dist3(p8b, q8).toFixed(1)}`);
+
+  /* --- story-016 sphere walk: pitched-clamp drive + shell #warn + rim ring 3D opacity ---
+     RED on the 015 build FOR REAL (flow-red-story016.txt): the band scaffold clamps XZ at 80
+     and |y−18| at 20, so a pitched boost climb legally reaches r3 ≈ hypot(80, 20) ≈ 82.5 > 81;
+     the band #warn grammar stays ON whenever |y−18| > 16 (never clears "inside the shell" at
+     altitude); the rim opacity driver reads 2D proximity (0 at the 72°-climb hold where
+     r3 ≥ 78 but r2D ≈ 24). The drive: recenter → full pitch + W + boost to the shell → 3 s
+     hold at the clamp (peak + opacity sampled) → dive back inside (warn must CLEAR at
+     r3 < 58 while dY > 16, opacity 0). */
+  await alive('sphere recenter');
+  await keyHold('KeyS', 1200);
+  const sc0 = await cs();
+  let dhIn = Math.atan2(-sc0.x, -sc0.z) - sc0.h; // heading that points at the center
+  while (dhIn > Math.PI) dhIn -= 2 * Math.PI; while (dhIn < -Math.PI) dhIn += 2 * Math.PI;
+  await keyHold(dhIn > 0 ? 'KeyA' : 'KeyD', Math.round(Math.abs(dhIn) / 2.2 * 1000) + 120);
+  await key('KeyW', 'keydown'); await key('Space', 'keydown');
+  for (let i = 0; i < 24; i++) {
+    await alive('sphere recenter loop');
+    await sleep(250);
+    if (r3Of(await cs()) <= 15) break;
+  }
+  await key('Space', 'keyup'); await key('KeyW', 'keyup');
+  await alive('pitched climb');
+  await key('KeyW', 'keydown'); await key('Space', 'keydown'); await key('KeyR', 'keydown');
+  let maxR3 = 0, warnSeen3D = false, opacityShell = null;
+  for (let i = 0; i < 120; i++) { // ≤ ~42 s: the 015 build needs ~14 s to crawl to the band corner
+    await alive('pitched climb loop');
+    await sleep(250);
+    const s = await cs(); const rv = r3Of(s);
+    maxR3 = Math.max(maxR3, rv);
+    if (rv > 62 && !(await evl(`document.getElementById('warn').hidden`))) warnSeen3D = true;
+    if (rv >= 78) break;
+  }
+  for (let i = 0; i < 12; i++) { // 3 s hold AT the shell — the clamp state is steady; sample peak + opacity
+    await sleep(250);
+    const s = await cs(); const rv = r3Of(s);
+    maxR3 = Math.max(maxR3, rv);
+    if (rv >= 78) opacityShell = await evl(`__stage2.combatState().rimOpacity`);
+  }
+  await key('KeyR', 'keyup'); await key('Space', 'keyup'); await key('KeyW', 'keyup');
+  ok('hard clamp under pitched boost (r3 ≤ 81)', maxR3 <= 81, `maxR3=${maxR3.toFixed(2)}`);
+  ok('#warn fires entering the soft shell (visible at r3 > 62)',
+    warnSeen3D === true, `seen=${warnSeen3D}`);
+  await alive('sphere return');
+  await keyHold('KeyF', 1400); // pitch +72° → −72° at 1.8 rad/s — dive
+  const sc1 = await cs();
+  let dhBack = Math.atan2(-sc1.x, -sc1.z) - sc1.h;
+  while (dhBack > Math.PI) dhBack -= 2 * Math.PI; while (dhBack < -Math.PI) dhBack += 2 * Math.PI;
+  await keyHold(dhBack > 0 ? 'KeyA' : 'KeyD', Math.round(Math.abs(dhBack) / 2.2 * 1000) + 120);
+  let warnCleared = false, opacityInside = null, clearedAt = null;
+  for (let i = 0; i < 40; i++) { // ≤ ~14 s: cruise (speed holds at 17) carries the ship inward-down
+    await alive('sphere return loop');
+    await sleep(250);
+    const s = await cs(); const rv = r3Of(s); const dya = Math.abs(s.y - 18);
+    if (rv < 58 && dya > 16) {
+      warnCleared = (await evl(`document.getElementById('warn').hidden`)) === true;
+      opacityInside = await evl(`__stage2.combatState().rimOpacity`);
+      clearedAt = { r3: +rv.toFixed(1), dY: +dya.toFixed(1) };
+      break;
+    }
+  }
+  ok('#warn clears inside the shell (hidden at r3<58, dY>16 — band grammar cannot)', warnCleared === true, JSON.stringify(clearedAt));
+  ok('rim ring opacity tracks 3D proximity (>0 at r3 ≥ 78, 0 inside)', opacityShell > 0 && opacityInside === 0, `shell=${opacityShell} inside=${opacityInside}`);
 
   /* --- natural death → REPLAY path --- */
   await poll(`({d: __stage2.combatState().dead})`, (v) => v.d, 90000, 300);
@@ -379,6 +456,22 @@ try {
     `w=${bpX.weakHits}hits/${bpX.weakDmg}dmg b=${bpX.bodyHits}hits/${bpX.bodyDmg}dmg r=${bpX.ratio}`);
   ok('charge dash launches and overshoots (no full stop)', bpX.chargeDash === true && bpX.overshoot === true,
     `dash=${bpX.chargeDash} over=${bpX.overshoot}`);
+  /* --- story-016 boss dash shell guard (GDD §5.3) ---
+     The drive now PARKS THE SHIP on the shell (r3 = 78, on the boss's spawn ray so the dash
+     reads radial) at charge-stage entry — probe-owned precondition (pitchProbe re-seat
+     precedent). An UNclamped dashTarget captured there sits at r3 78 and the 10 u OVERSHOOT
+     carries the boss to r3 ≈ 88; the clamp (boss.js launchDash, the ONE story-016 line) pulls
+     the captured target to r3 ≤ 68 = R_HARD − OVERSHOOT − 2, so the dash peaks at ≈ 78 and
+     re-orbits inside. dashPeakR3 = max boss r3 sampled every drive tick across the charge
+     stage (the dash IS the peak — the pre-dash orbit holds ≤ ~48 from the parked ship);
+     reorbitR3 = boss r3 at rage-stage exit (death-stage entry), ~0.8 s after the dash ends.
+     RED on the 015 build: the fields do not exist (015 probe pattern — red by absence);
+     mutation-verified: removing the clamp line puts dashPeakR3 ≈ 88 > 80 (see the story-016
+     mutation record). */
+  ok('boss dashTarget clamped inside the shell (dash peak r3 ≤ 80 = 68 + OVERSHOOT + margin)',
+    typeof bpX.dashPeakR3 === 'number' && bpX.dashPeakR3 <= 80, `peak=${bpX.dashPeakR3} park=${bpX.parkR3}`);
+  ok('boss stays inside mid-dash and re-orbits inside (peak ≤ 92, re-orbit r3 ≤ 85)',
+    typeof bpX.reorbitR3 === 'number' && bpX.dashPeakR3 <= 92 && bpX.reorbitR3 <= 85, `peak=${bpX.dashPeakR3} reorbit=${bpX.reorbitR3}`);
   ok('boss death slow-mo engaged', bpX.deathSlowmo === true, `slowmo=${bpX.deathSlowmo}`);
   ok('bossDefeated reported via api.report', bpX.bossDefeated && bpX.bossDefeated.slowmo === true,
     JSON.stringify(bpX.bossDefeated || null)); // the drive observed the death report (lastReport is single-slot; the probe carries what it saw)
@@ -599,29 +692,56 @@ try {
   }
   const ppX = pp || {};
   const dP = ppX.dPhi || {}, sl = ppX.slip || {}, dpth = ppX.driftPath || {}, br = ppX.boltRise || {},
-    bd = ppX.band || {}, rs = ppX.raiderScan || {}, rf = ppX.raiderFollow || {}, cu = ppX.viewDirFromUp || {};
+    spx = ppX.sep || {}, rs = ppX.raiderScan || {}, rf = ppX.raiderFollow || {}, cu = ppX.viewDirFromUp || {};
   const csp = await evl(`(window.__stage2 && __stage2.combatState) ? typeof __stage2.combatState().pitch : 'none'`);
   const csv = await evl(`(window.__stage2 && __stage2.combatState) ? typeof __stage2.combatState().velMag : 'none'`);
   ok('pitchProbe reports (story-015)', !!pp, JSON.stringify(pp));
   ok('combatState exposes pitch + velMag', csp === 'number' && csv === 'number', `pitch:${csp} velMag:${csv}`);
   ok('pitch resets to 0 on entry', ppX.entryPitch === 0, `entryPitch=${ppX.entryPitch}`);
-  ok('R 0.4s pitches 0.72 rad (±0.05)', typeof dP.rHold04 === 'number' && Math.abs(dP.rHold04 - 0.72) <= 0.05, `dPhi=${dP.rHold04}`);
+  // story-015 review rider R-b (landed in 016): the 0.4 s window asserts are RATE-CONSISTENCY
+  // form — the probe records the window's ACTUAL duration (rHold04s/fHold04s, pp.t − pp.mark,
+  // which spans exactly the frames steer() integrated the key) and the assert measures
+  // |Δφ − PITCH_RATE·Δt| < 0.02 (PITCH_RATE = 1.8, combat.js const, fixed-knob build). This is
+  // fps-independent and tighter than the old absolute ±0.05. FLAGGED assert-form change
+  // (story-016 report, rider R-b) — applied to the F mirror too (same assert class).
+  ok('R 0.4s window tracks PITCH_RATE·Δt (|Δφ − 1.8·Δt| < 0.02)',
+    typeof dP.rHold04 === 'number' && typeof dP.rHold04s === 'number' && Math.abs(dP.rHold04 - 1.8 * dP.rHold04s) < 0.02,
+    `dPhi=${dP.rHold04} window=${dP.rHold04s}`);
   ok('pitch and yaw independent (|Δh|<0.02 during R hold)', typeof dP.headingDrift === 'number' && Math.abs(dP.headingDrift) < 0.02, `Δh=${dP.headingDrift}`);
   ok('pointer up pitches up (direct, ≥0.5 rad/1s)', dP.ptrUp >= 0.5, `dPhi=${dP.ptrUp}`);
   ok('pointer down mirrors (≤−0.5 rad)', dP.ptrDown <= -0.5, `dPhi=${dP.ptrDown}`);
   ok('pointer deadzone holds (|Δφ|<0.02 over 1s)', typeof dP.deadzone === 'number' && Math.abs(dP.deadzone) < 0.02, `dPhi=${dP.deadzone}`);
   ok('pitch envelope clamps at 72° (end ±2°, never above)', typeof dP.clampEnd === 'number' && Math.abs(dP.clampEnd - 1.2566) <= 0.035 && dP.clampMax <= 1.2567, `end=${dP.clampEnd} max=${dP.clampMax}`);
-  ok('F pitches down (−0.72 ±0.05)', typeof dP.fHold04 === 'number' && Math.abs(dP.fHold04 + 0.72) <= 0.05, `dPhi=${dP.fHold04}`);
+  ok('F 0.4s window tracks PITCH_RATE·Δt (|Δφ + 1.8·Δt| < 0.02)',
+    typeof dP.fHold04 === 'number' && typeof dP.fHold04s === 'number' && Math.abs(dP.fHold04 + 1.8 * dP.fHold04s) < 0.02,
+    `dPhi=${dP.fHold04} window=${dP.fHold04s}`);
   ok('drift slip present (20-35° at 1s full yaw)', typeof sl.deg === 'number' && sl.deg >= 20 && sl.deg <= 35, `slip=${sl.deg}`);
   ok('drift preserves magnitude (velMag ≥ 0.85·speed)', typeof sl.velMag === 'number' && typeof sl.speed === 'number' && sl.velMag >= 0.85 * sl.speed, `velMag=${sl.velMag} speed=${sl.speed}`);
   ok('drift recovers (<8° at 0.8s after release)', typeof sl.recoveredDeg === 'number' && sl.recoveredDeg < 8, `slip=${sl.recoveredDeg}`);
   ok('full-turn circle radius 6.5-7.3 u (FLAGGED: GDD predicted 8.5-11.5, formula traces 6.94 — see block comment + report)', typeof dpth.radius === 'number' && dpth.radius >= 6.5 && dpth.radius <= 7.3, `r=${dpth.radius} max=${dpth.radiusMax}`);
   ok('pitched bolt climbs (>5u over 0.5s)', br.dy > 5, `dy=${br.dy}`);
   ok('pitched bolt xz-speed honest (±10% of BOLT_SPEED·cosφ)', typeof br.xzSpeed === 'number' && typeof br.phi === 'number' && Math.abs(br.xzSpeed - 42 * Math.cos(br.phi)) <= 0.1 * 42 * Math.cos(br.phi), `xz=${br.xzSpeed} φ=${br.phi}`);
-  ok('altitude band holds (|y−18| ≤ 20.5)', typeof bd.maxYDev === 'number' && bd.maxYDev <= 20.5, `maxYDev=${bd.maxYDev}`);
-  ok('band vertical speed ≤ 13 u/s (18-20 layer, 2+ inside the soft edge)', typeof bd.maxVyInLayer === 'number' && bd.maxVyInLayer <= 13, `maxVy=${bd.maxVyInLayer}`);
-  ok('#warn fires outside the band', bd.warnSeen === true, `warnSeen=${bd.warnSeen}`);
+  // BAND SCAFFOLD RETIRED BY STORY-016 — sphere replaces it (FLAGGED, never a quiet edit).
+  // Removed 2026-11-05 with the BAND_H/BAND_HH consts and the band bleed block in combat.js:
+  // the three story-015 band asserts ('altitude band holds |y−18| ≤ 20.5', 'band vertical
+  // speed ≤ 13 u/s (18-20 layer)', '#warn fires outside the band') are DELETED — the sphere
+  // asserts above/below are their replacement. Record: story-016 programmer report
+  // (production/qa/evidence/story-016-spherical-arena/) + story-015's pre-declared rider.
   ok('raider scans 3D (20u above: no ram, no bolt hit)', rs.ramContact === false && rs.boltHit === false, JSON.stringify(rs));
+  // story-015 review rider R-f (landed in 016): raider separation gains the dy term — XZ-only
+  // separation stacks raiders vertically now that altitude-follow (015) exists. The probe
+  // spawns two rammers at ONE XZ, 0.5 u apart vertically, wobble phase pinned equal
+  // (probe-owned precondition: identical steering + XZ-only separation = lockstep, so only the
+  // dy term can part them) and measures the max pairwise 3D distance over 2.2 s.
+  ok('raider separation 3D (coincident-stack pair separates > 1.5u)',
+    typeof spx.maxPairDist === 'number' && spx.maxPairDist > 1.5, `maxPairDist=${spx.maxPairDist} samples=${spx.samples}`);
+  // story-015 review rider R-g (landed in 016): the RENDERED nose sign — no state assert can
+  // catch p.rotation.x = −C.pitch flipping, so the probe samples the pose's WORLD-space nose
+  // direction (+Z through the pose quaternion) at the B1 R-hold: its y-component must be
+  // positive (nose visually up under nose-up pitch). Mutation-proven: flipping the render sign
+  // drives it negative (see the story-016 mutation record).
+  ok('rendered nose rides the pitch sign (world nose.y > 0 under R hold)',
+    typeof ppX.noseUpY === 'number' && ppX.noseUpY > 0, `noseUpY=${ppX.noseUpY}`);
   // followN ≥ 1 (review fix 8): if BOTH probe raiders die the survivor-mean is vacuous (the ÷1 guard reads 0.00).
   // Provenance: red-proof is the EXISTING mutation flow-mutation-altfollow0.txt (RAIDER_ALT_FOLLOW → 0 → meanΔ 20) — no new mutation run for this guard.
   ok('raider altitude-follow (mean Δy ≤ 12 over 3s, ≥1 survivor sample)', typeof rf.meanDelta === 'number' && rf.meanDelta <= 12 && (rf.followN || 0) >= 1, `meanΔ=${rf.meanDelta} offset0=${rf.offset0} followN=${rf.followN}`);
@@ -632,7 +752,7 @@ try {
   // (up-hold 25.4 → 44.1°, down-hold 17.7 → 24.5°; floor-only run recorded green, 2026-11-05) — so the
   // shipped assert adds up ≤ 35°, the bound the re-pin violates (flow-mutation-camup.txt). The floor
   // stays for the opposite-class regression (view driven TOWARD vertical).
-  ok('camera look-target rides the pitched nose (R1: view ≥10° off vertical at max pitch both ways, ≤35° up)', typeof cu.down === 'number' && typeof cu.up === 'number' && cu.down >= 10 && cu.up >= 10 && cu.up <= 35, JSON.stringify(cu));
+  ok('camera look-target rides the pitched nose (R1: view ≥10° off vertical at max pitch both ways, ≤35° up AND down — 016 rider R-a: the down-side ceiling closes the flatten-during-DOWN-pitch regression class)', typeof cu.down === 'number' && typeof cu.up === 'number' && cu.down >= 10 && cu.up >= 10 && cu.up <= 35 && cu.down <= 35, JSON.stringify(cu));
   ok('CONSOLE [] (pitchProbe page)', errs.length === 0, errs.join(' | '));
 
   await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat&composerFault=1' });
