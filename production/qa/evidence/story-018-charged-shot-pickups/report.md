@@ -4,7 +4,7 @@
 > **Branch**: `story-018-charged-shot-pickups` (from master @ `27e4a61`; NOT merged, NOT
 > tagged, NOT pushed per the brief). Commits: `7127443` (charged shot) → `5ae021e` (pickups +
 > probes/harness + HUD/audio/controls) → `b9a8af9` (drive watchdogs) → `0df4f39` (mutation
-> records, comment-only) → `fe314f1` (evidence) → `9aae82a` (spec-review fixes 1-3) + the
+> records, comment-only) → `fe314f1` (evidence) → `0ded588` (spec-review fixes 1-3) + the
 > evidence commit (amended).
 > **NOTE — one foreign commit on this branch**: `0bc12b7` "docs: bootstrap LAUNCH-10-10
 > master plan …" (author Arghya, docs-only: CLAUDE.md +2 / one-shot-work planning files)
@@ -127,7 +127,7 @@ Final gates on the merged build:
 
 ## 3.5 Spec-review round (2026-11-06, post-`fe314f1`) — 3 fixes + 1 docs rider
 
-**Fix 1 — REAL BUG, the pause cancel missed "release LMB while paused"** (`9aae82a`):
+**Fix 1 — REAL BUG, the pause cancel missed "release LMB while paused"** (`0ded588`):
 Repro confirmed by a new red-first assert — hold past the threshold (charging latches) →
 Esc (tickCombat halts) → release LMB (the window pointerup still flips input.fire) →
 unpause → the release branch fired the charged bolt on the resume frame.
@@ -150,7 +150,7 @@ unpause → the release branch fired the charged bolt on the resume frame.
 **Fix 2 — chip assert strengthened**: the seconds form (`/\d+s/`) is now asserted alongside
 the name (GDD §8.3 "name + seconds visible"); gone-after-expiry unchanged.
 
-**Fix 3 — probe-state hygiene** (`9aae82a`): `puStage` + the new arm flags
+**Fix 3 — probe-state hygiene** (`0ded588`): `puStage` + the new arm flags
 (`chargePauseArm2/Go2`) joined resetProbes' delete list; `PU.lastT`/`PU.upVec` joined the PU
 reset assign; the dead fields `CP.od`, `CP.hold1Cap`, `PU.pick`, `PU.shieldBefore`,
 `PU.regenMark` removed (none load-bearing — verified by grep); the flow-check block header's
@@ -200,11 +200,13 @@ Committed (branch `story-018-charged-shot-pickups`):
 - `b9a8af9` — src/probes.js, index.html (drive watchdogs).
 - (pending) — tools/flow-check.mjs (the verified mutation records, comment-only).
 
-**NOT-touched — verified zero-diff vs master:**
+**NOT-touched — verified zero-diff vs master (at the original commits; AMENDED — see below):**
 `src/launch.js`, `src/boss.js`, `src/enemies.js`, `src/drone.js`, `src/phases.js`,
 `src/input.js`, `src/main.js`. Confirm with `git diff master --stat -- src/launch.js
 src/boss.js src/enemies.js src/drone.js src/phases.js src/input.js src/main.js` → empty.
-main.js is 255/500 (dep-check) — zero main.js change, as the spec expected.
+**Superseded by §3.5 (the review round): `src/input.js` is +2 lines in `setPaused` — the
+`pauseCancelCharge()` call — since fix commit 0ded588; all other listed files remain
+zero-diff.** main.js is 255/500 (dep-check) — zero main.js change, as the spec expected.
 
 Scratch (untracked, consistent with the build/ scratch convention): build/flow-check-018-red.mjs
 (the red-first harness), build/flow018-blocks.js (the block source), build/pu-debug.mjs
@@ -234,10 +236,11 @@ Scratch (untracked, consistent with the build/ scratch convention): build/flow-c
    summary placed them in powerups.js; the brief's own rule (the GDD files win) resolved it.
    EFFECT_T stays in powerups.js (architecture §7.1) and combat.js imports it.
 7. **Probe drives write `C.api.input.fire` directly** (probe-owned precondition, the
-   pitchProbe-synthesized-keys class) — input.js stays zero-diff. The pause cancel reads the
-   raw key set per the GDD's mechanism (the loop halts tickCombat while paused, so the first
-   post-unpause tick still sees KeyP and zeroes the accumulator — pinned by a real KeyP press
-   from the harness).
+   pitchProbe-synthesized-keys class). The pause cancel reads the raw key set per the GDD's
+   mechanism (the loop halts tickCombat while paused, so the first post-unpause tick still
+   sees KeyP and zeroes the accumulator — pinned by a real KeyP press from the harness).
+   **Superseded by §3.5: input.js is +2 lines in `setPaused` — the `pauseCancelCharge()`
+   call — since fix commit 0ded588 (the review-ordering pause fix).**
 8. **`combatState()` also exposes `fired: { stream, charged }`** — a probe-surface counter
    pair (fire-path bolts spawned) that the drive asserts consume; story-019's telemetry
    supersedes it.
