@@ -216,6 +216,7 @@ export function balanceProbeTick(dt, C, env) {
           flag: d.userData.elite,
           aliveAtRead, killed,
           aliveAfterKill: ENEMIES.aliveCount(), aliveBefore,
+          sib: roll ? roll.sib || null : null, // the five sibling draws (angle/kind/hold/orbitDir/fireT) — round-2 wiring
         });
         if (d.userData.elite) BL.rateElites++;
         BL.rateLeft--;
@@ -229,13 +230,18 @@ export function balanceProbeTick(dt, C, env) {
         aliveLeaks: BL.rateDraws.filter((r) => r.aliveAfterKill > 0).length,
         notWave5: BL.rateDraws.filter((r) => r.wave !== 5).length,
         draws: BL.rateDraws.map((r) => r.draw),
-        sibMeans: {
-          angle: +(BL.rateDraws.reduce((a, r) => a + r.sib.angle, 0) / 50 / (2 * Math.PI)).toFixed(4), // U(0,1) expectation 0.5
-          kindDraw: +(BL.rateDraws.reduce((a, r) => a + r.sib.kindDraw, 0) / 50).toFixed(4),
-          hold: +(BL.rateDraws.reduce((a, r) => a + r.sib.hold, 0) / 50 / 8).toFixed(4), // 16 + U*8 → U expectation 0.5
-          orbit: +(BL.rateDraws.reduce((a, r) => a + r.sib.orbit, 0) / 50).toFixed(4),
-          fireT: +(BL.rateDraws.reduce((a, r) => a + r.sib.fireT, 0) / 50 - 1.2).toFixed(4), // 1.2 + U → U expectation 0.5
-        },
+        sibMeans: (() => { // the five sibling draws — null-guarded: a spawn with a missing sibling (skipped roll) drops out of that mean
+          const s = BL.rateDraws.filter((r) => r.sib && r.sib.angle != null);
+          const mean = (fn) => s.length ? +(s.reduce((a, r) => a + fn(r), 0) / s.length).toFixed(4) : null;
+          return {
+            angle: mean((r) => r.sib.angle / (2 * Math.PI)), // U(0,1) expectation 0.5
+            kindDraw: mean((r) => r.sib.kindDraw),
+            hold: mean((r) => r.sib.hold / 8), // 16 + U*8 → U expectation 0.5
+            orbit: mean((r) => r.sib.orbit),
+            fireT: mean((r) => r.sib.fireT - 1.2), // 1.2 + U → U expectation 0.5
+            n: s.length,
+          };
+        })(),
         stream: {
           mean: +(BL.streamSample.reduce((a, b) => a + b, 0) / 256).toFixed(4),
           below22: BL.streamSample.filter((v) => v < 0.22).length,
