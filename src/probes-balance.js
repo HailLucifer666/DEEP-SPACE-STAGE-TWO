@@ -36,7 +36,7 @@ const BL = {
   t: -1, stage: 0, mark: 0, done: false,
   elite: { gunner: null, rammer: null }, resetPin: null, scoreX2: null,
   wave3: null, w3Left: 0, w3Elites: 0,
-  rate: null, rateLeft: 0, rateElites: 0, rateDraws: [],
+  rate: null, rateLeft: 0, rateElites: 0, rateDraws: [], streamSample: null,
   table: null, tw: 1, seen: null, rowKinds: null, rows: {}, waveCounts: [], w6: null, tableWait: 0,
   marks: null, rammerKill: null, chargedKill: null, firedChargedMark: 0,
   x2Marks: null, x2Target: null,
@@ -187,7 +187,15 @@ export function balanceProbeTick(dt, C, env) {
       BL.stage = 7;
       return;
     }
-    case 7: BL.rateLeft = 50; BL.rateElites = 0; BL.rateDraws = []; BL.stage = 8; return;
+    case 7: {
+      BL.rateLeft = 50; BL.rateElites = 0; BL.rateDraws = [];
+      // MERGE-HALT DIAGNOSTIC round 2: a contiguous 256-draw sample of the RAW stream right
+      // before the 50 spawns — if the anomaly is stream-state, this skews WITH the stride-7
+      // elite batch; if it is stride-position-specific, this reads ~0.5 while the batch skews.
+      BL.streamSample = Array.from({ length: 256 }, () => Math.random());
+      BL.stage = 8;
+      return;
+    }
     case 8: { // the rate: 50 REAL rolls at wave 5 (p = ELITE_CHANCE 0.22) — one spawn/read/kill per tick.
       // MERGE-HALT DIAGNOSTIC (2026-11-07): every roll records its full truth — the exact
       // uniform consumed (ENEMIES.lastRollProbe, read synchronously right after the spawn: no
@@ -221,6 +229,19 @@ export function balanceProbeTick(dt, C, env) {
         aliveLeaks: BL.rateDraws.filter((r) => r.aliveAfterKill > 0).length,
         notWave5: BL.rateDraws.filter((r) => r.wave !== 5).length,
         draws: BL.rateDraws.map((r) => r.draw),
+        sibMeans: {
+          angle: +(BL.rateDraws.reduce((a, r) => a + r.sib.angle, 0) / 50 / (2 * Math.PI)).toFixed(4), // U(0,1) expectation 0.5
+          kindDraw: +(BL.rateDraws.reduce((a, r) => a + r.sib.kindDraw, 0) / 50).toFixed(4),
+          hold: +(BL.rateDraws.reduce((a, r) => a + r.sib.hold, 0) / 50 / 8).toFixed(4), // 16 + U*8 → U expectation 0.5
+          orbit: +(BL.rateDraws.reduce((a, r) => a + r.sib.orbit, 0) / 50).toFixed(4),
+          fireT: +(BL.rateDraws.reduce((a, r) => a + r.sib.fireT, 0) / 50 - 1.2).toFixed(4), // 1.2 + U → U expectation 0.5
+        },
+        stream: {
+          mean: +(BL.streamSample.reduce((a, b) => a + b, 0) / 256).toFixed(4),
+          below22: BL.streamSample.filter((v) => v < 0.22).length,
+          below10: BL.streamSample.filter((v) => v < 0.1).length,
+          draws: BL.streamSample.map((v) => +v.toFixed(4)),
+        },
       };
       BL.stage = 9; // on to the waves 1-5 composition table
       return;

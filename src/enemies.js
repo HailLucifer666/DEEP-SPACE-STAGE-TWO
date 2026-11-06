@@ -149,10 +149,11 @@ function spawnRaider(playerPos, forceKind) {
   // spawn ring OUTSIDE the camera view — 55 out with the 80 arena (was 30/26)
   const a = Math.random() * Math.PI * 2;
   d.position.set(playerPos.x + Math.cos(a) * 55, playerPos.y, playerPos.z + Math.sin(a) * 55);
+  let kindDraw = null;
   let kind;
   if (forceKind) kind = forceKind;
-  else if (E.waveTable) { kind = E.waveTable.gunner > 0 ? 'gunner' : 'rammer'; E.waveTable[kind]--; } // story-019: the table's deterministic split — the gunner budget drains first
-  else kind = Math.random() < rammerShare(E.wave) ? 'rammer' : 'gunner'; // derived fallback (wave 6+): the stochastic split, untouched
+  else if (E.waveTable) { kindDraw = null; kind = E.waveTable.gunner > 0 ? 'gunner' : 'rammer'; E.waveTable[kind]--; } // story-019: the table's deterministic split — the gunner budget drains first
+  else { kindDraw = Math.random(); kind = kindDraw < rammerShare(E.wave) ? 'rammer' : 'gunner'; } // derived fallback (wave 6+): the stochastic split, untouched
   d.userData.kind = kind;
   d.userData.hp = kind === 'gunner' ? 2 : 1;
   // story-019: UNCONDITIONAL per-spawn reset BEFORE any elite stamping — the pool reuses
@@ -169,24 +170,35 @@ function spawnRaider(playerPos, forceKind) {
   d.userData.t = 0;
   // (the old per-spawn `d.userData.r = R_RAIDER` line was removed — the reset block's
   // `u.r = R_RAIDER` above already sets it; quality review 2026-11-07 nit)
-  d.userData.hold = 16 + Math.random() * 8;      // gunner hold range
-  d.userData.orbitDir = Math.random() < 0.5 ? 1 : -1;
-  d.userData.fireT = 1.2 + Math.random();        // first shot delay
+  const hold = 16 + Math.random() * 8;           // gunner hold range
+  d.userData.hold = hold;
+  const orbit = Math.random() < 0.5 ? 1 : -1;
+  d.userData.orbitDir = orbit;
+  const fireT = 1.2 + Math.random();             // first shot delay
+  d.userData.fireT = fireT;
   d.rotation.set(0, 0, 0);
   // story-019: the elite roll — raiders only, derived from the wave (GDD §3.4). Probe-forced
   // kinds (spawnForProbe's determinism contract with the other walks) never roll.
   // MERGE-HALT DIAGNOSTIC (2026-11-07): the draw is captured to E.lastRoll — the balance
   // drive's rate stage reads it IMMEDIATELY after each spawn (no intervening Math.random in
   // between: the read is synchronous in the same tick), pairing the exact uniform with the
-  // flag the drive counts. Behavior-identical: still exactly one Math.random per guarded
-  // spawn, same short-circuit, same distribution.
+  // flag the drive counts. Behavior-identical: still exactly the same Math.random calls in
+  // the same order per guarded spawn, same short-circuit, same distribution. Round 2: ALL
+  // SIX consumers of the spawn's draw block are captured at their original sites (angle/
+  // kind/hold/orbitDir/fireT/elite) — if an anomalous batch's skew is STREAM-wide, the five
+  // siblings skew WITH the elite draw; if only the elite draw skews, the anomaly is
+  // stride-position-specific (xorshift128+ structure, not stream state).
+  let eliteDraw = null, rolled = false;
   if (!forceKind && E.wave >= ELITE_MIN_WAVE) {
-    const draw = Math.random();
-    E.lastRoll = { draw, rolled: draw < ELITE_CHANCE, wave: E.wave };
-    if (draw < ELITE_CHANCE) stampElite(d);
-  } else {
-    E.lastRoll = { draw: null, rolled: false, wave: E.wave, skipped: !forceKind ? 'wave' : 'forceKind' };
+    eliteDraw = Math.random();
+    rolled = eliteDraw < ELITE_CHANCE;
   }
+  E.lastRoll = {
+    draw: eliteDraw, rolled, wave: E.wave,
+    skipped: forceKind ? 'forceKind' : (eliteDraw === null ? 'wave' : null),
+    sib: { angle: a, kindDraw, hold, orbit, fireT },
+  };
+  if (rolled) stampElite(d);
   return d;
 }
 
