@@ -24,7 +24,7 @@
 | 015 | pitch-drift | Logic/Feel | L | Complete |
 | 016 | spherical-arena | Logic/Feel | M | Complete |
 | 017 | world-3d | Visual/Feel | M | Complete |
-| 018 | charged-shot-pickups | Logic/Feel + UI | L | Pending |
+| 018 | charged-shot-pickups | Logic/Feel + UI | L | Complete |
 | 019 | elites-waves-telemetry | Logic | M | Pending |
 
 ## Notes
