@@ -183,10 +183,15 @@ export function boltsTick(dt) {
             (d.userData.elite ? ENEMIES.ELITE_SCORE_MULT : 1); // story-019: elites pay ×2 when SHOT DOWN (the ×2 never applies to a ram — the ram is the failure state); ELITE_SCORE_MULT rides the existing enemies.js import — no new edge
           C.score += pts;
           C.kills++;
-          C.telemetry.kills[d.userData.kind]++; // story-019: kills by kind — elite kills also count in their kind bucket (elite is a flag, not a kind)
-          if (d.userData.elite) C.telemetry.eliteKills[d.userData.kind]++;
+          // story-019: kills by kind — elite kills also count in their kind bucket (elite is a
+          // flag, not a kind). The `!== undefined` guards match damagePlayer's damageTaken
+          // defense (quality review 2026-11-07): a future enemy kind must degrade to an
+          // un-bucketed kill, never NaN the kill path.
+          const kind = d.userData.kind;
+          if (C.telemetry.kills[kind] !== undefined) C.telemetry.kills[kind]++;
+          if (d.userData.elite && C.telemetry.eliteKills[kind] !== undefined) C.telemetry.eliteKills[kind]++;
           if (b.userData.charged) C.telemetry.chargedKills++; // the skill signal
-          C.telemetry.scoreBy[d.userData.kind] += pts;
+          if (C.telemetry.scoreBy[kind] !== undefined) C.telemetry.scoreBy[kind] += pts;
           dropAt(d.position); // story-018: raider drop site — bolt kills roll 18%, ram deaths never do (enemies.js untouched)
           EFFECTS.shake(0.06); // kill feedback (J)
           beep({ freq: 620, dur: 0.09, vol: 0.16, type: 'triangle' });

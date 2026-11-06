@@ -81,6 +81,19 @@ function noseSeat(C, env, out) { // a point ON the fire ray 3 u from the nose �
 
 const SEAT = (C) => C.tmp2.set(C.pos.x + 10, C.pos.y, C.pos.z); // a fixed off-nose seat for spawn/read/kill churn
 
+function latchBalance(C) { // the report latch — shared by the completion path and the boss stages' 5 s watchdogs (quality review 2026-11-07: every wait stage is bounded)
+  BL.done = true;
+  const probe = {
+    elite: BL.elite, resetPin: BL.resetPin, scoreX2: BL.scoreX2,
+    wave3: BL.wave3, rate: BL.rate, table: BL.table,
+    telemetry: { rammerKill: BL.rammerKill, chargedKill: BL.chargedKill },
+    boss: BL.boss, highscore: BL.highscore,
+  };
+  window.__stage2.balanceProbe = probe;
+  window.__stage2.balanceProbeLive = false;
+  C.api.report({ balanceProbe: probe }); // parity with scriptedKill/droneProbe — lands on lastReport too
+}
+
 export function balanceProbeTick(dt, C, env) {
   if (!BALANCE_PROBE || BL.done) return;
   BL.t += dt;
@@ -290,10 +303,14 @@ export function balanceProbeTick(dt, C, env) {
       BOSS.spawnForProbe(C.tmp2.copy(C.pos).addScaledVector(C.tmp, 20).setY(env.ARENA_Y));
       BL.mark = BL.t; BL.stage = 21;
       return;
-    case 21:
-      if (BL.t >= BL.mark + 0.3 && BOSS.state()) { BOSS.probeDamage(BOSS.state().hp, C.api); BL.stage = 22; }
+    case 21: // wait for the boss entity, then kill it — the 5 s watchdog keeps the wait bounded (the other stages' convention; quality review 2026-11-07)
+      if (BL.t >= BL.mark + 0.3 && BOSS.state()) { BOSS.probeDamage(BOSS.state().hp, C.api); BL.mark = BL.t; BL.stage = 22; }
+      else if (BL.t > BL.mark + 5) {
+        BL.boss = { timeout: true, preScore: BL.preScore, reports: window.__stage2.bossDefeatedReports || 0, bossAwarded: !!C.bossAwarded, finalScore: C.score };
+        latchBalance(C);
+      }
       return;
-    case 22: // the death cinematic runs ~1.2 s real; the completion frame runs the wrapper (award + go('victory') + clearCombat) BEFORE this drive tick — one frame is all the drive needs
+    case 22: // the death cinematic runs ~1.2 s real; the completion frame runs the wrapper (award + go('victory') + clearCombat) BEFORE this drive tick — one frame is all the drive needs. 5 s watchdog: the asserts record the timeout honestly
       if ((window.__stage2.bossDefeatedReports || 0) > BL.preReports) {
         const scoreAfter = C.score;
         const bossAwarded = C.bossAwarded;
@@ -303,16 +320,10 @@ export function balanceProbeTick(dt, C, env) {
           reports: window.__stage2.bossDefeatedReports || 0, bossAwarded, finalScore: C.score,
         };
         BL.highscore = window.__stage2.highscore; // victory.enter's writeHighscore already ran with the +1000
-        BL.done = true;
-        const probe = {
-          elite: BL.elite, resetPin: BL.resetPin, scoreX2: BL.scoreX2,
-          wave3: BL.wave3, rate: BL.rate, table: BL.table,
-          telemetry: { rammerKill: BL.rammerKill, chargedKill: BL.chargedKill },
-          boss: BL.boss, highscore: BL.highscore,
-        };
-        window.__stage2.balanceProbe = probe;
-        window.__stage2.balanceProbeLive = false;
-        C.api.report({ balanceProbe: probe }); // parity with scriptedKill/droneProbe — lands on lastReport too
+        latchBalance(C);
+      } else if (BL.t > BL.mark + 5) {
+        BL.boss = { timeout: true, preScore: BL.preScore, reports: window.__stage2.bossDefeatedReports || 0, bossAwarded: !!C.bossAwarded, finalScore: C.score };
+        latchBalance(C);
       }
       return;
   }

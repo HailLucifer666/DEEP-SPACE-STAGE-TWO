@@ -108,14 +108,19 @@ every mutation run (the mutated assert is the only red) unless noted.
 2. **The unconditional per-spawn reset removed** (2026-11-07,
    `flow-mutation-elite-reset-removed.txt`): RED `former elite respawns normal` — verified on
    a focused balanceProbe-page harness (see the runner-mechanics note below and §5 item 7):
-   **29 passed / 5 failed**, the target assert among the reds with the leak's honest cascade —
-   the reused slot's residue also fools the probe seam's `!d.userData.elite` guard, so the
-   elite-stat/rate/wave-3/telemetry reads all poison (`{"rolls":50,"elites":50}` at wave 5,
-   `{"spawns":20,"elites":20}` at wave 3 where the roll cannot even fire, the rammer-kill
-   paying ×2 on a leaked flag: `scoreRammer 200`). The cascade is the finding: the reset
-   block is load-bearing for every elite consumer, not just the skin. Adjacent keep-passing:
-   the gunner stats assert (the FIRST forced elite stamps fully — the leak starts at the
-   first reuse), the table walk, the boss reward, the parity walk.
+   **29 passed / 6 failed** (count corrected 2026-11-07 — the first report said 5), the
+   target assert among the reds with the leak's honest cascade — the reused slot's residue
+   also fools the probe seam's `!d.userData.elite` guard, so the elite-stat/rate/wave-3/
+   telemetry reads all poison. The six, enumerated: (1) `elite rammer stats` (hp 1, flag
+   leaked), (2) `elite rate within the exact binomial 95% band` (50/50 at wave 5), (3)
+   `wave 3 produces zero elites` (20/20 where the roll cannot even fire), (4) the target —
+   `former elite respawns normal` (elite true at a wave-3 respawn), (5) the stream-kill
+   telemetry assert (`scoreRammer 200` — the ×2 leak class), (6) the charged-kill telemetry
+   assert (`scoreGunner 300` vs 150 — the same ×2 leak class; MISSED by the first report's
+   count). The cascade is the finding: the reset block is load-bearing for every elite
+   consumer, not just the skin. Adjacent keep-passing: the gunner stats assert (the FIRST
+   forced elite stamps fully — the leak starts at the first reuse), the table walk, the boss
+   reward, the parity walk.
 3. **The table bypassed — every wave rolls `rammerShare`** (2026-11-07,
    `flow-mutation-table-bypass.txt`): RED on both split asserts —
    `wave 1 composition is the authored table split … [{"gunner":2,"rammer":2,"total":4,"source":"table"}]`
@@ -371,3 +376,47 @@ Battery for this round (all real outputs, recorded in `flow-green-reviewfix.txt`
   wait)  774 ms` (band 158–2492 ms), `STATE {"phase":"title","rocket":"glb",…}`, `CONSOLE []`.
 - Line counts unchanged from commit 1 except combat.js 702 → 706 (the one-line increment +
   its comment lines).
+
+## 10. Quality-review round (2026-11-07) — merge-worthy; 1 IMPORTANT + 4 small, one fix commit
+
+1. **IMPORTANT — the elite contact radius is a dead write; the records overclaimed it.**
+   `u.r = R_RAIDER × ELITE_SCALE` is stamped and probe-visible, but NO collision scan
+   consumes it: the bolt scan uses the fixed 1.1 radius² (weapons.js) and ram contact uses
+   (R_RAIDER + 0.9)² (enemies.js). ORCHESTRATOR RULING: do NOT wire it into the collisions
+   in this story — that is a difficulty change needing a design decision (a bigger elite
+   hitbox = easier kills), deferred to the evidence-driven balance pass this story's
+   telemetry enables. Corrections: the stampElite comment now states "stamped + probe-
+   visible; NOT consumed by any collision scan yet — wiring it is a deferred game-design
+   decision"; the harness assert renamed to "elite contact radius stamped (r = 1.215),
+   probe-visible, not yet consumed"; THIS section records the ruling because the original
+   commit's claim wording cannot be edited (history). The story report + stage ledger carry
+   the deferral.
+2. **startWave now consumes waveComposition(w)** — the boundary rule existed twice (the
+   harness pinned waveComposition().source while startWave re-derived `w <= TABLE_MAX_WAVE`
+   inline; a one-sided future edit could have split them). E.waveTable now derives from
+   `comp.source === 'table'`; waveComposition is the single source.
+3. **makeRaider consumes the consts** — the hardcoded `emissive: 0xff3b2f` / `color:
+   0xff6a3c` duplicated TRIM_TINT / GLOW_TINT; the materials now use the consts so the
+   reset's restore contract cannot drift from the shipped look.
+4. **Evidence count slip** — §4 item 2 said "29 passed / 5 failed"; the raw file reads
+   **6 failed**. Corrected and enumerated above; the sixth is the charged-kill telemetry
+   assert (`scoreGunner 300` vs 150 — the same ×2 leak class the stream-kill red showed).
+5. **Nits**: the duplicate `d.userData.r = R_RAIDER` init removed (the reset block's
+   `u.r` supersedes it); the kill-site telemetry increments (kills/eliteKills/scoreBy)
+   guarded with the same `!== undefined` defense damageTaken has (a future enemy kind
+   degrades to an un-bucketed kill, never NaNs the kill path); probes-balance.js's boss
+   stages 21/22 gained the 5 s watchdogs + a shared latchBalance() helper (every wait stage
+   is now bounded, symmetric with the other stages).
+
+Battery for this round (real outputs in `flow-green-qualityfix.txt`):
+
+- `npm run build` — `[build] index.html  mode=bundle  4.41 MB`; `node tools/dep-check.mjs` —
+  `main.js lines: 255 (limit 500)` · `[dep-check] PASS — acyclic, structural rules hold`.
+- `node tools/flow-check.mjs` — `FLOW-CHECK PASS — 170 passed, 0 failed` (the renamed
+  radius assert reads `elite contact radius stamped (r = 1.215), probe-visible, not yet
+  consumed`; the rate 13/50, inside [6,17]).
+- `node tools/boot-marks.mjs` — headed, `MODULE → TITLE (player wait)  155 ms` (band
+  158–2492 ms — a warm-cache run; the previous rounds measured 774–968 ms),
+  `STATE {"phase":"title","rocket":"glb",…}`, `CONSOLE []`.
+- Line counts: enemies.js 330 → 334, weapons.js 275 → 280, probes-balance.js 319 → 330,
+  combat.js 706 (untouched this round) — all under 800.

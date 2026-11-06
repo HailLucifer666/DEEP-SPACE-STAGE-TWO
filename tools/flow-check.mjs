@@ -1308,7 +1308,12 @@ try {
     eR.kind === 'rammer' && eR.elite === true && eR.hp === 3 && eR.speedMult === 1.15 && eR.scale === 1.35, JSON.stringify(eR));
   ok('elite trim/glow retinted 0xffa02f (and the base tints recorded for the reset pin)',
     eG.trimTint === 0xffa02f && eG.glowTint === 0xffa02f && eG.trimBase === 0xff3b2f && eG.glowBase === 0xff6a3c, JSON.stringify(eG));
-  ok('elite contact radius scales with the model (r = R_RAIDER × ELITE_SCALE = 1.215 — the adopted recommendation)',
+  // QUALITY REVIEW (2026-11-07, orchestrator ruling): the radius is STAMPED + probe-visible
+  // but NOT consumed by any collision scan yet — the bolt scan uses the fixed 1.1 radius²
+  // (weapons.js) and ram contact (R_RAIDER + 0.9)² (enemies.js). Wiring it in is a DEFERRED
+  // game-design decision (a bigger elite hitbox = a balance change) for the evidence-driven
+  // balance pass this story's telemetry enables. The assert pins the stamp, not a behavior.
+  ok('elite contact radius stamped (r = 1.215), probe-visible, not yet consumed',
     eG.r === 0.9 * 1.35, `r=${eG.r}`);
   // MUTATION (2026-11-06): enemies.js ELITE_CHANCE 0.22 → 0 → RED `elite rate within the
   // binomial 95% band` (elites 0 < 6) — adjacent keep-passing: wave-3 zeros stay green (the

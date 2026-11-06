@@ -75,7 +75,7 @@ const E = { ready: false, scene: null, pool: null, bolts: null, queued: 0, spawn
 function makeRaider() {
   const g = new THREE.Group();
   const hull = new THREE.MeshStandardMaterial({ color: 0x39424f, roughness: 0.5, metalness: 0.6 });
-  const trim = new THREE.MeshStandardMaterial({ color: 0xff5238, roughness: 0.55, emissive: 0xff3b2f, emissiveIntensity: 0.5 });
+  const trim = new THREE.MeshStandardMaterial({ color: 0xff5238, roughness: 0.55, emissive: TRIM_TINT, emissiveIntensity: 0.5 }); // the shipped look IS the reset contract's restore values — one source (quality review 2026-11-07)
   const body = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.22, 1.3, 8), hull);
   body.rotation.x = Math.PI / 2; // long axis along Z — lookAt points +Z at the player
   const nose = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.4, 8), trim);
@@ -87,7 +87,7 @@ function makeRaider() {
   finL.position.set(-0.95, 0.2, -0.35);
   const finR = finL.clone();
   finR.position.x = 0.95;
-  const glowMat = new THREE.SpriteMaterial({ color: 0xff6a3c, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
+  const glowMat = new THREE.SpriteMaterial({ color: GLOW_TINT, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }); // same single-source contract as TRIM_TINT above
   const glowL = new THREE.Sprite(glowMat);
   glowL.scale.setScalar(0.5);
   glowL.position.set(-0.28, 0, -0.75);
@@ -121,8 +121,11 @@ export function prepareEnemies(scene) {
 
 export function startWave(w, playerPos) {
   E.wave = w;
-  const row = w <= TABLE_MAX_WAVE ? WAVE_TABLE[w] : undefined; // story-019: waves 1-5 read the table, 6+ the derived fallback (the boundary — see the header)
-  E.waveTable = row ? { gunner: row.gunner, rammer: row.rammer } : null; // a COPY — the live kind budget spawnRaider drains; the authored row stays pristine
+  // story-019: the boundary rule lives in ONE place — waveComposition — and the spawn path
+  // consumes it, so the harness's waveComposition().source asserts describe exactly what the
+  // spawner honors (a one-sided future edit cannot split them; quality review 2026-11-07).
+  const comp = waveComposition(w);
+  E.waveTable = comp.source === 'table' ? { gunner: comp.gunner, rammer: comp.rammer } : null; // a COPY — the live kind budget spawnRaider drains; the authored row stays pristine
   E.speed = waveSpeed(w);
   E.wobble = waveWobble(w);
   E.queued = waveCount(w); // the curve stays authoritative: totals equal the table row by design (the harness asserts it)
@@ -136,7 +139,7 @@ function stampElite(d) { // story-019: the elite variant stamps — only ever ca
   u.hp *= ELITE_HP_MULT;
   u.speedMult = ELITE_SPEED_MULT; // consumed at the two E.speed sites (gunner vRadial/vTang, rammer sp)
   d.scale.setScalar(ELITE_SCALE);
-  u.r = R_RAIDER * ELITE_SCALE; // adopted recommendation (GDD §3.4 open item): a ×1.35 model with the base hitbox reads unfair
+  u.r = R_RAIDER * ELITE_SCALE; // STAMPED + PROBE-VISIBLE ONLY (quality review 2026-11-07, orchestrator ruling): NO collision scan consumes it yet — the bolt scan uses the fixed 1.1 radius² (weapons.js) and ram contact (R_RAIDER + 0.9)² (below); wiring it in is a DEFERRED game-design decision (a bigger elite hitbox = a balance change) for the evidence-driven balance pass this story's telemetry enables
   u.trim.emissive.setHex(ELITE_TINT);
   u.glow.color.setHex(ELITE_TINT);
 }
@@ -164,7 +167,8 @@ function spawnRaider(playerPos, forceKind) {
   u.glow.color.setHex(GLOW_TINT);
   d.userData.phase = Math.random() * Math.PI * 2;
   d.userData.t = 0;
-  d.userData.r = R_RAIDER;
+  // (the old per-spawn `d.userData.r = R_RAIDER` line was removed — the reset block's
+  // `u.r = R_RAIDER` above already sets it; quality review 2026-11-07 nit)
   d.userData.hold = 16 + Math.random() * 8;      // gunner hold range
   d.userData.orbitDir = Math.random() < 0.5 ? 1 : -1;
   d.userData.fireT = 1.2 + Math.random();        // first shot delay
