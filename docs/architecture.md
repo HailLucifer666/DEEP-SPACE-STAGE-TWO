@@ -240,8 +240,9 @@ semantics), and the kind set { SPREAD, OVERDRIVE, SHIELD }.
   rotating pickup sprite (additive, `depthWrite:false` — the neon convention), userData
   `{ alive, kind, t }`.
 - **`maybeDrop(pos)`** — the roll `Math.random() < DROP_CHANCE`, uniform kind, pool spawn. Call
-  sites: ONLY the two bolt-kill sites in combat.js `boltsTick` (raider kill ~302–307, orb kill
-  ~319–324). The rammer's self-kill lives inside enemies.js (~196–201) and story-018's file
+  sites: ONLY the two bolt-kill sites in `boltsTick` — src/weapons.js since the review-fix split
+  2026-11-06 (was combat.js: raider kill ~302–307, orb kill ~319–324; now raider kill ~177–183,
+  orb kill ~195–201, relative to weapons.js). The rammer's self-kill lives inside enemies.js (~196–201) and story-018's file
   list does NOT include enemies.js — so **ram deaths do not roll drops**; "on kill" is read as
   "player-killed". GDD may widen it later (needs an enemies.js api hook — open item, §8.5).
 - **`tickPowerups(dt, playerPos, api)`** — age/spin/blink; despawn at PICKUP_LIFE

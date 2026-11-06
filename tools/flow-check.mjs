@@ -1191,8 +1191,15 @@ try {
     puSpr.fan === 3 && typeof puSpr.anglePlus === 'number' && Math.abs(puSpr.anglePlus - 6) <= 0.5 &&
     typeof puSpr.angleMinus === 'number' && Math.abs(puSpr.angleMinus - 6) <= 0.5 &&
     puSpr.centerAngle <= 0.5 && puSpr.chargedSingle === 1, JSON.stringify(puSpr));
-  ok('OVERDRIVE: shot count over the 0.6 s pre-suppression burst matches the ÷2.2 interval (0.0568 s → 10.6 expected, band [9,12] covers frame quantization + DT_CLAMP stalls; a missing OVERDRIVE reads ~5 → red) + the timestamp interval honest + charged single + suppression unchanged at T_CHARGE',
-    typeof puOd.shots === 'number' && puOd.shots >= 9 && puOd.shots <= 12 &&
+  // RE-REVIEW band widen (2026-11-06, test-only): shots floor 9 → 8. The reviewer's arithmetic,
+  // recorded here: at dt ≳ 0.0238 the fire cadence quantizes to 3 frames ≈ 0.0714 s and
+  // 0.617 s / 0.0714 ≈ 8.6 → 8 is the DETERMINISTIC low edge, not a miss (committed history:
+  // shots 9,9,9,9,9,8; intervals 0.0667-0.0714 — all inside the honesty band below). This also
+  // resolves the old floor's internal inconsistency (an interval of 0.0725-0.075 passed the
+  // honest band while forcing shots = 8, under the old floor). Discrimination retained: a
+  // missing OVERDRIVE reads ~5 — a 3-shot gap; the ceiling is untouched.
+  ok('OVERDRIVE: shot count over the 0.6 s pre-suppression burst matches the ÷2.2 interval (0.0568 s → 10.6 expected, band [8,12] covers the 3-frame cadence quantization at dt ≳ 0.0238 + DT_CLAMP stalls; a missing OVERDRIVE reads ~5 → red) + the timestamp interval honest + charged single + suppression unchanged at T_CHARGE',
+    typeof puOd.shots === 'number' && puOd.shots >= 8 && puOd.shots <= 12 &&
     typeof puOd.interval === 'number' && puOd.interval >= 0.045 && puOd.interval <= 0.075 &&
     puOd.chargedSingle === 1 && typeof puOd.suppressAt === 'number' && Math.abs(puOd.suppressAt - 0.6) <= 0.1, JSON.stringify(puOd));
   ok('SHIELD: refill 50, immediate regen in-window, 3 s delay restored after expiry',

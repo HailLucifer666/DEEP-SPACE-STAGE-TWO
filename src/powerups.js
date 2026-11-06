@@ -4,7 +4,8 @@
 // and the full-3D pickup check. The EFFECT side (timers, apply, expire) lives in src/combat.js
 // — powerups.js NEVER reads combat state (acyclic by construction): it imports stage-two-lib +
 // pool.js only, and combat.js composes the `picked` api it calls back through.
-// Drop sites (the ONLY callers of maybeDrop): the two bolt-kill sites in combat.js boltsTick —
+// Drop sites (the ONLY callers of maybeDrop): the two bolt-kill sites in the bolt scan
+// (boltsTick — src/weapons.js since the review-fix split; was combat.js) —
 // raider + orb. Ram/dive deaths self-kill inside enemies.js/drone.js (not in this story's file
 // list), so "on kill" reads as "player-killed" — rams never roll. The boss is exempt from
 // drops (no call site in the boss path) but effects must still WORK during the boss fight.

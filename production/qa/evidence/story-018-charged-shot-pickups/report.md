@@ -476,3 +476,14 @@ NOT merged, NOT tagged, NOT pushed.
    original statement that could not move whole.
 6. The first C-battery flow-check red (OVERDRIVE band) is recorded AND its rerun — no
    result in this report is one the run did not print.
+
+**Re-review residue cleanup (merge-ready verdict, 2026-11-06, one test+docs commit — this
+commit)**: OVERDRIVE shot band [9,12] → [8,12] with the reviewer's arithmetic in the assert
+comment (deterministic low edge: dt ≳ 0.0238 → 3-frame cadence ≈ 0.0714 s, 0.617/0.0714 ≈
+8.6 → 8; committed history 9,9,9,9,9,8; discrimination retained — missing OVERDRIVE reads
+~5; ceiling untouched; resolves the old floor's interval inconsistency) + the two stale
+maybeDrop call-site references corrected to weapons.js (architecture.md §7.1 line ~243,
+powerups.js header line ~7). Battery: build OK → dep-check PASS (main.js 255) → flow-check
+**147 passed, 0 failed** (`flow-reviewfix-cleanup-green.txt`, band widened, count unchanged)
+→ boot-marks headed **MODULE → TITLE 952 ms** (adjacent sample 1083 ms — the §7.3 parse
+variance; no GLB path touched).
