@@ -70,7 +70,7 @@ export function waveComposition(w) {
   return { total: waveCount(w), source: 'derived' };
 }
 
-const E = { ready: false, scene: null, pool: null, bolts: null, queued: 0, spawnT: 0, speed: 0, wobble: 0, wave: 0, waveTable: null, scratch: [] };
+const E = { ready: false, scene: null, pool: null, bolts: null, queued: 0, spawnT: 0, speed: 0, wobble: 0, wave: 0, waveTable: null, lastRoll: null, scratch: [] };
 
 function makeRaider() {
   const g = new THREE.Group();
@@ -175,7 +175,18 @@ function spawnRaider(playerPos, forceKind) {
   d.rotation.set(0, 0, 0);
   // story-019: the elite roll — raiders only, derived from the wave (GDD §3.4). Probe-forced
   // kinds (spawnForProbe's determinism contract with the other walks) never roll.
-  if (!forceKind && E.wave >= ELITE_MIN_WAVE && Math.random() < ELITE_CHANCE) stampElite(d);
+  // MERGE-HALT DIAGNOSTIC (2026-11-07): the draw is captured to E.lastRoll — the balance
+  // drive's rate stage reads it IMMEDIATELY after each spawn (no intervening Math.random in
+  // between: the read is synchronous in the same tick), pairing the exact uniform with the
+  // flag the drive counts. Behavior-identical: still exactly one Math.random per guarded
+  // spawn, same short-circuit, same distribution.
+  if (!forceKind && E.wave >= ELITE_MIN_WAVE) {
+    const draw = Math.random();
+    E.lastRoll = { draw, rolled: draw < ELITE_CHANCE, wave: E.wave };
+    if (draw < ELITE_CHANCE) stampElite(d);
+  } else {
+    E.lastRoll = { draw: null, rolled: false, wave: E.wave, skipped: !forceKind ? 'wave' : 'forceKind' };
+  }
   return d;
 }
 
@@ -315,6 +326,7 @@ export function spawnForProbe(pos) { // scripted-kill probe: deterministic ramme
   d.position.copy(pos);
   return d;
 }
+export function lastRollProbe() { return E.lastRoll; } // MERGE-HALT DIAGNOSTIC (2026-11-07): the last spawn's elite-roll draw — read by the balance drive's rate stage immediately after each spawn (the drive's per-roll record pairs it with the flag it counts; see probes-balance.js case 8)
 export function spawnRaiderForProbe(pos, wave, forceElite, forceKind) { // story-019 probe seam (spawnForProbe/forceDropForProbe precedent): the wave param drives the REAL spawn path's elite roll (the rate asserts need real Math.random rolls at a forced wave ≥ ELITE_MIN_WAVE — no seeded RNG exists, architecture §7.1); forceElite stamps the variant for the stat asserts when the real roll missed; forceKind pins the kind for the per-kind stat asserts (the base hp stamps BEFORE the elite multiply, so an elite gunner reads hp 6). With no forceKind the kind roll stays real. Probe spawns never consume a table row (the split asserts own that budget).
   const wSave = E.wave, tSave = E.waveTable;
   if (wave != null) E.wave = wave;

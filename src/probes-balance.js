@@ -36,7 +36,7 @@ const BL = {
   t: -1, stage: 0, mark: 0, done: false,
   elite: { gunner: null, rammer: null }, resetPin: null, scoreX2: null,
   wave3: null, w3Left: 0, w3Elites: 0,
-  rate: null, rateLeft: 0, rateElites: 0,
+  rate: null, rateLeft: 0, rateElites: 0, rateDraws: [],
   table: null, tw: 1, seen: null, rowKinds: null, rows: {}, waveCounts: [], w6: null, tableWait: 0,
   marks: null, rammerKill: null, chargedKill: null, firedChargedMark: 0,
   x2Marks: null, x2Target: null,
@@ -187,16 +187,41 @@ export function balanceProbeTick(dt, C, env) {
       BL.stage = 7;
       return;
     }
-    case 7: BL.rateLeft = 50; BL.rateElites = 0; BL.stage = 8; return;
-    case 8: { // the rate: 50 REAL rolls at wave 5 (p = ELITE_CHANCE 0.22) — one spawn/read/kill per tick
+    case 7: BL.rateLeft = 50; BL.rateElites = 0; BL.rateDraws = []; BL.stage = 8; return;
+    case 8: { // the rate: 50 REAL rolls at wave 5 (p = ELITE_CHANCE 0.22) — one spawn/read/kill per tick.
+      // MERGE-HALT DIAGNOSTIC (2026-11-07): every roll records its full truth — the exact
+      // uniform consumed (ENEMIES.lastRollProbe, read synchronously right after the spawn: no
+      // intervening draw), whether the draw rolled an elite, the flag the drive counts,
+      // aliveness at read, whether hitDrone actually killed, and the pool's live count before/
+      // after. mismatches must be 0 (rolled === flag), killsFailed/aliveLeaks must be 0.
       if (BL.rateLeft > 0) {
+        const aliveBefore = ENEMIES.aliveCount();
         const d = ENEMIES.spawnRaiderForProbe(SEAT(C), 5, false);
+        const roll = ENEMIES.lastRollProbe();
+        const aliveAtRead = d.userData.alive;
+        const killed = ENEMIES.hitDrone(d, 99);
+        BL.rateDraws.push({
+          draw: roll ? (roll.draw == null ? null : +roll.draw.toFixed(4)) : null,
+          rolled: roll ? !!roll.rolled : null,
+          wave: roll ? roll.wave : null,
+          skipped: roll ? roll.skipped || null : null,
+          flag: d.userData.elite,
+          aliveAtRead, killed,
+          aliveAfterKill: ENEMIES.aliveCount(), aliveBefore,
+        });
         if (d.userData.elite) BL.rateElites++;
-        ENEMIES.hitDrone(d, 99);
         BL.rateLeft--;
         return;
       }
-      BL.rate = { rolls: 50, elites: BL.rateElites };
+      BL.rate = {
+        rolls: 50, elites: BL.rateElites,
+        meanDraw: +(BL.rateDraws.reduce((a, r) => a + (r.draw || 0), 0) / 50).toFixed(4),
+        mismatches: BL.rateDraws.filter((r) => !!r.rolled !== !!r.flag).length,
+        killsFailed: BL.rateDraws.filter((r) => !r.killed).length,
+        aliveLeaks: BL.rateDraws.filter((r) => r.aliveAfterKill > 0).length,
+        notWave5: BL.rateDraws.filter((r) => r.wave !== 5).length,
+        draws: BL.rateDraws.map((r) => r.draw),
+      };
       BL.stage = 9; // on to the waves 1-5 composition table
       return;
     }
