@@ -218,11 +218,12 @@ main.js or hud.js until this merge lands** (the gate commit's order).
 
 ### 7.1 src/powerups.js — ownership and exports
 
-Header constants (owning-module convention — combat keeps only the charged-shot's CHARGE_*
-consts in its own const block): `DROP_CHANCE = 0.18`, `PICKUP_LIFE = 8`, `PICKUP_BLINK = 2`
-(blink during the LAST 2 s), `PICKUP_RADIUS = 1.4`, `EFFECT_T = 8`, `SPREAD_ARC = 6` (±6°
-three-bolt fan), `OVERDRIVE_DIV = 2.2` (fire interval ÷ 2.2), `PICKUP_POOL = 8` (saturation
-steals the oldest slot — pool.js semantics), and the kind set { SPREAD, OVERDRIVE, SHIELD }.
+Header constants (owning-module convention — combat keeps the charged-shot's CHARGE_* consts
+AND the effect knobs SPREAD_ARC = 6 (±6° three-bolt fan) / OVERDRIVE_DIV = 2.2 (fire interval
+÷ 2.2) in its own const block — GDD §7 places them with the consumer): `DROP_CHANCE = 0.18`,
+`PICKUP_LIFE = 8`, `PICKUP_BLINK = 2` (blink during the LAST 2 s), `PICKUP_RADIUS = 1.4`,
+`EFFECT_T = 8`, `PICKUP_POOL = 6` (GDD §7 number — saturation steals the oldest slot — pool.js
+semantics), and the kind set { SPREAD, OVERDRIVE, SHIELD }.
 
 - **Pool**: `makePool` (pool.js, reuse-first) created ONCE in `preparePowerups(scene)`, called
   from combat.js `prepareCombat` beside prepareEnemies/prepareDrones/prepareBoss/

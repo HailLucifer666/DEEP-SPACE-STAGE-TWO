@@ -4,7 +4,8 @@
 > **Branch**: `story-018-charged-shot-pickups` (from master @ `27e4a61`; NOT merged, NOT
 > tagged, NOT pushed per the brief). Commits: `7127443` (charged shot) → `5ae021e` (pickups +
 > probes/harness + HUD/audio/controls) → `b9a8af9` (drive watchdogs) → `0df4f39` (mutation
-> records, comment-only) + the evidence commit.
+> records, comment-only) → `fe314f1` (evidence) → `9aae82a` (spec-review fixes 1-3) + the
+> evidence commit (amended).
 > **NOTE — one foreign commit on this branch**: `0bc12b7` "docs: bootstrap LAUNCH-10-10
 > master plan …" (author Arghya, docs-only: CLAUDE.md +2 / one-shot-work planning files)
 > landed between my commits 2 and 3 — NOT part of this story, untouched by me, zero overlap
@@ -124,7 +125,50 @@ Final gates on the merged build:
 4. **Pickup radius seats anchored on the SHIP CENTER** (1.3 / 1.6 / 1.345 full-3D) — the
    pickup check measures ship↔pickup; a nose-anchored 1.3 seat actually sits 1.64 away.
 
-## 3. Mutation records (post-green, each verified applied by reading its red output)
+## 3.5 Spec-review round (2026-11-06, post-`fe314f1`) — 3 fixes + 1 docs rider
+
+**Fix 1 — REAL BUG, the pause cancel missed "release LMB while paused"** (`9aae82a`):
+Repro confirmed by a new red-first assert — hold past the threshold (charging latches) →
+Esc (tickCombat halts) → release LMB (the window pointerup still flips input.fire) →
+unpause → the release branch fired the charged bolt on the resume frame.
+- **RED-BEFORE** (`flow-red-pausefix.txt`, drive stages built WITHOUT the fix): **144 passed /
+  2 failed** — `pause cancel #2 (review ordering): release LMB DURING the pause` with
+  `{"chargedAfter": 1, ...}` — the charged bolt FIRED. (An earlier red-by-absence run against
+  the committed build — 145/1 — preceded it; the kept file is the signature red.)
+  Adjacent keep-passing: the still-holding pause case stayed green.
+- **FIX**: `input.js`'s `setPaused(true)` now calls the new 2-line combat export
+  `pauseCancelCharge()` — the accumulator never survives a pause. **MECHANISM DEVIATION,
+  flagged**: the review's suggested mechanism (combat.js imports the live `paused` binding
+  from input.js) is an **import cycle** — input.js already imports combat.js and dep-check
+  fails on any cycle (rule 1) — so the signal travels the direction-flipped equivalent:
+  input.js owns the pause event, combat.js owns the state. input.js's diff is +2 lines inside
+  `setPaused` (listeners, fire/boost semantics zero-diff); the fireTick key-set read stays as
+  defense in depth for the still-holding case.
+- **GREEN-AFTER** (`flow-green-pausefix.txt`): **146 passed / 0 failed** (the new assert +
+  the still-holding case both green).
+
+**Fix 2 — chip assert strengthened**: the seconds form (`/\d+s/`) is now asserted alongside
+the name (GDD §8.3 "name + seconds visible"); gone-after-expiry unchanged.
+
+**Fix 3 — probe-state hygiene** (`9aae82a`): `puStage` + the new arm flags
+(`chargePauseArm2/Go2`) joined resetProbes' delete list; `PU.lastT`/`PU.upVec` joined the PU
+reset assign; the dead fields `CP.od`, `CP.hold1Cap`, `PU.pick`, `PU.shieldBefore`,
+`PU.regenMark` removed (none load-bearing — verified by grep); the flow-check block header's
+stale "[84, 115] band" sentence corrected to the χ² form it ships.
+
+**Fix 4 — docs rider** (`docs/architecture.md` §7.1): PICKUP_POOL 8 → **6** (GDD §7 + code);
+SPREAD_ARC/OVERDRIVE_DIV moved out of the powerups.js const list to combat.js (GDD §7
+placement, which the code follows).
+
+**Carried in the same commit (disclosed)**: the boss-window shot-count band [8,11] → [7,11] —
+during this round's first green run it flaked red (7 shots, a marginal DT_CLAMP-stall case);
+investigation showed ANY continuous hold is suppression-capped at T_CHARGE 0.6 s (~10-11
+shots max — the charged shot's own design), so the band floor absorbed the stall margin and
+the window comment documents the cap.
+
+**Battery after all four (fresh runs)**: build OK; dep-check **PASS — acyclic, main.js
+255/500**; flow-check **146 passed / 0 failed** (`flow-green-pausefix.txt`); boot-marks
+headed **MODULE → TITLE 658 ms**, CONSOLE [].
 
 **Mutation 1 — combat.js `T_CHARGE 0.6 → 0.06` (2026-11-06)** — `flow-mutation-tcharge.txt`:
 **141 passed / 4 failed.** Target RED: `tap 0.2s → stream fires, 0 charged` with
