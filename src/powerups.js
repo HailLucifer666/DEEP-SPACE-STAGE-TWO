@@ -28,13 +28,19 @@ const KIND_COLOR = { SPREAD: 0x7dd7ff, OVERDRIVE: 0xffa02f, SHIELD: 0x7dffb0 }; 
 // cumulative (reset once at prepare); the probe drive reads deltas between stages.
 const STATS = { dropped: 0, picked: 0, expired: 0, byKind: { SPREAD: 0, OVERDRIVE: 0, SHIELD: 0 } };
 
-const P = { ready: false, scene: null, pool: null };
+const P = { ready: false, pool: null };
+
+// Probe surface (story-018 review fix, 2026-11-06): REAL pool allocations since page load —
+// makePickup is the pool's ONLY allocation path (pool.js calls make() lazily; reuse never
+// calls it), so this counts exactly what the pre-warm added to the entity baseline at prepare.
+let created = 0;
 
 // The pickup entity: a rotating additive gem (octahedron core + additive sprite halo,
 // depthWrite:false — the neon convention). A MESH core is deliberate: countMeshes() counts
 // isMesh only, and the architecture's "pickups join the entity baseline" contract (§8.6 /
 // restartProbe) must be observable — a bare THREE.Sprite would be invisible to it.
 function makePickup() {
+  created++; // probe surface — a real allocation (never fired on pool reuse)
   const g = new THREE.Group();
   const core = new THREE.Mesh(
     new THREE.OctahedronGeometry(0.5, 0),
@@ -51,12 +57,17 @@ function makePickup() {
 export function preparePowerups(scene) {
   if (P.ready) return;
   P.ready = true;
-  P.scene = scene;
   P.pool = makePool(scene, makePickup, PICKUP_POOL);
-  // Pre-warm all 6 entities ONCE (spawn + immediate kill): the meshes join the combat baseline
-  // deterministically at first prepare, so restartProbe's relative baseline stays clean:true
-  // (§8.6 — restarts allocate nothing new; the baseline RISES by 6, recorded same-build).
-  for (let i = 0; i < PICKUP_POOL; i++) P.pool.kill(P.pool.spawn());
+  // Pre-warm all 6 entities ONCE: spawn the FULL pool alive, then clear() — pool.js hide-never-
+  // dispose keeps every item in the scene, so the meshes join the combat baseline deterministically
+  // at first prepare and restartProbe's relative baseline stays clean:true (§8.6 — restarts
+  // allocate nothing new; the baseline RISES by 6, recorded same-build). The old spawn+kill loop
+  // created ONE entity, not six: spawn() is reuse-first (pool.js finds the just-killed dead item
+  // before any allocation), so every iteration re-handed back the same slot — up to 5 Groups
+  // would have allocated MID-FIGHT at the pool's high-water mark (review fix, 2026-11-06; the
+  // harness pins the +6 via the probe's baselinePickups, red-first recorded in the evidence §7).
+  for (let i = 0; i < PICKUP_POOL; i++) P.pool.spawn();
+  P.pool.clear();
 }
 
 function spawnPickup(pos, kind) {
@@ -103,7 +114,7 @@ export function tickPowerups(dt, playerPos, api) {
     it.rotation.y += dt * 2.4; // the spin reads "alive" against the dressing field
     it.rotation.x += dt * 0.9;
     const blink = u.t >= PICKUP_LIFE - PICKUP_BLINK; // blink the LAST 2 s
-    if (blink !== u.blink) u.blink = blink;
+    u.blink = blink;
     const o = blink ? (Math.sin(u.t * 16) > 0 ? 0.95 : 0.15) : 0.9;
     u.core.material.opacity = o;
     u.halo.material.opacity = o * 0.55;
@@ -130,6 +141,7 @@ export function clearPowerups() { // §8.6 — rides clearCombat beside every ot
 /* ---------- probe surface ---------- */
 export function eachAlive(fn) { if (P.pool) P.pool.update(0, fn); } // collision-scan helper (no dt advance)
 export function liveCount() { return P.pool ? P.pool.live : 0; }
+export function createdCount() { return created; } // real allocations since page load (see the created note) — the +6 pre-warm pin
 export function stats() {
   return { dropped: STATS.dropped, picked: STATS.picked, expired: STATS.expired, byKind: { ...STATS.byKind } };
 }

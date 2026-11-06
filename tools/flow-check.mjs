@@ -1153,6 +1153,22 @@ try {
     puSpr = puX.spread || {}, puOd = puX.overdrive || {}, puSh = puX.shield || {}, puRf = puX.refresh || {},
     puBs = puX.boss || {};
   ok('powerupProbe reports (story-018)', !!pu, JSON.stringify(pu));
+  // review-fix round (2026-11-06): the pickup pre-warm must add EXACTLY +6 to the entity
+  // baseline — all PICKUP_POOL entities allocated at prepare, none mid-fight (§8.6 restart-clean).
+  // baselinePickups is the pool's REAL allocation count captured at drive stage 0 (probes-powerup.js
+  // — probes.js before the review split): at that point ONLY the pre-warm has run (drops need
+  // kills; the drive hasn't killed anything yet), so it IS the pre-prepare → post-prepare entity
+  // delta, measured at the allocation site (makePickup is the pool's only allocation path; the
+  // harness has no scene access to diff countMeshes across prepare).
+  // RED-FIRST (2026-11-06, branch 3bdd465 + instrumentation only): the old pre-warm loop
+  // `for (…) pool.kill(pool.spawn())` created ONE entity — pool.js spawn() is reuse-first and
+  // re-handed back the just-killed item every iteration, so the assert read +1 (up to 5 Groups
+  // would have allocated MID-FIGHT at the high-water mark). Fixed to spawn-all-then-clear();
+  // this assert went green at 147/0. baselineEntities (stage 0's countMeshes() read, previously
+  // captured but never asserted) is read here alongside for provenance.
+  ok('pickup pool pre-warm: entity-baseline delta exactly +6 (all PICKUP_POOL entities allocated at prepare — restarts allocate nothing new, §8.6)',
+    puX.baselinePickups === 6 && puX.baselineEntities >= 6,
+    JSON.stringify({ baselinePickups: puX.baselinePickups, baselineEntities: puX.baselineEntities }));
   ok('drop rate p=0.18 within the binomial 95% band (100 real bolt-path kills)',
     puRate.kills === 100 && puRate.drops >= 11 && puRate.drops <= 25, JSON.stringify(puRate));
   ok('at most one drop per kill (100 kills → ≤ 100 drops)', puRate.kills === 100 && puRate.drops <= puRate.kills, JSON.stringify(puRate));

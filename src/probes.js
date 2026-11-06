@@ -39,7 +39,7 @@ const PU = {
   stats0: null, kinds0: null, kills: 0, dropsMark: 0, target: null,
   rate: null, kinds: null, despawn: null, radius: null, spread: null, overdrive: null,
   shield: null, refresh: null, boss: null, drop: null, mark2: 0, lastT: null, bolt: null, odFrames: 0, odDt: 0,
-  upVec: null, baselineEntities: 0, shotTimes: [], lastCount: 0,
+  upVec: null, baselineEntities: 0, baselinePickups: 0, shotTimes: [], lastCount: 0,
 };
 
 export function resetProbes() { // rider R-e: what enterCombat's inline probe resets did — same state, same window hygiene
@@ -73,7 +73,7 @@ export function resetProbes() { // rider R-e: what enterCombat's inline probe re
     stats0: null, kinds0: null, kills: 0, dropsMark: 0, target: null,
     rate: null, kinds: null, despawn: null, radius: null, spread: null, overdrive: null,
     shield: null, refresh: null, boss: null, drop: null, mark2: 0, lastT: null,
-    baselineEntities: 0, shotTimes: [], lastCount: 0,
+    baselineEntities: 0, baselinePickups: 0, shotTimes: [], lastCount: 0,
     bolt: null, odFrames: 0, odDt: 0, upVec: null,
   });
   delete window.__stage2.chargeProbe;
@@ -468,6 +468,7 @@ export function powerupProbeTick(dt, C, env) {
         C.vel.set(0, 0, 0); C.speed = 0; C.pitch = 0; C.heading = 0;
         PU.stats0 = POWERUPS.stats();
         PU.baselineEntities = (window.__stage2 && window.__stage2.entities) || 0;
+        PU.baselinePickups = POWERUPS.createdCount(); // review fix 2026-11-06: REAL pickup allocations so far — at this point ONLY the pre-warm has run, so this IS the prepare-time entity-baseline delta (the harness pins it at exactly 6; the old spawn+kill loop read 1)
         PU.stage = 1;
       }
       return;
@@ -844,7 +845,7 @@ export function powerupProbeTick(dt, C, env) {
         const probe = {
           rate: PU.rate, kinds: PU.kinds, despawn: PU.despawn, radius: PU.radius,
           spread: PU.spread, overdrive: PU.overdrive, shield: PU.shield, refresh: PU.refresh,
-          boss: PU.boss, baselineEntities: PU.baselineEntities,
+          boss: PU.boss, baselineEntities: PU.baselineEntities, baselinePickups: PU.baselinePickups,
         };
         window.__stage2.powerupProbe = probe;
         C.api.report({ powerupProbe: probe }); // parity — lands on lastReport too

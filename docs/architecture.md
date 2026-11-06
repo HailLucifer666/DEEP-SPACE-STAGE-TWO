@@ -228,9 +228,15 @@ semantics), and the kind set { SPREAD, OVERDRIVE, SHIELD }.
 - **Pool**: `makePool` (pool.js, reuse-first) created ONCE in `preparePowerups(scene)`, called
   from combat.js `prepareCombat` beside prepareEnemies/prepareDrones/prepareBoss/
   prepareDressing — pickups join the entity **baseline** (restartProbe `clean:true` preserved;
-  the baseline count RISES — expected and recorded, same-build comparison per the story-017
-  precedent). Entity: a rotating pickup sprite (additive, `depthWrite:false` — the neon
-  convention), userData `{ alive, kind, t }`.
+  the baseline count RISES by 6 — expected and recorded, same-build comparison per the story-017
+  precedent). The pre-warm allocates ALL PICKUP_POOL entities at prepare — spawn the full pool
+  alive, then `clear()` (hide-never-dispose keeps them in the scene). Review-fix round
+  2026-11-06: the original spawn+kill loop created ONE entity, not six — pool.js `spawn()` is
+  reuse-first and re-handed back the just-killed item every iteration, so up to 5 Groups would
+  have allocated MID-FIGHT at the pool's high-water mark; the harness pins the +6 via the
+  powerupProbe's `baselinePickups` (red-first record: it read 1 pre-fix, evidence §7). Entity: a
+  rotating pickup sprite (additive, `depthWrite:false` — the neon convention), userData
+  `{ alive, kind, t }`.
 - **`maybeDrop(pos)`** — the roll `Math.random() < DROP_CHANCE`, uniform kind, pool spawn. Call
   sites: ONLY the two bolt-kill sites in combat.js `boltsTick` (raider kill ~302–307, orb kill
   ~319–324). The rammer's self-kill lives inside enemies.js (~196–201) and story-018's file
