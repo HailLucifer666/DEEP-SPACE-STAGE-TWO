@@ -30,16 +30,16 @@ const DD = { t: 0, stage: 0, mark: 0, sub: null, done: false, minCl: 0, samples:
 const CP = {
   t: -1, stage: 0, mark: 0, done: false,
   tap: null, hold1: null, oneShotG: null, oneShotE: null, weak: null, burst3: 0,
-  pause: null, death: null, chargeMax: 0, chargingSeen: false, reticle: null,
+  pause: null, pauseRelease: null, death: null, chargeMax: 0, chargingSeen: false, reticle: null,
   bStream: 0, bCharged: 0, killsMark: 0, target: null, bossHpMark: 0, armed: false,
-  hold1StreamAtCross: 0, hold1Cap: null, burstCycles: 0, od: null, burstDiag: [], pauseWall: 0, cycleB: 0,
+  hold1StreamAtCross: 0, burstCycles: 0, burstDiag: [], pauseWall: 0, pauseWall2: 0, cycleB: 0,
 };
 const PU = {
   t: -1, stage: 0, mark: 0, sub: 0, done: false,
   stats0: null, kinds0: null, kills: 0, dropsMark: 0, target: null,
   rate: null, kinds: null, despawn: null, radius: null, spread: null, overdrive: null,
-  shield: null, refresh: null, boss: null, pick: null, drop: null, mark2: 0, lastT: null, bolt: null, odFrames: 0, odDt: 0,
-  shieldBefore: 0, regenMark: 0, baselineEntities: 0, shotTimes: [], lastCount: 0,
+  shield: null, refresh: null, boss: null, drop: null, mark2: 0, lastT: null, bolt: null, odFrames: 0, odDt: 0,
+  upVec: null, baselineEntities: 0, shotTimes: [], lastCount: 0,
 };
 
 export function resetProbes() { // rider R-e: what enterCombat's inline probe resets did — same state, same window hygiene
@@ -64,22 +64,25 @@ export function resetProbes() { // rider R-e: what enterCombat's inline probe re
   Object.assign(CP, {
     t: -1, stage: 0, mark: 0, done: false,
     tap: null, hold1: null, oneShotG: null, oneShotE: null, weak: null, burst3: 0,
-    pause: null, death: null, chargeMax: 0, chargingSeen: false, reticle: null,
+    pause: null, pauseRelease: null, death: null, chargeMax: 0, chargingSeen: false, reticle: null,
     bStream: 0, bCharged: 0, killsMark: 0, target: null, bossHpMark: 0, armed: false,
-    hold1StreamAtCross: 0, hold1Cap: null, burstCycles: 0, od: null, burstDiag: [], pauseWall: 0, cycleB: 0,
+    hold1StreamAtCross: 0, burstCycles: 0, burstDiag: [], pauseWall: 0, pauseWall2: 0, cycleB: 0,
   });
   Object.assign(PU, {
     t: -1, stage: 0, mark: 0, sub: 0, done: false,
     stats0: null, kinds0: null, kills: 0, dropsMark: 0, target: null,
     rate: null, kinds: null, despawn: null, radius: null, spread: null, overdrive: null,
-    shield: null, refresh: null, boss: null, pick: null, drop: null, mark2: 0,
-    shieldBefore: 0, regenMark: 0, baselineEntities: 0, shotTimes: [], lastCount: 0,
-    bolt: null, odFrames: 0, odDt: 0,
+    shield: null, refresh: null, boss: null, drop: null, mark2: 0, lastT: null,
+    baselineEntities: 0, shotTimes: [], lastCount: 0,
+    bolt: null, odFrames: 0, odDt: 0, upVec: null,
   });
   delete window.__stage2.chargeProbe;
   delete window.__stage2.powerupProbe;
+  delete window.__stage2.puStage; // the debug stage surface (written every drive tick) — stale-delete hygiene
   delete window.__stage2.chargePauseArm; // harness-coordinated cancels: the arm flags never survive an entry
   delete window.__stage2.chargePauseGo;
+  delete window.__stage2.chargePauseArm2;
+  delete window.__stage2.chargePauseGo2;
   delete window.__stage2.chargeDeathArm;
 }
 
@@ -360,7 +363,43 @@ export function chargeProbeTick(dt, C, env) {
         CP.pause.chargedAfter = C.fired.charged - CP.bCharged;
         CP.pause.streamAfter = C.fired.stream - CP.bStream;
         CP.pause.streamWholeStage = CP.pause.streamAfter; // legacy field name kept for the harness extra
-        cpFieldClear(C); CP.mark = CP.t; CP.stage = 26;
+        cpFieldClear(C); CP.mark = CP.t; CP.stage = 45; // on to the RELEASE-DURING-PAUSE cancel
+      }
+      return;
+    case 45: // pause cancel #2 — the REVIEW ordering: hold past the threshold → pause → RELEASE LMB
+      // DURING the pause (the window pointerup flips input.fire while tickCombat is halted) →
+      // unpause. The accumulator must never survive to a resume-release: chargedAfter must read 0.
+      cpFieldClear(C);
+      CP.bStream = C.fired.stream; CP.bCharged = C.fired.charged;
+      C.api.input.fire = true; CP.mark = CP.t; CP.stage = 46;
+      return;
+    case 46:
+      if (CP.t >= CP.mark + 0.7) {
+        window.__stage2.chargePauseArm2 = true; // the harness pauses, RELEASES LMB mid-pause, unpauses
+        CP.pauseWall2 = performance.now();
+        CP.mark = CP.t; CP.stage = 47;
+      }
+      return;
+    case 47: // frozen during the pause — the trigger is the wall-clock freeze (Go2 = the harness ack)
+      if (window.__stage2.chargePauseGo2 ||
+          (performance.now() - CP.pauseWall2) - ((CP.t - CP.mark) * 1000) > 300 ||
+          CP.t > CP.mark + 8) {
+        CP.pauseRelease = {
+          armed: !!window.__stage2.chargePauseGo2,
+          chargeTAtResume: C.chargeT,
+          chargingAtResume: C.charging,
+        };
+        window.__stage2.chargePauseGo2 = false;
+        CP.bStream = C.fired.stream;
+        C.api.input.fire = false; // the LMB was released during the pause — mirror it defensively
+        CP.mark = CP.t; CP.stage = 48;
+      }
+      return;
+    case 48: // resume after the mid-pause release: 0 charged, 0 stream (fire was released)
+      if (CP.t >= CP.mark + 0.4) {
+        CP.pauseRelease.chargedAfter = C.fired.charged - CP.bCharged;
+        CP.pauseRelease.streamAfter = C.fired.stream - CP.bStream;
+        cpFieldClear(C); CP.mark = CP.t; CP.stage = 26; // on to the death cancel
       }
       return;
     case 26: // death cancel — arm the harness at 0.7 s of hold
@@ -390,7 +429,8 @@ export function chargeProbeTick(dt, C, env) {
       {
         const probe = {
           tap: CP.tap, hold1: CP.hold1, oneShotGunner: CP.oneShotG, oneShotElite: CP.oneShotE,
-          weak: CP.weak, burst3: CP.burst3, burstDiag: CP.burstDiag, pause: CP.pause, death: CP.death,
+          weak: CP.weak, burst3: CP.burst3, burstDiag: CP.burstDiag,
+          pause: CP.pause, pauseRelease: CP.pauseRelease, death: CP.death,
           charge: { max: +Math.min(1, CP.chargeMax / 0.6).toFixed(3), chargingSeen: CP.chargingSeen },
           reticle: CP.reticle,
         };
@@ -783,7 +823,10 @@ export function powerupProbeTick(dt, C, env) {
         PU.mark = PU.t; PU.stage = 35;
       }
       return;
-    case 35: { // the rate window with the boss alive (or the timeout's cleanup path — honest fields)
+    case 35: { // the rate window with the boss alive (or the timeout's cleanup path — honest fields).
+      // NOTE: ANY continuous hold is suppression-capped at T_CHARGE 0.6 s → ~10-11 shots max
+      // (the charged shot's own design) — the window stays 0.5 s and the band absorbs DT_CLAMP
+      // stalls (observed 7-10 at headless 30-50 fps; a missing OVERDRIVE reads ~4-5 → red).
       if (PU.boss && PU.boss.bossAliveAtPickup === true) {
         PU.odFrames++; PU.odDt += dt;
         if (C.fired.stream > PU.lastCount) { PU.shotTimes.push(PU.t); PU.lastCount = C.fired.stream; }

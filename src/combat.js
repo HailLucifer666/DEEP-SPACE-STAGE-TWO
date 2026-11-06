@@ -807,3 +807,13 @@ export function probeDamagePlayer(n) { damagePlayer(n); }
 export function deathFastForward() { // dying: Enter/Space skip the slow-mo (main routes here; no-op once the card is up)
   if (C.dead) C.deathT = DEATH_SLOWMO;
 }
+export function pauseCancelCharge() { // story-018 review fix: input.js's setPaused(true) calls this —
+  // the accumulator NEVER survives a pause. Covers the release-during-pause ordering: the window
+  // pointerup flips input.fire while tickCombat is halted, so on resume the release branch would
+  // otherwise see charging true and fire the charged bolt (the red the new assert pins). The
+  // suggested combat→input import of `paused` is an import cycle (input.js imports combat.js —
+  // dep-check rule 1), so the signal travels this direction instead: input.js owns the pause
+  // event, combat.js owns the state. The fireTick key-set read stays as defense in depth for
+  // the still-holding case.
+  C.chargeT = 0; C.charging = false;
+}

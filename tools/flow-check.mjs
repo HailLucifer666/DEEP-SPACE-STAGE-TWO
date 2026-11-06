@@ -1015,7 +1015,7 @@ try {
   let cp = null;
   {
     const t0 = Date.now();
-    let pauseHandled = false, deathHandled = false;
+    let pauseHandled = false, pauseHandled2 = false, deathHandled = false;
     for (;;) {
       // harness-coordinated cancels: setPaused + probeDamagePlayer live outside the drive's
       // reach (input.js owns pause; combat's damagePlayer is not exported to probes), so the
@@ -1029,6 +1029,19 @@ try {
           await sleep(150);
           await key('KeyP', 'keyup');
           await evl(`window.__stage2.chargePauseGo = true`);
+        }
+        if (!pauseHandled2 && await evl(`(window.__stage2 && window.__stage2.chargePauseArm2) === true`)) {
+          pauseHandled2 = true;
+          await key('KeyP', 'keydown'); // pause mid-hold past the threshold
+          await sleep(400);
+          // REVIEW ordering: RELEASE LMB DURING the pause — the window pointerup flips
+          // input.fire while tickCombat is halted; the accumulator must not survive to resume
+          await evl(`window.dispatchEvent(new PointerEvent('pointerup', {button: 0, bubbles: true}))`);
+          await sleep(150);
+          await key('KeyP', 'keydown'); // unpause
+          await sleep(150);
+          await key('KeyP', 'keyup');
+          await evl(`window.__stage2.chargePauseGo2 = true`);
         }
         if (!deathHandled && await evl(`(window.__stage2 && window.__stage2.chargeDeathArm) === true`)) {
           deathHandled = true;
@@ -1047,7 +1060,8 @@ try {
   let cpcX = {};
   try { cpcX = JSON.parse(cpc || '{}'); } catch { cpcX = {}; }
   const tap = cpX.tap || {}, h1 = cpX.hold1 || {}, og = cpX.oneShotGunner || {}, oe = cpX.oneShotElite || {},
-    wk = cpX.weak || {}, pz = cpX.pause || {}, dt18 = cpX.death || {}, cch = cpX.charge || {}, crt = cpX.reticle || {};
+    wk = cpX.weak || {}, pz = cpX.pause || {}, pz2 = cpX.pauseRelease || {}, dt18 = cpX.death || {},
+    cch = cpX.charge || {}, crt = cpX.reticle || {};
   ok('chargeProbe reports (story-018)', !!cp, JSON.stringify(cp));
   ok('combatState exposes charge (0..1) + charging (bool)', typeof cpcX.charge === 'number' && typeof cpcX.charging === 'boolean',
     `charge:${typeof cpcX.charge}=${cpcX.charge} charging:${typeof cpcX.charging}`);
@@ -1065,6 +1079,12 @@ try {
   ok('charge meter rides the reticle (ring class + full flash)', crt.chargeClass === true && crt.full === true, JSON.stringify(crt));
   ok('pause cancel: accumulator zeroed (≤0.1 vs the ≥0.6 pre-pause hold), post-unpause release ≤1 stream / 0 charged',
     pz.chargeTAtResume <= 0.1 && pz.chargingAtResume === false && pz.chargedAfter === 0 && pz.streamAfter <= 1, JSON.stringify(pz));
+  // REVIEW ordering (the red-first assert): hold past the threshold → pause → RELEASE LMB during
+  // the pause → unpause. The window pointerup flips input.fire while tickCombat is halted, so
+  // nothing zeroes the accumulator during the pause — a surviving accumulator fires the charged
+  // bolt on the resume frame's release branch (the bug this assert pins; chargedAfter must read 0).
+  ok('pause cancel #2 (review ordering): release LMB DURING the pause — resume fires nothing (accumulator wiped at pause)',
+    pz2.chargeTAtResume <= 0.1 && pz2.chargingAtResume === false && pz2.chargedAfter === 0, JSON.stringify(pz2));
   ok('death cancel: accumulator zeroed, release fires nothing', dt18.chargedAfter === 0 && dt18.chargeTZeroed === true, JSON.stringify(dt18));
   {
     // exit-wipe: the death cancel left combat dying — ride it to gameover, SKIP back in;
@@ -1101,7 +1121,8 @@ try {
      a probe bolt into it — the same kill site combat's boltsTick owns, so maybeDrop's real
      Math.random rolls are counted; binomial 95% band for p = 0.18 computed exactly offline:
      [11, 25] — widen trials, never hand-widen bounds) → kind split over M = 300 more real
-     rolls (uniform 1/3: exact 95% band per kind [84, 115]) → despawn 8 s + blink last 2 s
+     rolls (uniform 1/3: joint χ² goodness-of-fit at 95% — χ²(2) ≤ 5.991, the three-independent-
+     95%-band form flaked ~14%/run) → despawn 8 s + blink last 2 s
      (forced drop, tracked via POWERUPS.eachAlive) → pickup radius full-3D (1.3 picks up,
      1.6 does not, vertical-offset 1.345 picks up — the story-015 lesson) → SPREAD (one shot
      = 3 bolts at ±6° about the ship's local up; charged stays single) → OVERDRIVE (measured
@@ -1161,10 +1182,11 @@ try {
     puSh.refill50 === true && puSh.regenInWindow === true && puSh.delayRestored === true && puSh.regenResumed === true, JSON.stringify(puSh));
   ok('same-kind re-pickup refreshes to 8 s (never stacks); kinds run concurrently',
     puRf.refreshed === true && puRf.stacked === false && puRf.concurrent === true, JSON.stringify(puRf));
-  ok('HUD chips: name + seconds while active, gone after expiry',
-    typeof puRf.chipsActive === 'string' && puRf.chipsActive.includes('SPREAD') && puRf.chipsGone === '', JSON.stringify(puRf));
-  ok('effects apply during the boss fight (boss itself never drops) — shot count over the 0.5 s window matches the ÷2.2 interval (band [8,11])',
-    puBs.bossAliveAtPickup === true && typeof puBs.shots === 'number' && puBs.shots >= 8 && puBs.shots <= 11 &&
+  ok('HUD chips: name + seconds while active (GDD §8.3 "name + seconds" — the \\d+s form), gone after expiry',
+    typeof puRf.chipsActive === 'string' && puRf.chipsActive.includes('SPREAD') && /\d+s/.test(puRf.chipsActive) &&
+    puRf.chipsGone === '', JSON.stringify(puRf));
+  ok('effects apply during the boss fight (boss itself never drops) — shot count over the 0.5 s window matches the ÷2.2 interval (band [7,11]: design ≈ 9, the 0.6 s suppression caps ANY continuous hold, margin over DT_CLAMP stalls; a missing OVERDRIVE reads ~4-5 → red)',
+    puBs.bossAliveAtPickup === true && typeof puBs.shots === 'number' && puBs.shots >= 7 && puBs.shots <= 11 &&
     typeof puBs.interval === 'number' && puBs.interval >= 0.045 && puBs.interval <= 0.075, JSON.stringify(puBs));
   {
     // clearCombat wipe: forced death → gameover → SKIP → combat re-entry — the effect

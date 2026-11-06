@@ -20,6 +20,11 @@ export let paused = false;
 function setPaused(p) {
   if (ctx.probs.phase !== 'combat') return;
   paused = p;
+  if (p) COMBAT.pauseCancelCharge(); // story-018 review fix: a pause WIPES the charge accumulator —
+  // a release DURING the pause (the window pointerup still flips input.fire while tickCombat is
+  // halted) must never fire the charged bolt on resume. Direction-flipped equivalent of the
+  // suggested combat→input import, which is an import cycle (this module imports combat.js —
+  // dep-check rule 1); combat.js keeps the state, input.js keeps the signal.
   if (ctx.ui.pause) ctx.ui.pause.hidden = !p;
   if (p) audioSuspend(); else audioResume(); // pause suspends the audio clock (spec #7)
 }
