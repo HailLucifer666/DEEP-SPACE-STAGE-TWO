@@ -27,7 +27,7 @@ What could break, and what pins it:
 | A forced second completion double-awards | `C.bossAwarded` latch + the drive's forced second `C.bossApi.report({ bossDefeated })` (score unchanged) |
 | The wave table silently changes the difficulty curve | totals equal the derived `waveCount` per wave (asserted 4/6/7/9/10; wave-6 total = 12) |
 | The table↔derived boundary drifts | `waveComposition().source` asserted BOTH ways (wave 5 'table', wave 6 'derived') + the deterministic split asserts |
-| Telemetry cost (per-frame work) | event-driven increments only, at existing event sites; zero per-frame allocation added (the DRONES api wrap matches the pre-existing per-frame api-literal pattern; the bossApi wrap is built once in prepareCombat) |
+| Telemetry cost (per-frame work) | event-driven increments only, at existing event sites; nothing in the render loop. The DRONES api wrap adds ONE closure per frame inside the pre-existing per-frame api literal (combat.js tickCombat's tickDrones line — the same order as that literal's pre-existing `explosion` closure); the bossApi wrap is built ONCE in prepareCombat; no other per-frame cost is added |
 | Accuracy stored as a division | never stored — `hits`/`shots` are counters; the reader derives accuracy |
 | The elite roll making existing probes non-deterministic | probe-forced kinds (`spawnForProbe`, and `spawnRaiderForProbe` with `forceKind`) never roll; the rate walks drive REAL rolls through `spawnRaiderForProbe(pos, wave)` without a kind pin |
 
@@ -204,14 +204,16 @@ bundle rebuilt after every mutation.
    forever (the dump assert only checks presence, so it would have passed silently). Fixed:
    `api.damagePlayer(12, 'bolt')` (gunner fire AND the boss volley honestly merged — same
    pool, same scan) and `api.damagePlayer(25, 'ram')`.
-5. **The rate band's own tail fired once (2026-11-06).** A full run recorded
-   `{"rolls":50,"elites":18}` against the exact band [6,16]. Exact binomial:
-   P(X ≥ 18 | n=50, p=0.22) = **3.47%** — inside the band's own design tail (total ≈ 4.8%,
-   the same statistical class as story-018's shipped drop-rate band [11,25] over N=100).
-   No source change: the assert stays exactly as the story specs it (N = 50, exact
-   quantiles; "widen trials, never bounds" — bounds were not touched, trials were not
-   changed, the run was re-rolled). Discrimination is unaffected: the chance→0 mutation
-   reads 0, far below any plausible bound.
+5. **The rate band's own tail fired once (2026-11-06); the band itself was wrong and was
+   corrected in the spec-review round (2026-11-07).** A full run recorded
+   `{"rolls":50,"elites":18}` against the then-shipped band [6,16]. CORRECTED exact
+   binomial (the first report mislabeled the tail by one): P(X ≥ 17 | n=50, p=0.22) =
+   **3.47%** (not "P(X ≥ 18)"), P(X ≤ 5) = 2.33% → the shipped [6,16] covered only
+   **94.19%** (5.80% false-red) — it was a 2.5%-quantile walk, not a central 95% band. The
+   exact central 95% band is **[6,17]**: coverage **95.99%** (upper tail P(X ≥ 18) =
+   1.68%). The assert now reads [6,17]; discrimination is unchanged (the chance→0 mutation
+   reads 0, far below any plausible low edge). No trials were widened, no bounds hand-widened
+   beyond the corrected computation.
 6. **A pre-existing story-018 assert flaked once under load (2026-11-06).** The OVERDRIVE
    interval band [0.045, 0.075] measured 0.0762 (4-frame cadence; the same page measured
    0.0708 / 0.0714 in every other run). Environmental, re-rolled — the assert is not this
@@ -317,3 +319,55 @@ src/drone.js src/powerups.js` is EMPTY — all seven zero-diff files confirmed b
 - Boot-marks headed figure — recorded in the commit-1 battery section above.
 - The elite × table expected-counts math (wave-4 ≈ 2.0 elites, wave-5 ≈ 2.2) is design
   math (GDD §4.4); the harness pins the RATE over 50 rolls, not per-wave expectations.
+
+## 9. Spec-review round (2026-11-07) — 2 substantive + 2 wording items, one fix commit
+
+Review verdict: 2 substantive + 2 wording. All four addressed on the branch; full battery
+after; red-first honored for the substantive one.
+
+1. **scoreBy.boss dead field (substantive — MISSING).** The award at combat.js's
+   bossDefeated branch wrote only `C.score` (+ the latch) — the GDD §3.7 `scoreBy.boss`
+   bucket never incremented, and the committed evidence proves it inert: the telemetry dump
+   reads `boss: 0` on a run whose `scoreAfter` includes the +1000 (the dump-sanity assert
+   checks PRESENCE only — the blind spot). Fix: `C.telemetry.scoreBy.boss += SCORE_BOSS`
+   inside the same latch guard; the harness's boss-award assert strengthened with the live
+   clause `scoreBy.boss === 1000`. **RED-BEFORE recorded** (`flow-red-reviewfix.txt`:
+   the strengthened clause read `scoreByBoss: 0` on the pre-fix branch build) — then green.
+   Note: the dump-latch mutation ("boss-latch-removed") remains discriminating under the
+   strengthened clause (a removed latch double-increments scoreBy.boss to 2000 → red);
+   its recorded red output predates the rename and is historical evidence.
+2. **Elite-rate band math (substantive — WRONG).** The assert claimed "exact binomial 95%
+   band [6,16]" but that was the 2.5%-quantile walk: CDF(16) = 96.53% − CDF(5) = 2.33% →
+   **94.19% coverage (5.80% false-red)**. The exact central 95% band is **[6,17]**
+   (coverage **95.99%**; upper tail P(X ≥ 18) = 1.68%). Assert + block comment changed to
+   [6,17]; discrimination unchanged (chance→0 reads 0). §5 item 5's tail math corrected to
+   match (P(X ≥ 17) = 3.47%, not "P(X ≥ 18) = 1.68%" — the first report's label was off by
+   one; total old-band tail 2.33% + 3.47% = 5.80%).
+3. **§1 risk-table wording (wording).** "Zero per-frame allocation added" overstated —
+   reworded: the DRONES api wrap adds ONE closure per frame inside the pre-existing
+   per-frame api literal (combat.js tickCombat's tickDrones line, the same order as that
+   literal's pre-existing explosion closure); the bossApi wrap is built once in
+   prepareCombat; nothing in the render loop.
+4. **Balance-page highscore assert name (wording).** "highscore persisted across a real
+   reload" performed no reload and passed vacuously (the value at that point is
+   stale-high from earlier pages). Renamed to what it checks: "highscore ledger at
+   balanceProbe time still carries the boss award (>= 1000…)" — the AC's substance
+   (persist → read back = the +1000) is proven by the victory-path assert
+   (highscore === 1000 exactly after victory.enter's writeHighscore), which is unchanged.
+
+Battery for this round (all real outputs, recorded in `flow-green-reviewfix.txt` /
+`flow-red-reviewfix.txt`):
+
+- RED-BEFORE (pre-fix branch build, product unchanged): `FLOW-CHECK FAIL — 168 passed,
+  2 failed` — the strengthened boss clause red with `scoreByBoss: 0` (everything else in its
+  record healthy: preScore 550, scoreAfter 1550, latch true, reports 2) — the dead-field
+  proof; the same run also drew the rate band's low tail (`elites: 4`, P(X ≤ 4) = 0.81% —
+  the [6,17] band's own 4.01% false-red class, re-rolled below).
+- Post-fix: `npm run build` — `[build] index.html  mode=bundle  4.41 MB`; `node
+  tools/dep-check.mjs` — `main.js lines: 255 (limit 500)` · `[dep-check] PASS — acyclic,
+  structural rules hold`; `node tools/flow-check.mjs` — `FLOW-CHECK PASS — 170 passed,
+  0 failed` with the strengthened clause reading `scoreByBoss: 1000` and the rate band green
+  (`elites: 6`, in [6,17]); `node tools/boot-marks.mjs` — headed, `MODULE → TITLE (player
+  wait)  774 ms` (band 158–2492 ms), `STATE {"phase":"title","rocket":"glb",…}`, `CONSOLE []`.
+- Line counts unchanged from commit 1 except combat.js 702 → 706 (the one-line increment +
+  its comment lines).

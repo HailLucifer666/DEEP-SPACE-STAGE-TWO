@@ -1265,8 +1265,10 @@ try {
      unconditional per-spawn reset pin (former elite killed, respawn at wave 3 reads normal)
      → elite score ×2 through the REAL bolt-kill path (+300, kills +1, telemetry kills/elite
      splits) → wave 3 produces 0 elites over 20 real spawns → the elite RATE within the exact
-     binomial 95% band for p = 0.22 over N = 50 real rolls ([6,16] — computed offline; widen
-     trials, never bounds; NO seeded RNG exists — architecture §7.1 honest flag) → the waves
+     central 95% band for p = 0.22 over N = 50 real rolls ([6,17], coverage 95.99% —
+     computed offline; widen trials, never bounds; NO seeded RNG exists — architecture §7.1
+     honest flag; the first cut [6,16] was the quantile walk at 94.19% coverage, spec
+     review 2026-11-07) → the waves
      1-5 composition table observed through the REAL spawn path (deterministic authored split
      per wave; totals equal the derived waveCount; wave 6 reads the derived fallback —
      boundary asserted both ways via waveComposition().source + the wave-6 spawn total) → a
@@ -1312,8 +1314,12 @@ try {
   // binomial 95% band` (elites 0 < 6) — adjacent keep-passing: wave-3 zeros stay green (the
   // band's low edge is the only discriminator the zero-chance mutates), stats asserts stay
   // green (spawnRaiderForProbe forceElite bypasses the roll — the seam the mutation isolates).
-  ok('elite rate within the exact binomial 95% band for p=0.22 over 50 real rolls ([6,16])',
-    rt.rolls === 50 && rt.elites >= 6 && rt.elites <= 16, JSON.stringify(rt));
+  // SPEC-REVIEW ROUND (2026-11-07): the first cut claimed "exact binomial 95% band [6,16]"
+  // but that was the 2.5%-quantile walk — CDF(16) 96.53% − CDF(5) 2.33% = 94.19% coverage
+  // (5.80% false-red). The exact central 95% band is [6,17]: coverage 95.99% (upper tail
+  // P(X ≥ 18) = 1.68%). Discrimination unchanged: the chance→0 mutation reads 0.
+  ok('elite rate within the exact central 95% band for p=0.22 over 50 real rolls ([6,17], coverage 95.99%)',
+    rt.rolls === 50 && rt.elites >= 6 && rt.elites <= 17, JSON.stringify(rt));
   ok('wave 3 produces zero elites (20 real spawns below ELITE_MIN_WAVE)',
     w3z.spawns === 20 && w3z.elites === 0, JSON.stringify(w3z));
   // MUTATION (2026-11-06): enemies.js spawnRaider's unconditional per-spawn reset block
@@ -1376,10 +1382,20 @@ try {
   // `telemetry zeroed on enterCombat` (the pre-restart run's counters ride the fresh entry —
   // restart parity breaks). Adjacent keep-passing: the score/kills zeroing (the L453 pattern)
   // is untouched — the existing second-run baseline assert stays green.
-  ok('boss reward: final score = pre-boss + 1000 exactly, exactly once (forced second completion never double-awards — bossAwarded latched, reports countable at 2)',
-    bs.scoreAfter === bs.preScore + 1000 && bs.scoreAfter2 === bs.scoreAfter && bs.bossAwarded === true && bs.reports === 2,
-    JSON.stringify(bs));
-  ok('highscore persisted across a real reload (read back on this page shows the +1000 ledger intact)',
+  // SPEC-REVIEW ROUND (2026-11-07): scoreBy.boss was a DEAD FIELD — the award wrote only
+  // C.score (+ the latch), and the dump-sanity assert checks PRESENCE only, so boss:0 passed
+  // vacuously on a run whose final score included the +1000. The strengthened clause reads
+  // the frozen state live: the single award must read scoreBy.boss === 1000 exactly.
+  // RED-BEFORE recorded (flow-red-reviewfix.txt: scoreByBoss 0 on the pre-fix branch build).
+  const bossScoreBy = await J(`__stage2.combatState().telemetry.scoreBy.boss`);
+  ok('boss reward: final score = pre-boss + 1000 exactly, exactly once (forced second completion never double-awards — bossAwarded latched, reports countable at 2, scoreBy.boss = the award itself)',
+    bs.scoreAfter === bs.preScore + 1000 && bs.scoreAfter2 === bs.scoreAfter && bs.bossAwarded === true && bs.reports === 2 && bossScoreBy === 1000,
+    JSON.stringify({ ...bs, scoreByBoss: bossScoreBy }));
+  // SPEC-REVIEW ROUND (2026-11-07): renamed — this page performs NO reload; the assert reads
+  // the ledger at balanceProbe latch time (typically stale-high from the earlier pages'
+  // natural-death writes). The AC's substance (persist → read back = the +1000) is proven by
+  // the victory-path assert: highscore === 1000 exactly after victory.enter's writeHighscore.
+  ok('highscore ledger at balanceProbe time still carries the boss award (>= 1000; the exact persist→read-back is pinned on the victory path)',
     b19.highscore !== undefined && b19.highscore >= 1000, `highscore=${b19.highscore} finalScore=${bs.finalScore}`);
   ok('CONSOLE [] (balanceProbe page)', errs.length === 0, errs.join(' | '));
   {

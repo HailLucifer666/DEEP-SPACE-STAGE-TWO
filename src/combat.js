@@ -168,7 +168,11 @@ export function prepareCombat(scene, camera, rocket, ui, api) {
         // phases.js). Its OWN latch, independent of the dead/victory guards: a forced second
         // completion re-enters this branch (the counter stays countable) but the award happens
         // exactly once per fight; enterCombat resets the latch beside score/kills.
-        if (!C.bossAwarded) { C.bossAwarded = true; C.score += SCORE_BOSS; }
+        // SPEC-REVIEW ROUND (2026-11-07): scoreBy.boss rides the SAME latch guard — it was a
+        // dead field before (the dump-sanity assert checks presence only, so boss:0 passed
+        // vacuously on a run whose score included the +1000; the strengthened harness clause
+        // pins scoreBy.boss === 1000).
+        if (!C.bossAwarded) { C.bossAwarded = true; C.score += SCORE_BOSS; C.telemetry.scoreBy.boss += SCORE_BOSS; }
         // stage-2 review (finding 3): the victory frame must not continue into wavesTick —
         // with the field now clear it grants the wave-clear bonus AFTER the card froze its
         // score (the card's "final score" was not the internal final).
