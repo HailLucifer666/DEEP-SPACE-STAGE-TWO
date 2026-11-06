@@ -290,6 +290,11 @@ powerups.js is ENTITY-side only (drop/despawn/pickup-detection); combat.js is EF
   probes.js gains an import of powerups.js — acyclic; powerups.js never imports probes.js),
   report `window.__stage2.chargeProbe` / `.powerupProbe` + `api.report` lastReport parity,
   state reset in `resetProbes()` with the stale-delete window hygiene, per-page `CONSOLE []`.
+  Review-fix round 2026-11-06 (one walk per file): the two story-018 drives + their state bags
+  moved verbatim to `src/probes-charge.js` / `src/probes-powerup.js` (the two-walk shared
+  helpers to `src/probes-common.js`); probes.js re-exports the ticks (combat.js's import surface
+  unchanged) and `resetProbes()` delegates to `resetChargeProbe()` / `resetPowerupProbe()`
+  (verbatim statements, moved not rewritten).
   Ordering probes per the story: charge release during death slow-mo; a pickup taken during the
   boss fight (boss drops are EXEMPT — no drop call site in the boss path — but effects must
   still apply; OVERDRIVE matters most there).
@@ -410,8 +415,13 @@ story-018's file list).
 - **combat.js CONSUMES**: ENEMIES (waves/bolts/kill helpers), DRONES, BOSS
   (state/boltHit/hitBoss/alive/eligible/barLine), EFFECTS, pool, audio, launch
   (stageShip/combatFlow), probes (the drives + resetProbes), DRESSING, POWERUPS (new).
-- **powerups.js IMPORTS**: stage-two-lib, pool.js. IMPORTED BY: combat.js, probes.js.
-- **enemies.js IMPORTS**: lib, pool (+ nothing new). **probes.js IMPORTS gain**: powerups.js.
+- **powerups.js IMPORTS**: stage-two-lib, pool.js. IMPORTED BY: combat.js, weapons.js (review-fix
+  split 2026-11-06 — the effect side's applyEffect reads EFFECT_T and dropAt calls maybeDrop),
+  probes-powerup.js (the pickup drive — probes.js before the review split, one walk per file).
+- **enemies.js IMPORTS**: lib, pool (+ nothing new). **probes.js IMPORTS gain**: powerups.js —
+  via probes-powerup.js since the review-fix split (probes.js itself no longer imports it
+  directly; the graph stays acyclic: probes.js → probes-charge/probes-powerup → probes-common,
+  and probes-charge/probes-powerup never import probes.js back).
 - Probes report on `window.__stage2`: `.chargeProbe` / `.powerupProbe` (story-018),
   `.telemetry` inside `combatState()` (story-019), always with `lastReport` parity and
   `resetProbes()` stale-delete hygiene. Pickups join the baseline pool created once in

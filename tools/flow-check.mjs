@@ -968,7 +968,8 @@ try {
     JSON.stringify(lcSeen));
   ok('CONSOLE [] (dressingProbe page)', errs.length === 0, errs.join(' | '));
   /* --- story-018 charged shot (?chargeProbe=1, page over the SAME CDP session) ---
-     Deterministic in-page drive (droneProbe pattern; src/probes.js chargeProbeTick): the
+     Deterministic in-page drive (droneProbe pattern; src/probes-charge.js chargeProbeTick —
+     review-fix split, one walk per file): the
      drive writes C.api.input.fire DIRECTLY (probe-owned precondition — the same class as
      pitchProbe's synthesized keys; input.js stays zero-diff) and reads combat state + the
      bolt pool (pool.update(0, …) — the ENEMIES.eachAlive trick). Field discipline per tick:
@@ -1116,8 +1117,8 @@ try {
   ok('CONSOLE [] (chargeProbe page)', errs.length === 0, errs.join(' | '));
 
   /* --- story-018 pickups (?powerupProbe=1, next page over the SAME CDP session) ---
-     Deterministic in-page drive (src/probes.js powerupProbeTick; imports powerups.js —
-     acyclic). Stages: drop rate over N = 100 REAL bolt-path kills (spawnForProbe target +
+     Deterministic in-page drive (src/probes-powerup.js powerupProbeTick — review-fix split,
+     one walk per file; imports powerups.js — acyclic). Stages: drop rate over N = 100 REAL bolt-path kills (spawnForProbe target +
      a probe bolt into it — the same kill site combat's boltsTick owns, so maybeDrop's real
      Math.random rolls are counted; binomial 95% band for p = 0.18 computed exactly offline:
      [11, 25] — widen trials, never hand-widen bounds) → kind split over M = 300 more real

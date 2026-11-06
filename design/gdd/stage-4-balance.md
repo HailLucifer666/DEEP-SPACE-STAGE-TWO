@@ -438,6 +438,9 @@ boss: +1000 (SCORE_BOSS, §3.6)  → guaranteed floor ≈ 3400 + kill score
 - `src/probes.js` — `?chargeProbe=1` / `?powerupProbe=1` flags, state, reset hygiene
   (`resetProbes` report deletes, `src/probes.js` L34-44 pattern), ticks called from
   `tickCombat` (the `droneProbeTick…dressingProbeTick` call row, `src/combat.js` L488-491).
+  Review-fix round 2026-11-06: the two story-018 walks live in `src/probes-charge.js` /
+  `src/probes-powerup.js` (one walk per file; shared helpers in `src/probes-common.js`) —
+  probes.js re-exports the ticks, so the combat.js wiring is unchanged.
 - `tools/flow-check.mjs` — new asserts (§8.2-8.3).
 
 **Story-019 (elites + tables + telemetry + boss reward)** touches:
