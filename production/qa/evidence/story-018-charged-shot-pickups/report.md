@@ -294,3 +294,185 @@ Evidence files in this directory:
   simultaneously at the pathological extreme) — accepted by the GDD §5; not probe-driven.
 - **Alt-tab mid-hold** (input.fire survives blur — GDD §5's accepted shared input-state
   finding) — logged for the future polish list per the GDD; not fixed here (pre-existing class).
+
+## 7. Review-fix round (2026-11-06, branch head 3bdd465 → 95b3e6a) — code-quality review fixes
+
+Three commits from the code-quality review, each with the full battery in order
+(build → dep-check → flow-check → boot-marks). NOTE on numbering: the dispatch
+brief called this section "§6"; that number was taken by the final battery above,
+so it lands as §7 (spec-review round = §3.5).
+
+### 7.1 Commit A — `52e21cd` — the pickup pre-warm bug (IMPORTANT) + nits + the +6 assert
+
+**The finding**: `preparePowerups`'s pre-warm loop `for (let i = 0; i < PICKUP_POOL; i++)
+P.pool.kill(P.pool.spawn())` created ONE entity, not six. Mechanism (verified by reading
+pool.js before trusting the report): `spawn()` is reuse-first — `items.find(!alive)` runs
+BEFORE any allocation, so each iteration re-handed back the slot the previous iteration had
+just killed. Consequence: up to 5 Groups allocated MID-FIGHT at the pool's high-water mark;
+the "baseline RISES by 6" claims in the powerups.js comment, the combat.js prepare comment
+and the architecture.md §7.1 rider were all false as written.
+
+**The fix**: spawn all PICKUP_POOL alive, then `P.pool.clear()` — pool.js hide-never-dispose
+keeps all six in the scene as the baseline; mid-fight drops now only reuse.
+
+**The red-first assert**: the harness pins the entity-baseline delta at exactly +6. Design
+note: `window.__stage2` exposes only the countMeshes() NUMBER (no scene handle), so a literal
+pre-prepare → post-prepare scene diff is impossible from the harness; the delta is measured at
+the allocation site instead — powerups.js counts real `makePickup()` calls (the pool's ONLY
+allocation path; pool reuse never calls it) via the new `createdCount()` export, the drive
+captures it at stage 0 beside the existing (previously unread) `baselineEntities`, and the
+harness asserts `baselinePickups === 6`. At the capture moment ONLY the pre-warm has run
+(drops need kills; the drive has killed nothing yet), so this IS the prepare-time delta.
+
+**RED-BEFORE** (instrumentation + assert on the 3bdd465 build, fix withheld;
+`flow-reviewfix-red-plus6.txt`):
+```
+FAIL  pickup pool pre-warm: entity-baseline delta exactly +6 (all PICKUP_POOL entities allocated at prepare — restarts allocate nothing new, §8.6)  [{"baselinePickups":1,"baselineEntities":40}]
+FAIL  drop rate p=0.18 within the binomial 95% band (100 real bolt-path kills)  [{"kills":100,"drops":26}]
+FLOW-CHECK FAIL — 145 passed, 2 failed
+```
+`baselinePickups: 1` — the predicted +1 read. The second red is the DOCUMENTED drop-band
+flake (§6: band [11,25] carries ~5%/run miss risk; 26 is one over the bound; protocol =
+rerun, never widen bounds) — it had nothing to do with the change under test and was green
+in every subsequent run.
+
+**GREEN-AFTER** (`flow-reviewfix-A-green.txt`):
+```
+PASS  pickup pool pre-warm: entity-baseline delta exactly +6 (all PICKUP_POOL entities allocated at prepare — restarts allocate nothing new, §8.6)  [{"baselinePickups":6,"baselineEntities":45}]
+FLOW-CHECK PASS — 147 passed, 0 failed
+```
+
+**Nits in the same commit**: the pointless `if (blink !== u.blink) u.blink = blink;` mirror
+guard is a plain assignment; `P.scene` (assigned in preparePowerups, never read) deleted.
+**Known-behavior record (code unchanged by decision)**: the expireBlip triple-stack — three
+effects expiring on the same tick play three overlapping "over" blips. The blip is short
+(~0.1 s class) and same-tick triple expiry needs SPREAD+OVERDRIVE+SHIELD all timing out
+within one frame (rare, cosmetic); left as-is per the dispatch.
+
+**Battery**: build OK (index.html 4.40 MB) → dep-check **PASS — acyclic, structural rules
+hold; main.js lines: 255 (limit 500)** → flow-check **147 passed, 0 failed** → boot-marks
+headed **MODULE → TITLE 248 ms** (an earlier read of 1201 ms landed while the flow-check's
+Edge tree was still winding down; the quiet-machine rerun is the gate reading — session
+spread below).
+
+### 7.2 Commit B — `6c03777` — probes.js split, one walk per file (CRITICAL: 1499 → all files < 800)
+
+Verbatim moves (same statements, same order, same comments — the R-e discipline), zero
+behavior change, assert count and logic UNCHANGED:
+
+- `src/probes-charge.js` (381) — chargeProbeTick + CP state + the charge-only helpers
+  (boltTargetSeat/seedBoltTarget/captureChargedBolt) + resetChargeProbe (the verbatim
+  CP Object.assign + the charge walk's window deletes: chargeProbe, chargePauseArm/Go/
+  Arm2/Go2, chargeDeathArm).
+- `src/probes-powerup.js` (449) — powerupProbeTick + PU state + resetPowerupProbe (the
+  verbatim PU Object.assign + powerupProbe/puStage deletes).
+- `src/probes-common.js` (23) — cpFieldClear/cpPin. **Why a separate file and not a
+  probes.js core**: probes.js re-exports the moved ticks (so combat.js's import line stays
+  byte-identical), which means probes-charge.js cannot import helpers from probes.js —
+  that edge would cycle (probes.js → probes-charge.js → probes.js; dep-check rule 1).
+- `src/probes.js` (708) — keeps drone/boss/pitch/dressing walks + DP/BP/PP/DD; resetProbes
+  delegates the two story-018 resets to the per-module exports (verbatim statements, moved
+  not rewritten, same call order); re-exports chargeProbeTick/powerupProbeTick.
+
+**Battery**: build OK → dep-check **PASS** (graph printed:
+`probes-charge.js -> boss.js, enemies.js, probes-common.js`;
+`probes-common.js -> drone.js, enemies.js`;
+`probes-powerup.js -> boss.js, enemies.js, powerups.js, probes-common.js`;
+`probes.js -> arena-dressing.js, boss.js, drone.js, enemies.js, probes-charge.js,
+probes-powerup.js`; main.js 255) → flow-check **147 passed, 0 failed**
+(`flow-reviewfix-B-green.txt`) → boot-marks headed **MODULE → TITLE 899 ms**.
+
+### 7.3 Commit C — `95b3e6a` — weapons extraction (CRITICAL: combat.js 819 → 640; story-019 adds ~60-100 more)
+
+Moved verbatim to `src/weapons.js` (260): makeBolt, spawnBolt + FAN/WORLD_UP scratch,
+spawnStreamShot, fireTick, boltsTick (projectile flight + raider/orb/boss scans), dropAt,
+applyEffect, and the tickCombat effect-timer loop (now `effectsTick(dt)`, same tick-order
+position). **Why boltsTick rides along**: the dispatch's move list plus its own size
+estimate (~200-230 lines) and the hard ≤650 target close only with the projectile half —
+without it combat.js lands ~684 (819 − ~135 moved). boltsTick is the same weapons system
+(its kill sites are dropAt's only callers, which also makes dropAt internal to the seam).
+Byte-identity was verified mechanically: each moved function diffed against
+`git show 3bdd465:src/combat.js` — identical modulo the export keyword and one disclosed
+provenance comment on makeBolt's signature line.
+
+**The seam (never-snapshot design)**: combat.js's module-local C is handed to
+`initWeapons({ C, forward, noseWorld, ARENA_Y, R_HARD, SHIELD_MAX })` ONCE at module scope.
+C travels as a LIVE reference — every C.* read in weapons.js (C.bolts, C.rocket, C.api,
+C.bossApi are assigned asynchronously in prepareCombat) is a CALL-TIME read; nothing is
+snapshotted. forward/noseWorld ride the same call as live closures over C (the same
+identities probeEnv hands probes.js). ARENA_Y/R_HARD/SHIELD_MAX are const primitives —
+immutable for the page's lifetime, so init-time copies are snapshot-safe by construction.
+Import discipline: weapons.js → enemies/drone/boss/effects/powerups/audio (the leaves
+combat.js already consumed); the ONLY importer of weapons.js is combat.js. Dep-check
+caveat recorded honestly: dep-check parses import EDGES only — the first build caught the
+un-exported T_CHARGE/BOLT_LIFE (esbuild error), fixed before any battery run; the build is
+the export-mismatch gate.
+
+**Const homes changed** (GDD §7 "Lives in" + architecture.md §7 updated in-commit):
+T_CHARGE, CHARGE_DAMAGE, charged bolt scale, SUPPRESS_STREAM, SPREAD_ANGLE(SPREAD_ARC),
+OVERDRIVE_DIV, plus FIRE_INTERVAL/BOLT_SPEED/BOLT_COLOR/CHARGE_COLOR and the kill-site
+scores SCORE_DRONE/GUNNER/ORb → src/weapons.js. **BOLT_POOL stays in combat.js** (the pool
+is created in prepareCombat) and SCORE_WAVE stays (wavesTick); T_CHARGE and BOLT_LIFE are
+exported back — combatState's charge read, the reticle meter, scriptedKill and probeEnv
+still read them. §8.1's SCORE_BOSS placement pointer corrected for story-019 (the score
+block split: kill-site scores moved, SCORE_WAVE stayed).
+
+**Battery**: build OK → dep-check **PASS** (main.js 255) → flow-check first run
+**146 passed, 1 failed** (`flow-reviewfix-C-green.txt`):
+```
+FAIL  OVERDRIVE: shot count over the 0.6 s pre-suppression burst matches the ÷2.2 interval (0.0568 s → 10.6 expected, band [9,12] covers frame quantization + DT_CLAMP stalls; a missing OVERDRIVE reads ~5 → red) + the timestamp interval honest + charged single + suppression unchanged at T_CHARGE  [{"suppressAt":0.617,"interval":0.0714,"windowS":0.5,"chargedSingle":1,"shots":8,"frameDt":0.0216}]
+```
+Diagnosis + protocol: shots 8 vs band [9,12] with interval/suppressAt/chargedSingle all in
+their bands and every other assert green — at frameDt 0.0216 (~46 fps) the fire cadence
+quantizes to every 3rd frame (0.0648 s ≈ 9 expected in the 0.6 s pre-suppression window),
+one frame alignment short of the floor; the assert's own comment names this luck class
+("band [9,12] covers frame quantization + DT_CLAMP stalls"), the moved bodies are
+byte-identical and the tick order is unchanged, so the §6 rerun protocol applied (lingering
+Edge trees killed first, asserts untouched, timeouts untouched). **Rerun: 147 passed,
+0 failed** (`flow-reviewfix-C-green-rerun.txt`). → boot-marks headed **MODULE → TITLE
+267 ms**, CONSOLE [].
+
+**Boot-marks session spread (honest record)**: 248 / 899 / 267 at the gate readings, but
+the harness also printed 1201 / 1283 / 1742 / 1280 / 1047 ms across the session. ALL of the
+variance sits in `gltf.parse` (hero 832-1201 ms; prop tracks it) — machine load/disk-cache
+state, untouched by these commits (no GLB path changed; the original §6 record was 412 ms).
+The gate reading is the settled-machine number for each commit's battery.
+
+### 7.4 Final line counts (every touched file)
+
+| File | Before (3bdd465) | After (95b3e6a) | Budget |
+|---|---|---|---|
+| src/combat.js | 819 | **640** | ≤ 650 ✓ |
+| src/weapons.js (new) | — | **260** | < 800 ✓ |
+| src/probes.js | 1499 | **708** | < 800 ✓ |
+| src/probes-charge.js (new) | — | **381** | < 800 ✓ |
+| src/probes-powerup.js (new) | — | **449** | < 800 ✓ |
+| src/probes-common.js (new) | — | **23** | < 800 ✓ |
+| src/powerups.js | 135 | **147** | — |
+| tools/flow-check.mjs | 1400 | **1417** | — (1 new assert) |
+| main.js (dep-check gate) | 255 | **255** | ≤ 500 ✓ |
+
+### 7.5 Files changed vs 3bdd465 (16 files, 2209 insertions / 1257 deletions)
+
+src/combat.js, src/weapons.js (new), src/probes.js, src/probes-charge.js (new),
+src/probes-common.js (new), src/probes-powerup.js (new), src/powerups.js,
+tools/flow-check.mjs, docs/architecture.md, design/gdd/stage-4-balance.md, index.html
+(build output, committed with its commit), and five evidence files
+(flow-reviewfix-red-plus6.txt, flow-reviewfix-A-green.txt, flow-reviewfix-B-green.txt,
+flow-reviewfix-C-green.txt, flow-reviewfix-C-green-rerun.txt). Branch head `95b3e6a`;
+NOT merged, NOT tagged, NOT pushed.
+
+**Deviations / judgment calls (all flagged, none silent)**:
+1. The evidence section is numbered §7 (the brief said §6 — taken by the final battery).
+2. boltsTick moved with the fire path (the brief's function list did not name it; its own
+   ~200-230-line estimate and the ≤650 target close only with it — see §7.3).
+3. The +6 pin is an allocation-count capture (`createdCount()`), not a literal scene diff —
+   the harness has no scene access (see §7.1's design note).
+4. The story file's "Files touched" list (powerups/combat/probes/audio/flow-check) is
+   extended by the review round itself: weapons.js, probes-charge.js, probes-common.js,
+   probes-powerup.js — the split commits ARE the review's authorization.
+5. One SCORE line split: `const SCORE_DRONE = 100, SCORE_GUNNER = 150, SCORE_WAVE = 150;`
+   became SCORE_WAVE-only in combat.js (kill-site scores moved to weapons.js) — the one
+   original statement that could not move whole.
+6. The first C-battery flow-check red (OVERDRIVE band) is recorded AND its rerun — no
+   result in this report is one the run did not print.
