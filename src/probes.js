@@ -1,15 +1,28 @@
 // STAGE TWO — PROBE DRIVES (rider R-e extraction from src/combat.js): the deterministic
-// ?droneProbe=1 / ?bossProbe=1 / ?pitchProbe=1 walks — the three probe ticks, their probe
-// state, and the query-flag wiring that lived inside combat.js. STRICTLY behavior-neutral
+// ?droneProbe=1 / ?bossProbe=1 / ?pitchProbe=1 / ?dressingProbe=1 walks — the probe ticks, their
+// probe state, and the query-flag wiring that lived inside combat.js. STRICTLY behavior-neutral
 // move (story-016 R-e): the code is moved verbatim; a probe never runs when its flag is off.
 // Import rule: probes.js must NOT import combat.js (house dep-check — acyclic graph). The
 // ticks receive combat state + the pure helpers/constants they need as arguments — the same
 // context pattern ENEMIES.tickEnemies / BOSS.tickBoss already use. Plain state lives HERE and
 // restarts via resetProbes() on every combat enter (combat.js calls it in enterCombat).
+// Review-fix split (story-018 review round, 2026-11-06): one walk per file — the story-018
+// charge/powerup drives + their state bags moved VERBATIM to src/probes-charge.js /
+// src/probes-powerup.js (the two-walk shared helpers to src/probes-common.js — a separate file
+// because a probes.js home would cycle: probes.js re-exports the moved ticks). The re-exports
+// below keep combat.js's import surface byte-identical; resetProbes delegates the two walks'
+// state/window hygiene to the per-module reset exports (verbatim statements, moved not rewritten).
 import * as ENEMIES from './enemies.js';
 import * as DRONES from './drone.js';
 import * as BOSS from './boss.js';
 import * as DRESSING from './arena-dressing.js'; // story-017: combat-only ambient field + shell visual (reads its probe surfaces — never the reverse)
+import { resetChargeProbe } from './probes-charge.js'; // review-fix split: the charge walk's state bag + window hygiene live with the drive now
+import { resetPowerupProbe } from './probes-powerup.js'; // review-fix split: same, for the powerup walk
+
+// story-018 walks (review-fix split): combat.js imports the ticks from HERE (the R-e wiring,
+// unchanged) — these re-exports keep that import line byte-stable.
+export { chargeProbeTick, resetChargeProbe } from './probes-charge.js';
+export { powerupProbeTick, resetPowerupProbe } from './probes-powerup.js';
 
 const qs = new URLSearchParams(location.search);
 const DRONE_PROBE = qs.get('droneProbe') === '1'; // story-012: deterministic single-drone run
@@ -42,6 +55,12 @@ export function resetProbes() { // rider R-e: what enterCombat's inline probe re
   Object.assign(DD, { t: 0, stage: 0, mark: 0, sub: null, minCl: 0, samples: 0, pulses: [], entryShown: null, opacityAt78: null, opacityAt60: null });
   window.__stage2.dressingProbeLive = false;
   delete window.__stage2.dressingProbe;
+  // story-018: the charge/powerup walks' reports + the harness arm flags — stale-delete hygiene.
+  // Review-fix split: those resets moved verbatim into each walk's module (resetChargeProbe /
+  // resetPowerupProbe) — each state bag now lives beside its drive; the call order is unchanged
+  // (they ran last here before the split).
+  resetChargeProbe();
+  resetPowerupProbe();
 }
 
 /* ---------- story-012 drone probe (?droneProbe=1) ----------

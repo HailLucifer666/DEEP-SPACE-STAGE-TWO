@@ -218,21 +218,31 @@ main.js or hud.js until this merge lands** (the gate commit's order).
 
 ### 7.1 src/powerups.js — ownership and exports
 
-Header constants (owning-module convention — combat keeps only the charged-shot's CHARGE_*
-consts in its own const block): `DROP_CHANCE = 0.18`, `PICKUP_LIFE = 8`, `PICKUP_BLINK = 2`
-(blink during the LAST 2 s), `PICKUP_RADIUS = 1.4`, `EFFECT_T = 8`, `SPREAD_ARC = 6` (±6°
-three-bolt fan), `OVERDRIVE_DIV = 2.2` (fire interval ÷ 2.2), `PICKUP_POOL = 8` (saturation
-steals the oldest slot — pool.js semantics), and the kind set { SPREAD, OVERDRIVE, SHIELD }.
+Header constants (owning-module convention — the charged-shot's CHARGE_* consts AND the effect
+knobs SPREAD_ARC = 6 (±6° three-bolt fan) / OVERDRIVE_DIV = 2.2 (fire interval ÷ 2.2) live with
+the fire path's OWNER: src/combat.js at story-018 ship, src/weapons.js since the review-fix
+split 2026-11-06 (the R-c-pattern extraction; combat.js reads T_CHARGE/BOLT_LIFE back through
+the import) — GDD §7 places them with the consumer): `DROP_CHANCE = 0.18`,
+`PICKUP_LIFE = 8`, `PICKUP_BLINK = 2` (blink during the LAST 2 s), `PICKUP_RADIUS = 1.4`,
+`EFFECT_T = 8`, `PICKUP_POOL = 6` (GDD §7 number — saturation steals the oldest slot — pool.js
+semantics), and the kind set { SPREAD, OVERDRIVE, SHIELD }.
 
 - **Pool**: `makePool` (pool.js, reuse-first) created ONCE in `preparePowerups(scene)`, called
   from combat.js `prepareCombat` beside prepareEnemies/prepareDrones/prepareBoss/
   prepareDressing — pickups join the entity **baseline** (restartProbe `clean:true` preserved;
-  the baseline count RISES — expected and recorded, same-build comparison per the story-017
-  precedent). Entity: a rotating pickup sprite (additive, `depthWrite:false` — the neon
-  convention), userData `{ alive, kind, t }`.
+  the baseline count RISES by 6 — expected and recorded, same-build comparison per the story-017
+  precedent). The pre-warm allocates ALL PICKUP_POOL entities at prepare — spawn the full pool
+  alive, then `clear()` (hide-never-dispose keeps them in the scene). Review-fix round
+  2026-11-06: the original spawn+kill loop created ONE entity, not six — pool.js `spawn()` is
+  reuse-first and re-handed back the just-killed item every iteration, so up to 5 Groups would
+  have allocated MID-FIGHT at the pool's high-water mark; the harness pins the +6 via the
+  powerupProbe's `baselinePickups` (red-first record: it read 1 pre-fix, evidence §7). Entity: a
+  rotating pickup sprite (additive, `depthWrite:false` — the neon convention), userData
+  `{ alive, kind, t }`.
 - **`maybeDrop(pos)`** — the roll `Math.random() < DROP_CHANCE`, uniform kind, pool spawn. Call
-  sites: ONLY the two bolt-kill sites in combat.js `boltsTick` (raider kill ~302–307, orb kill
-  ~319–324). The rammer's self-kill lives inside enemies.js (~196–201) and story-018's file
+  sites: ONLY the two bolt-kill sites in `boltsTick` — src/weapons.js since the review-fix split
+  2026-11-06 (was combat.js: raider kill ~302–307, orb kill ~319–324; now raider kill ~177–183,
+  orb kill ~195–201, relative to weapons.js). The rammer's self-kill lives inside enemies.js (~196–201) and story-018's file
   list does NOT include enemies.js — so **ram deaths do not roll drops**; "on kill" is read as
   "player-killed". GDD may widen it later (needs an enemies.js api hook — open item, §8.5).
 - **`tickPowerups(dt, playerPos, api)`** — age/spin/blink; despawn at PICKUP_LIFE
@@ -251,27 +261,34 @@ steals the oldest slot — pool.js semantics), and the kind set { SPREAD, OVERDR
   binomial bands for rates) achieves the story's determinism goals without inventing an RNG
   util; if the GDD insists on seeding, that is a new util module — flag it, never sneak it.
 
-### 7.2 Effect timers — owner: combat.js (the story pins it: "timer state lives in the combat.js player object")
+### 7.2 Effect timers — state owner: combat.js's player object (the story pins it: "timer state lives in the combat.js player object"); apply/expire code: weapons.js since the review-fix split
 
-`C` gains `powerT: { SPREAD: 0, OVERDRIVE: 0, SHIELD: 0 }` (seconds remaining per kind).
-powerups.js is ENTITY-side only (drop/despawn/pickup-detection); combat.js is EFFECT-side:
+`C` gains `powerT: { SPREAD: 0, OVERDRIVE: 0, SHIELD: 0 }` (seconds remaining per kind;
+shipped as `C.effects`). powerups.js is ENTITY-side only (drop/despawn/pickup-detection);
+the EFFECT-side code lives in weapons.js (review-fix split 2026-11-06 — the fire path and the
+effect timers are one system; the timer STATE is still combat.js's C, read at call time
+through the initWeapons seam):
 
-- `applyEffect(kind)` (the `api.picked` target): `C.powerT[kind] = EFFECT_T`; SHIELD
+- `applyEffect(kind)` (the `api.picked` target — weapons.js, imported by combat.js which
+  composes `POWERUP_API` around it exactly as before): `C.effects[kind] = EFFECT_T`; SHIELD
   additionally refills `C.shield = SHIELD_MAX`.
-- `tickCombat`: after the regen block, decrement all three; while SHIELD is active the regen
+- `effectsTick(dt)` (weapons.js, called from tickCombat at the same position the inline loop
+  held): after the regen block, decrement all three; while SHIELD is active the regen
   gate treats `SHIELD_REGEN_DELAY` as 0; on a timer crossing zero the expiry side-effects fire
-  (combat.js plays the expire blip via its existing audio imports — powerups.js stays
+  (weapons.js plays the expire blip via its own audio imports — powerups.js stays
   sound-free; pickup blip likewise at `api.picked`).
-- `fireTick`: SPREAD active → spawn 3 bolts at ±SPREAD_ARC° (SAME bolt pool, same BOLT_LIFE —
-  no baseline change); OVERDRIVE active → `FIRE_INTERVAL / OVERDRIVE_DIV`. The charged shot
-  branches in this same function (C.chargeT + CHARGE_* consts in combat.js's header; parameters
-  pending the GDD): release-after-hold fires exactly ONE charged bolt that reuses the C.bolts
-  pool (a stamped/heavier bolt, NOT a new pool — restartProbe entities stay stable); charging
-  cancels on death (damagePlayer), pause (tickCombat halts), and combat exit (the
+- `fireTick` (weapons.js since the review-fix split; the charged-shot consts CHARGE_* live in
+  ITS header now — GDD §7's table updated in the same commit): SPREAD active → spawn 3 bolts at
+  ±SPREAD_ARC° (SAME bolt pool, same BOLT_LIFE — no baseline change); OVERDRIVE active →
+  `FIRE_INTERVAL / OVERDRIVE_DIV`. The charged shot branches in this same function (C.chargeT;
+  parameters pending the GDD): release-after-hold fires exactly ONE charged bolt that reuses the
+  C.bolts pool (a stamped/heavier bolt, NOT a new pool — restartProbe entities stay stable);
+  charging cancels on death (damagePlayer), pause (tickCombat halts), and combat exit (the
   clearCombat/enterCombat reset block); whichever regular-fire behavior the GDD chooses
   (suppressed vs continues) is pinned by a probe assert before implementation.
 - `clearCombat` wipes C.powerT alongside the pool drain; `enterCombat`'s reset block zeroes it
-  beside score/kills (the L453 pattern).
+  beside score/kills (the L453 pattern). Both stay in combat.js — the STATE is combat's; only
+  the fire/effect CODE moved to weapons.js.
 
 ### 7.3 Harness surface (probes, combatState, HUD)
 
@@ -283,6 +300,11 @@ powerups.js is ENTITY-side only (drop/despawn/pickup-detection); combat.js is EF
   probes.js gains an import of powerups.js — acyclic; powerups.js never imports probes.js),
   report `window.__stage2.chargeProbe` / `.powerupProbe` + `api.report` lastReport parity,
   state reset in `resetProbes()` with the stale-delete window hygiene, per-page `CONSOLE []`.
+  Review-fix round 2026-11-06 (one walk per file): the two story-018 drives + their state bags
+  moved verbatim to `src/probes-charge.js` / `src/probes-powerup.js` (the two-walk shared
+  helpers to `src/probes-common.js`); probes.js re-exports the ticks (combat.js's import surface
+  unchanged) and `resetProbes()` delegates to `resetChargeProbe()` / `resetPowerupProbe()`
+  (verbatim statements, moved not rewritten).
   Ordering probes per the story: charge release during death slow-mo; a pickup taken during the
   boss fight (boss drops are EXEMPT — no drop call site in the boss path — but effects must
   still apply; OVERDRIVE matters most there).
@@ -290,19 +312,26 @@ powerups.js is ENTITY-side only (drop/despawn/pickup-detection); combat.js is EF
   change-gated hudBars style (combat.js owns combat HUD writes); the CONTROLS panel text and
   the hint bar live in hud.js's PANEL_HTML and `tools/index.template.html` (index.html is
   build output — never hand-edited). Audio: charge whine + pickup/expire blips as named synth
-  recipes in audio.js (audio-bag pattern), played from combat.js call sites.
+  recipes in audio.js (audio-bag pattern), played from the fire-path/effect call sites —
+  combat.js before the review-fix split, weapons.js since (the DOM writes stay in combat.js).
 
-**Module edges:** powerups.js imports stage-two-lib + pool.js. Imported by combat.js (+probes.js
-for the probe drive). combat.js CONSUMES from powerups: prepare/maybeDrop/tick/clear + the probe
-force; combat.js PROVIDES to powerups: the `picked` api. Nothing imports main.js; store.js stays
-isolated; dep-check acyclic.
+**Module edges:** powerups.js imports stage-two-lib + pool.js. Imported by combat.js,
+weapons.js (applyEffect's EFFECT_T + dropAt's maybeDrop — the review-fix split's natural edge),
+and probes-powerup.js (the pickup drive). combat.js CONSUMES from powerups:
+prepare/tick/clear + the probe force; combat.js PROVIDES to powerups: the `picked` api
+(composed around weapons.js's applyEffect). combat.js also CONSUMES weapons.js (fireTick/
+boltsTick/effectsTick/applyEffect + T_CHARGE/BOLT_LIFE via the initWeapons seam — the only
+weapons.js importer). Nothing imports main.js; store.js stays isolated; dep-check acyclic.
 
 ## 8. STAGE 4 — story-019 contracts: elites, wave tables, telemetry, boss reward
 
 ### 8.1 Boss reward — SCORE_BOSS = 1000, placement and re-fire safety
 
 Const `SCORE_BOSS = 1000` in combat.js's score-constants block (~62–66, beside
-SCORE_DRONE/GUNNER/WAVE/OR — a named const, never a literal). **Award call site: the
+SCORE_DRONE/GUNNER/WAVE/OR — a named const, never a literal). (Review-fix split 2026-11-06:
+the kill-site scores SCORE_DRONE/GUNNER/ORb moved to weapons.js beside their kill sites;
+SCORE_WAVE stayed in combat.js — place SCORE_BOSS beside SCORE_WAVE, the award reads/writes
+C.score in the combat.js bossApi wrapper below.) **Award call site: the
 bossApi.report wrapper in combat.js prepareCombat (~130–141)** — the same handler that owns the
 exactly-once counter and the victory guard:
 
@@ -403,8 +432,13 @@ story-018's file list).
 - **combat.js CONSUMES**: ENEMIES (waves/bolts/kill helpers), DRONES, BOSS
   (state/boltHit/hitBoss/alive/eligible/barLine), EFFECTS, pool, audio, launch
   (stageShip/combatFlow), probes (the drives + resetProbes), DRESSING, POWERUPS (new).
-- **powerups.js IMPORTS**: stage-two-lib, pool.js. IMPORTED BY: combat.js, probes.js.
-- **enemies.js IMPORTS**: lib, pool (+ nothing new). **probes.js IMPORTS gain**: powerups.js.
+- **powerups.js IMPORTS**: stage-two-lib, pool.js. IMPORTED BY: combat.js, weapons.js (review-fix
+  split 2026-11-06 — the effect side's applyEffect reads EFFECT_T and dropAt calls maybeDrop),
+  probes-powerup.js (the pickup drive — probes.js before the review split, one walk per file).
+- **enemies.js IMPORTS**: lib, pool (+ nothing new). **probes.js IMPORTS gain**: powerups.js —
+  via probes-powerup.js since the review-fix split (probes.js itself no longer imports it
+  directly; the graph stays acyclic: probes.js → probes-charge/probes-powerup → probes-common,
+  and probes-charge/probes-powerup never import probes.js back).
 - Probes report on `window.__stage2`: `.chargeProbe` / `.powerupProbe` (story-018),
   `.telemetry` inside `combatState()` (story-019), always with `lastReport` parity and
   `resetProbes()` stale-delete hygiene. Pickups join the baseline pool created once in

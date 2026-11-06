@@ -438,6 +438,9 @@ boss: +1000 (SCORE_BOSS, §3.6)  → guaranteed floor ≈ 3400 + kill score
 - `src/probes.js` — `?chargeProbe=1` / `?powerupProbe=1` flags, state, reset hygiene
   (`resetProbes` report deletes, `src/probes.js` L34-44 pattern), ticks called from
   `tickCombat` (the `droneProbeTick…dressingProbeTick` call row, `src/combat.js` L488-491).
+  Review-fix round 2026-11-06: the two story-018 walks live in `src/probes-charge.js` /
+  `src/probes-powerup.js` (one walk per file; shared helpers in `src/probes-common.js`) —
+  probes.js re-exports the ticks, so the combat.js wiring is unchanged.
 - `tools/flow-check.mjs` — new asserts (§8.2-8.3).
 
 **Story-019 (elites + tables + telemetry + boss reward)** touches:
@@ -462,10 +465,10 @@ decisions, not balance surfaces.
 
 | Knob | Initial | Range | Category | Lives in | Rationale |
 |---|---|---|---|---|---|
-| `T_CHARGE` | 0.6 s | 0.45-0.9 | feel | src/combat.js | Tap zone below, one gunner-pass above; the whine teaches the crossing (§3.2). |
-| `CHARGE_DAMAGE` | 6 | 4-8 | curve | src/combat.js | Elite-gunner one-shot (6 = 6); weak-point 18 → 4 boss hits; DPS parity anchor ±15% (§4.1). |
-| charged bolt scale | 3.0 | 2-4 | feel | src/combat.js | Readable under the shipped bloom chain; amber family (§3.2). |
-| `SUPPRESS_STREAM` | true (design const) | not tunable | design | src/combat.js | The balance hinge (§3.1) — flipping it creates a dominant strategy; documented, not a knob. |
+| `T_CHARGE` | 0.6 s | 0.45-0.9 | feel | src/weapons.js (review-fix split from combat.js) | Tap zone below, one gunner-pass above; the whine teaches the crossing (§3.2). |
+| `CHARGE_DAMAGE` | 6 | 4-8 | curve | src/weapons.js (review-fix split from combat.js) | Elite-gunner one-shot (6 = 6); weak-point 18 → 4 boss hits; DPS parity anchor ±15% (§4.1). |
+| charged bolt scale | 3.0 | 2-4 | feel | src/weapons.js (review-fix split from combat.js) | Readable under the shipped bloom chain; amber family (§3.2). |
+| `SUPPRESS_STREAM` | true (design const) | not tunable | design | src/weapons.js (review-fix split from combat.js) | The balance hinge (§3.1) — flipping it creates a dominant strategy; documented, not a knob. |
 | `BOLT_POOL` | 36 (raised from 24) | 24-48 | curve | src/combat.js | SPREAD+OVERDRIVE headroom (§3.8); prepare-time allocation, restart-clean preserved. |
 | `PICKUP_DROP_P` | 0.18 | 0.10-0.30 | curve | src/powerups.js | Inherited (HANDOFF L227); retune WITH telemetry (story-018 L70). |
 | pickup kind weights | uniform 1/3 | 0.2-0.5 each | curve | src/powerups.js | Least-assumption reading (§3.3); telemetry says if the dial should move. |
@@ -473,8 +476,8 @@ decisions, not balance surfaces.
 | `PICKUP_LIFE` / blink | 8 s / 2 s | 5-12 / 1-3 | feel | src/powerups.js | Inherited (HANDOFF L227). |
 | `PICKUP_RADIUS` | 1.4 | 1.0-2.0 | feel | src/powerups.js | Inherited; full-3D check (§3.3). |
 | `EFFECT_DURATION` | 8 s | 5-12 | feel | src/powerups.js | Inherited; refresh-not-stack on re-pickup (§3.3). |
-| `SPREAD_ANGLE` | 6° | 4-10 | feel | src/combat.js | Inherited; stream-only (§3.2). |
-| `OVERDRIVE_DIV` | 2.2 | 1.8-3.0 | curve | src/combat.js | Inherited; stream interval only — `T_CHARGE` unchanged (§3.2). |
+| `SPREAD_ANGLE` | 6° | 4-10 | feel | src/weapons.js (review-fix split from combat.js) | Inherited; stream-only (§3.2). |
+| `OVERDRIVE_DIV` | 2.2 | 1.8-3.0 | curve | src/weapons.js (review-fix split from combat.js) | Inherited; stream interval only — `T_CHARGE` unchanged (§3.2). |
 | `ELITE_CHANCE` | 0.22 | 0.10-0.35 | curve | src/enemies.js | Inherited (HANDOFF L226); derived from wave, never a list (acceptance #18). |
 | `ELITE_WAVE_MIN` | 4 | 3-5 | gate | src/enemies.js | Inherited; kind intros land at waves 1/3 before elites (§3.5). |
 | `ELITE_HP_MULT / SPEED / SCALE / SCORE / TINT` | 3 / 1.15 / 1.35 / 2 / 0xffa02f | ±30% each | curve | src/enemies.js | Inherited; composed in §4.4. |

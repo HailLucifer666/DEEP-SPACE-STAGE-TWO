@@ -19,7 +19,7 @@ const ui = {
   title: $('title'), hud: $('hud'), debug: $('debug'), toast: $('toast'),
   count: $('count'), tele: $('tele'), warn: $('warn'),
   hsLine: $('hs-line'), btnLaunch: $('btn-launch'), btnSkip: $('btn-skip'),
-  hudBars: $('hud-bars'), hudScore: $('hud-score'), reticle: $('reticle'),
+  hudBars: $('hud-bars'), hudScore: $('hud-score'), reticle: $('reticle'), hudChips: $('hud-chips'), // story-018: the effect-chip line joins the ui map (combat owns the write)
   gameover: $('gameover'), goScore: $('go-score'), goHs: $('go-hs'), victory: $('victory'), vicScore: $('vic-score'),
   goReplay: $('go-replay'), goSkip: $('go-skip'), pause: $('pause'), vicTime: $('vic-time'), vicReplay: $('vic-replay'), // story-014 win card
   btnControls: $('btn-controls'), btnReset: $('btn-reset'), btnSound: $('btn-sound'),
@@ -32,8 +32,9 @@ const PANEL_HTML = {
   CONTROLS:
     '<p><b>W / S</b> — throttle &amp; brake &nbsp;·&nbsp; <b>A / D</b> — turn left / right</p>' + '<p><b>R / F</b> or <b>MOUSE ↕</b> — pitch</p>' + // story-015: the pitch line lives in BOTH text places (panel + hint bar)
     '<p><b>MOUSE</b> — steer &nbsp;·&nbsp; <b>LMB</b> — fire guns &nbsp;·&nbsp; <b>SPACE / SHIFT</b> — boost</p>' +
+    '<p><b>HOLD LMB</b> — charge shot (release to fire)</p>' + // story-018: the obvious-controls pillar — the second stage is a discovered extension of the same trigger
     '<p><b>P / ESC</b> — pause &nbsp;·&nbsp; <b>M</b> — mute &nbsp;·&nbsp; <b>ENTER</b> — launch</p>' +
-    '<p class="t-note">Drones ram. Shields regen after 3 clean seconds. The field flows faster while you boost.</p>',
+    '<p class="t-note">Drones ram. Shields regen after 3 clean seconds. The field flows faster while you boost. Downed enemies drop glowing pickups — fly through: SPREAD fan · OVERDRIVE rapid fire · SHIELD refill (8 s each, the HUD chips count down).</p>', // story-018: the pickups line
   CREDITS:
     '<p><b>MODELS</b> — hero ship + stage-one rocket made in <b>Vi3W</b> (app.vi3w.in)</p>' +
     '<p><b>FONTS</b> — Orbitron, Rajdhani (SIL OFL 1.1, Google Fonts)</p>' +
