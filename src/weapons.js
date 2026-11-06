@@ -118,9 +118,11 @@ function spawnStreamShot() {
     spawnBolt(1, false, FAN.center);
     spawnBolt(1, false, FAN.rightD);
     C.fired.stream += 3;
+    C.telemetry.shots.stream += 3; // story-019: each fan bolt counts as a shot (GDD §3.7)
   } else {
     spawnBolt(1, false);
     C.fired.stream++;
+    C.telemetry.shots.stream++;
   }
   sweep({ f0: 1500, f1: 320, dur: 0.09, vol: 0.12, type: 'square' }); // shipped stream voice — one per SHOT (a fan is one shot)
 }
@@ -144,6 +146,7 @@ export function fireTick(dt) {
     if (C.charging && !C.dead) {
       spawnBolt(CHARGE_DAMAGE, true);
       C.fired.charged++;
+      C.telemetry.shots.charged++; // story-019: one charged shot per completed hold
       chargeRelease(); // the heavy thump (GDD §3.2 audio row)
     }
     C.chargeT = 0; C.charging = false;
@@ -172,11 +175,18 @@ export function boltsTick(dt) {
       const dx = d.position.x - b.position.x, dy = d.position.y - b.position.y, dz = d.position.z - b.position.z;
       if (dx * dx + dy * dy + dz * dz < 1.1) {
         C.bolts.kill(b);
+        C.telemetry.hits[b.userData.charged ? 'charged' : 'stream']++; // story-019: bolts die on hit — 1:1 max (probe-spawned unstamped bolts read stream)
         EFFECTS.explosion(d.position);
         noiseBurst({ dur: 0.28, vol: 0.4, f0: 900, f1: 140 });
         if (ENEMIES.hitDrone(d, b.userData.dmg || 1)) { // story-018: the bolt carries its damage (stream 1, charged 6); probe-spawned unstamped bolts default to 1
-          C.score += d.userData.kind === 'gunner' ? SCORE_GUNNER : SCORE_DRONE;
+          const pts = (d.userData.kind === 'gunner' ? SCORE_GUNNER : SCORE_DRONE) *
+            (d.userData.elite ? ENEMIES.ELITE_SCORE_MULT : 1); // story-019: elites pay ×2 when SHOT DOWN (the ×2 never applies to a ram — the ram is the failure state); ELITE_SCORE_MULT rides the existing enemies.js import — no new edge
+          C.score += pts;
           C.kills++;
+          C.telemetry.kills[d.userData.kind]++; // story-019: kills by kind — elite kills also count in their kind bucket (elite is a flag, not a kind)
+          if (d.userData.elite) C.telemetry.eliteKills[d.userData.kind]++;
+          if (b.userData.charged) C.telemetry.chargedKills++; // the skill signal
+          C.telemetry.scoreBy[d.userData.kind] += pts;
           dropAt(d.position); // story-018: raider drop site — bolt kills roll 18%, ram deaths never do (enemies.js untouched)
           EFFECTS.shake(0.06); // kill feedback (J)
           beep({ freq: 620, dur: 0.09, vol: 0.16, type: 'triangle' });
@@ -190,11 +200,15 @@ export function boltsTick(dt) {
       const dx = o.position.x - b.position.x, dy = o.position.y - b.position.y, dz = o.position.z - b.position.z;
       if (dx * dx + dy * dy + dz * dz < DRONES.orbBoltR2()) {
         C.bolts.kill(b);
+        C.telemetry.hits[b.userData.charged ? 'charged' : 'stream']++; // story-019: same 1:1 hit rule
         EFFECTS.explosion(o.position);
         noiseBurst({ dur: 0.28, vol: 0.4, f0: 900, f1: 140 });
         if (DRONES.hitOrb(o, b.userData.dmg || 1)) { // story-018: bolt-carried damage (charged 6 one-shots the 2-HP orb — GDD §5, no special case)
           C.score += SCORE_ORB;
           C.kills++;
+          C.telemetry.kills.orb++; // story-019: orbs are excluded from elites (GDD §9 Decision 2) — the orb bucket never splits
+          if (b.userData.charged) C.telemetry.chargedKills++;
+          C.telemetry.scoreBy.orb += SCORE_ORB;
           dropAt(o.position); // story-018: orb drop site (the position is clamped inside dropAt — orbs die outside the sphere legally)
           EFFECTS.shake(0.06);
           beep({ freq: 620, dur: 0.09, vol: 0.16, type: 'triangle' });
@@ -209,6 +223,7 @@ export function boltsTick(dt) {
       const zone = BOSS.boltHit(b.position);
       if (zone) {
         C.bolts.kill(b);
+        C.telemetry.hits[b.userData.charged ? 'charged' : 'stream']++; // story-019: boss hits count too (the kill itself has no score/kills side-effects — story-014 owns the victory rewards)
         EFFECTS.explosion(b.position);
         noiseBurst({ dur: 0.3, vol: zone === 2 ? 0.5 : 0.4, f0: zone === 2 ? 1200 : 800, f1: 140 });
         if (BOSS.hitBoss(b.userData.dmg || 1, zone === 2, C.bossApi)) EFFECTS.shake(0.12); // story-018: bolt-carried damage — hitBoss already takes the dmg param, boss.js stays zero-diff (weak point 6×3 = 18)

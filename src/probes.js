@@ -18,11 +18,13 @@ import * as BOSS from './boss.js';
 import * as DRESSING from './arena-dressing.js'; // story-017: combat-only ambient field + shell visual (reads its probe surfaces — never the reverse)
 import { resetChargeProbe } from './probes-charge.js'; // review-fix split: the charge walk's state bag + window hygiene live with the drive now
 import { resetPowerupProbe } from './probes-powerup.js'; // review-fix split: same, for the powerup walk
+import { resetBalanceProbe } from './probes-balance.js'; // story-019: the balance walk's state bag + window hygiene live with the drive (the story-018 split precedent)
 
 // story-018 walks (review-fix split): combat.js imports the ticks from HERE (the R-e wiring,
 // unchanged) — these re-exports keep that import line byte-stable.
 export { chargeProbeTick, resetChargeProbe } from './probes-charge.js';
 export { powerupProbeTick, resetPowerupProbe } from './probes-powerup.js';
+export { balanceProbeTick, resetBalanceProbe } from './probes-balance.js'; // story-019 re-export — the new walk rides the same wiring (combat.js's probes import gains exactly one name)
 
 const qs = new URLSearchParams(location.search);
 const DRONE_PROBE = qs.get('droneProbe') === '1'; // story-012: deterministic single-drone run
@@ -61,6 +63,7 @@ export function resetProbes() { // rider R-e: what enterCombat's inline probe re
   // (they ran last here before the split).
   resetChargeProbe();
   resetPowerupProbe();
+  resetBalanceProbe(); // story-019: the balance walk joins the stale-delete hygiene (called last — the story-018 split's call order)
 }
 
 /* ---------- story-012 drone probe (?droneProbe=1) ----------
