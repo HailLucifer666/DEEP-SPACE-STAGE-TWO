@@ -619,6 +619,20 @@ try {
   ok('review: victory card score equals the internal final score',
     vicLanded && (() => { const m = /^SCORE — (\d+)$/.exec(vx.score || ''); return !!m && Number(m[1]) === vx.internal; })(),
     vicLanded ? `card=${JSON.stringify(vx.score)} internal=${vx.internal}` : 'victory never landed');
+  /* --- story-019: the locked flat boss reward (SCORE_BOSS = 1000) ---
+     RED-FIRST (2026-11-06, story-018 gate build @ 37abb72 — product code untouched, only this
+     harness differs): on that build the boss death awards NOTHING (combat.js's bossDefeated
+     branch only counts reports and fires victory — the card freezes the PRE-award score), so
+     `internal` reads 0 here and BOTH new asserts fail for exactly the missing-award reason.
+     The drive's pre-boss score is deterministically 0: bossProbe clears the field at spawn,
+     the alive boss blocks wave progression (no wave-clear bonus), nothing else scores.
+     Record: production/qa/evidence/story-019-elites-waves-telemetry/flow-red-story019.txt. */
+  ok('story-019: victory final score = pre-boss score + 1000 exactly (SCORE_BOSS, locked)',
+    vicLanded && vx.internal === 1000,
+    vicLanded ? `internal=${vx.internal} (pre-boss 0 + SCORE_BOSS 1000 expected)` : 'victory never landed');
+  ok('story-019: +1000 writes through to the highscore (victory.enter writeHighscore, persist → read back)',
+    vicLanded && (await evl(`window.__stage2.highscore`)) === 1000,
+    vicLanded ? `highscore=${await evl(`window.__stage2.highscore`)}` : 'victory never landed');
   if (vicLanded) {
     // deterministic stale-pip proxy (see the block comment): paint every edge pip ON at the
     // card — the pad must not inherit combat's pip state (clearCombat drains it)
@@ -1243,6 +1257,209 @@ try {
   }
   ok('CONSOLE [] (powerupProbe page)', errs.length === 0, errs.join(' | '));
 
+  /* --- story-019 balance probe (?balanceProbe=1, next page over the SAME CDP session) ---
+     Deterministic in-page drive (droneProbe/chargeProbe pattern; src/probes-balance.js — the
+     probes.js budget discipline keeps one walk per file, the story-018 split precedent). The
+     drive walks, in order: elite stats (spawnRaiderForProbe wave 4 forced: HP ×3, speedMult
+     ×1.15, scale ×1.35, tint 0xffa02f trim+glow, contact r = R_RAIDER × ELITE_SCALE) → the
+     unconditional per-spawn reset pin (former elite killed, respawn at wave 3 reads normal)
+     → elite score ×2 through the REAL bolt-kill path (+300, kills +1, telemetry kills/elite
+     splits) → wave 3 produces 0 elites over 20 real spawns → the elite RATE as MECHANISM
+     GATES + a 99.9% sanity band ([3,21]; the first cut was a 95% distribution gate —
+     [6,16] at 94.19% coverage, then [6,17] at 95.99% — replaced after the merge-halt
+     diagnosis proved the environment's Math.random batches at run level; NO seeded RNG
+     exists — architecture §7.1 honest flag) → the waves
+     1-5 composition table observed through the REAL spawn path (deterministic authored split
+     per wave; totals equal the derived waveCount; wave 6 reads the derived fallback —
+     boundary asserted both ways via waveComposition().source + the wave-6 spawn total) → a
+     scripted telemetry run (real-fire stream kill of a rammer + charged one-shot of a gunner;
+     kills/hits/shots/scoreBy deltas match the drive's own actions; hits ≤ shots per channel;
+     no NaN/undefined) → the boss completion (pre-boss score + 1000 exactly; a FORCED second
+     bossDefeated report through the same wrapper never double-awards — C.bossAwarded latched;
+     bossDefeatedReports countable at 2 = 1 natural + 1 forced).
+     RED-FIRST (2026-11-06, story-018 gate build @ 37abb72, product code untouched, only this
+     harness differs): ?balanceProbe=1 is unread so window.__stage2.balanceProbe never
+     appears and the deadline expires — every new assert records its red from the null probe
+     (the exact droneProbe red pattern). Full output: flow-red-story019.txt.
+     MUTATIONS (branch, post-green; each: mutate → npm run build → full flow-check → restore
+     → rebuild; verified applied by reading its red output): recorded per assert below. */
+  await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat&balanceProbe=1' });
+  let bp19 = null;
+  {
+    const t0 = Date.now();
+    for (;;) {
+      // guarded + thrown-tolerant (droneProbe pattern): across Page.navigate the old
+      // execution context dies — raw reads throw and would kill the run before the asserts
+      try { bp19 = await J(`(window.__stage2 && window.__stage2.balanceProbe) || null`); } catch { bp19 = null; }
+      if (bp19) break;
+      if (Date.now() - t0 > 300000) break; // deadline — the asserts below record the red
+      await sleep(300);
+    }
+  }
+  const b19 = bp19 || {};
+  const eG = b19.elite ? (b19.elite.gunner || {}) : {}, eR = b19.elite ? (b19.elite.rammer || {}) : {},
+    rPin = b19.resetPin ? (b19.resetPin.after || {}) : {}, sX2 = b19.scoreX2 || {},
+    w3z = b19.wave3 || {}, rt = b19.rate || {}, tb = b19.table || {}, tm = b19.telemetry || {},
+    bs = b19.boss || {};
+  ok('balanceProbe reports (story-019)', !!bp19, JSON.stringify(bp19));
+  ok('elite gunner stats (hp 6 = 2×3, speedMult 1.15, scale 1.35, elite flag)',
+    eG.kind === 'gunner' && eG.elite === true && eG.hp === 6 && eG.speedMult === 1.15 && eG.scale === 1.35, JSON.stringify(eG));
+  ok('elite rammer stats (hp 3 = 1×3, speedMult 1.15, scale 1.35, elite flag)',
+    eR.kind === 'rammer' && eR.elite === true && eR.hp === 3 && eR.speedMult === 1.15 && eR.scale === 1.35, JSON.stringify(eR));
+  ok('elite trim/glow retinted 0xffa02f (and the base tints recorded for the reset pin)',
+    eG.trimTint === 0xffa02f && eG.glowTint === 0xffa02f && eG.trimBase === 0xff3b2f && eG.glowBase === 0xff6a3c, JSON.stringify(eG));
+  // QUALITY REVIEW (2026-11-07, orchestrator ruling): the radius is STAMPED + probe-visible
+  // but NOT consumed by any collision scan yet — the bolt scan uses the fixed 1.1 radius²
+  // (weapons.js) and ram contact (R_RAIDER + 0.9)² (enemies.js). Wiring it in is a DEFERRED
+  // game-design decision (a bigger elite hitbox = a balance change) for the evidence-driven
+  // balance pass this story's telemetry enables. The assert pins the stamp, not a behavior.
+  ok('elite contact radius stamped (r = 1.215), probe-visible, not yet consumed',
+    eG.r === 0.9 * 1.35, `r=${eG.r}`);
+  // MUTATION (2026-11-06): enemies.js ELITE_CHANCE 0.22 → 0 → RED `elite rate within the
+  // binomial 95% band` (elites 0 < 6) — adjacent keep-passing: wave-3 zeros stay green (the
+  // band's low edge is the only discriminator the zero-chance mutates), stats asserts stay
+  // green (spawnRaiderForProbe forceElite bypasses the roll — the seam the mutation isolates).
+  // MERGE-HALT ROUND (2026-11-07, orchestrator ruling): the distribution gate is REPLACED by
+  // mechanism gates + a sanity band. Why: the rate drew a confirmed 20/50 (P ≈ 0.1%) and a
+  // reproduced instrumented 21/50 with meanDraw 0.4293 and mismatches 0 — the environment's
+  // Math.random batches at run level (whole-run low-skewed batches of TRUE draws; the counted
+  // flags always equal the draws' verdicts). A 95% band reds on such batches while the
+  // mechanism is exact — the wrong gate for this failure class. The three gates that CANNOT
+  // be defeated by batching: (a) mismatches === 0 — the recorded draw and the stamped flag
+  // agree on EVERY spawn (kills the chance→0-lurking and double-stamp bug classes); (b)
+  // killsFailed/aliveLeaks/notWave5 all 0 — the stage measured what it thinks it measured;
+  // (c) the exact 99.9% central sanity interval [3,21] (coverage 99.912%, tails 0.0453% /
+  // 0.0431%) purely to catch a mechanically broken roll: chance→0 reads 0 → RED; chance→1
+  // reads 50 → RED. The instrumentation (draws/meanDraw/sibMeans/stream) rides the report as
+  // the evidence surface; the flake-budget policy for ALL statistical asserts is the
+  // stage-close decision item (report §11).
+  ok('elite-rate mechanism exact + 99.9% sanity band ([3,21]: draw↔flag agreement on all 50 spawns, every spawn killed at wave 5, count sane)',
+    rt.rolls === 50 && rt.mismatches === 0 && rt.killsFailed === 0 && rt.aliveLeaks === 0 && rt.notWave5 === 0 &&
+    rt.elites >= 3 && rt.elites <= 21, JSON.stringify({ rolls: rt.rolls, elites: rt.elites, meanDraw: rt.meanDraw,
+    mismatches: rt.mismatches, killsFailed: rt.killsFailed, aliveLeaks: rt.aliveLeaks, notWave5: rt.notWave5 }));
+  ok('wave 3 produces zero elites (20 real spawns below ELITE_MIN_WAVE)',
+    w3z.spawns === 20 && w3z.elites === 0, JSON.stringify(w3z));
+  // MUTATION (2026-11-06): enemies.js spawnRaider's unconditional per-spawn reset block
+  // removed → RED `former elite respawns normal` (after.elite true, scale 1.35, tint amber —
+  // the reused pool slot leaks the elite skin). Adjacent keep-passing: elite stats asserts
+  // stay green (stamping still works; only the reset is gone).
+  ok('former elite respawns normal (unconditional per-spawn reset: flag/scale/hp/speedMult/tint/r)',
+    rPin.elite === false && rPin.scale === 1 && rPin.speedMult === 1 && rPin.hp === (rPin.kind === 'gunner' ? 2 : 1) &&
+    rPin.trimTint === 0xff3b2f && rPin.glowTint === 0xff6a3c && rPin.r === 0.9, JSON.stringify(rPin));
+  // MUTATION (2026-11-06): weapons.js kill site ELITE_SCORE_MULT consumption removed (score
+  // always base) → RED `elite kill pays ×2` (scoreDelta 150 ≠ 300). Adjacent keep-passing:
+  // killsDelta + telemetry kill splits stay green (the kill path is intact; only the score
+  // multiplier broke).
+  ok('elite kill pays ×2 through the real bolt-kill path (gunner 150 × 2 = 300, kills +1)',
+    sX2.scoreDelta === 300 && sX2.killsDelta === 1, JSON.stringify(sX2));
+  ok('elite kill lands in the telemetry kill splits (kills.gunner +1, eliteKills.gunner +1)',
+    sX2.tKillsGunner === 1 && sX2.tEliteGunner === 1, JSON.stringify(sX2));
+  // MUTATION (2026-11-06): enemies.js startWave bypasses the table (always rolls rammerShare)
+  // → RED `wave 1 composition is the authored table split` (the deterministic 1g/3r becomes a
+  // stochastic roll; joint miss chance ≈ 0.03% across the five exact-split asserts — the
+  // no-seeded-RNG caveat, architecture §7.1). Adjacent keep-passing: totals-equal-derived
+  // stays green (the mutation preserves waveCount; only the KIND split broke).
+  ok('wave 1 composition is the authored table split (1 gunner / 3 rammers, source table)',
+    tb.rows && tb.rows[1] && tb.rows[1].gunner === 1 && tb.rows[1].rammer === 3 && tb.rows[1].source === 'table',
+    JSON.stringify(tb.rows ? tb.rows[1] : null));
+  ok('waves 2-5 composition is the authored table split (2g/4r, 3g/4r, 4g/5r, 5g/5r)',
+    tb.rows && tb.rows[2] && tb.rows[2].gunner === 2 && tb.rows[2].rammer === 4 &&
+    tb.rows[3] && tb.rows[3].gunner === 3 && tb.rows[3].rammer === 4 &&
+    tb.rows[4] && tb.rows[4].gunner === 4 && tb.rows[4].rammer === 5 &&
+    tb.rows[5] && tb.rows[5].gunner === 5 && tb.rows[5].rammer === 5,
+    JSON.stringify(tb.rows || null));
+  ok('table totals equal the derived waveCount exactly per wave (4,6,7,9,10 — the curve is unchanged)',
+    tb.rows && [1, 2, 3, 4, 5].every((w) => tb.rows[w] && tb.rows[w].total === tb.waveCounts[w - 1] && tb.waveCounts[w - 1] === [4, 6, 7, 9, 10][w - 1]),
+    JSON.stringify({ rows: tb.rows, waveCounts: tb.waveCounts }));
+  ok('table↔derived boundary BOTH ways (wave 5 source table, wave 6+ derived; wave-6 spawn total = waveCount(6) = 12)',
+    tb.rows && tb.rows[5] && tb.rows[5].source === 'table' && tb.w6 && tb.w6.source === 'derived' && tb.w6.total === 12,
+    JSON.stringify({ w5: tb.rows ? tb.rows[5] : null, w6: tb.w6 }));
+  ok('telemetry scripted run: stream kill matches the drive (shots ≥ 1, hits ≥ 1, hits ≤ shots, kills.rammer +1, scoreBy.rammer +100)',
+    tm.rammerKill && tm.rammerKill.shotsStream >= 1 && tm.rammerKill.hitsStream >= 1 &&
+    tm.rammerKill.hitsStream <= tm.rammerKill.shotsStream &&
+    tm.rammerKill.killsRammer === 1 && tm.rammerKill.scoreRammer === 100, JSON.stringify(tm.rammerKill || null));
+  ok('telemetry scripted run: charged one-shot matches the drive (shots.charged +1, kills.gunner +1, chargedKills +1, scoreBy.gunner +150)',
+    tm.chargedKill && tm.chargedKill.shotsCharged === 1 && tm.chargedKill.killsGunner === 1 &&
+    tm.chargedKill.chargedKills === 1 && tm.chargedKill.scoreGunner === 150, JSON.stringify(tm.chargedKill || null));
+  // the dump is read LIVE from combatState().telemetry (the state is frozen — the boss stage landed victory): the drive never duplicates the dump shape
+  const telDump = await J(`__stage2.combatState().telemetry`);
+  ok('telemetry dump is complete and sane (every group present, numbers not NaN, no undefined — accuracy is read-derived, never stored)',
+    !!telDump && (() => {
+      const d = telDump;
+      const groups = ['kills', 'eliteKills', 'shots', 'hits', 'damageTaken', 'scoreBy', 'waveTimes', 'pickups'];
+      if (!groups.every((g) => d[g] !== undefined)) return false;
+      if (typeof d.chargedKills !== 'number' || typeof d.waveReached !== 'number') return false;
+      if (d.deathBy !== null && typeof d.deathBy !== 'string') return false;
+      if (!Array.isArray(d.waveTimes) || d.waveTimes.length > 6) return false;
+      const bad = JSON.stringify(d).match(/NaN|Infinity/);
+      const walk = (o) => Object.values(o).some((v) => v === undefined || (typeof v === 'object' && v !== null && !Array.isArray(v) && walk(v)));
+      return !bad && !walk(d);
+    })(), JSON.stringify(telDump));
+  // MUTATION (2026-11-06): combat.js enterCombat's telemetry zero line removed → RED
+  // `telemetry zeroed on enterCombat` (the pre-restart run's counters ride the fresh entry —
+  // restart parity breaks). Adjacent keep-passing: the score/kills zeroing (the L453 pattern)
+  // is untouched — the existing second-run baseline assert stays green.
+  // SPEC-REVIEW ROUND (2026-11-07): scoreBy.boss was a DEAD FIELD — the award wrote only
+  // C.score (+ the latch), and the dump-sanity assert checks PRESENCE only, so boss:0 passed
+  // vacuously on a run whose final score included the +1000. The strengthened clause reads
+  // the frozen state live: the single award must read scoreBy.boss === 1000 exactly.
+  // RED-BEFORE recorded (flow-red-reviewfix.txt: scoreByBoss 0 on the pre-fix branch build).
+  const bossScoreBy = await J(`__stage2.combatState().telemetry.scoreBy.boss`);
+  ok('boss reward: final score = pre-boss + 1000 exactly, exactly once (forced second completion never double-awards — bossAwarded latched, reports countable at 2, scoreBy.boss = the award itself)',
+    bs.scoreAfter === bs.preScore + 1000 && bs.scoreAfter2 === bs.scoreAfter && bs.bossAwarded === true && bs.reports === 2 && bossScoreBy === 1000,
+    JSON.stringify({ ...bs, scoreByBoss: bossScoreBy }));
+  // SPEC-REVIEW ROUND (2026-11-07): renamed — this page performs NO reload; the assert reads
+  // the ledger at balanceProbe latch time (typically stale-high from the earlier pages'
+  // natural-death writes). The AC's substance (persist → read back = the +1000) is proven by
+  // the victory-path assert: highscore === 1000 exactly after victory.enter's writeHighscore.
+  ok('highscore ledger at balanceProbe time still carries the boss award (>= 1000; the exact persist→read-back is pinned on the victory path)',
+    b19.highscore !== undefined && b19.highscore >= 1000, `highscore=${b19.highscore} finalScore=${bs.finalScore}`);
+  ok('CONSOLE [] (balanceProbe page)', errs.length === 0, errs.join(' | '));
+  {
+    // telemetry restart parity (the zeroing mutation's red): the boss stage landed victory —
+    // REPLAY → pad → walk to combat → the fresh entry's telemetry must read ALL ZERO.
+    let parityChecked = false;
+    if (bp19 && (await evl(`(window.__stage2 && __stage2.phase) || 'boot'`)) === 'victory') {
+      await evl(`document.getElementById('vic-replay').click()`);
+      let padLanded19 = false;
+      {
+        const t0 = Date.now();
+        for (;;) {
+          try { if (await J(`__stage2.phase`) === 'pad') { padLanded19 = true; break; } } catch {}
+          if (Date.now() - t0 > 20000) break;
+          await sleep(200);
+        }
+      }
+      let combatLanded19 = false;
+      if (padLanded19) {
+        const t0 = Date.now();
+        while (Date.now() - t0 < 120000) { // pad auto-advances through the launch walk
+          let p = null;
+          try { p = await evl(`(window.__stage2 && __stage2.phase) || 'boot'`); } catch {}
+          if (p === 'combat') { combatLanded19 = true; break; }
+          await sleep(250);
+        }
+      }
+      const tel19 = combatLanded19 ? await J(`__stage2.combatState().telemetry`) : null;
+      parityChecked = combatLanded19;
+      const allZero = !!tel19 &&
+        tel19.kills.gunner === 0 && tel19.kills.rammer === 0 && tel19.kills.orb === 0 &&
+        tel19.eliteKills.gunner === 0 && tel19.eliteKills.rammer === 0 && tel19.chargedKills === 0 &&
+        tel19.shots.stream === 0 && tel19.shots.charged === 0 &&
+        tel19.hits.stream === 0 && tel19.hits.charged === 0 &&
+        tel19.damageTaken.bolt === 0 && tel19.damageTaken.ram === 0 && tel19.damageTaken.dive === 0 && tel19.damageTaken.bossDash === 0 &&
+        tel19.deathBy === null &&
+        tel19.scoreBy.gunner === 0 && tel19.scoreBy.rammer === 0 && tel19.scoreBy.orb === 0 &&
+        tel19.scoreBy.waveBonus === 0 && tel19.scoreBy.boss === 0 &&
+        tel19.waveReached === 1 && tel19.waveTimes.length === 0 &&
+        tel19.pickups.dropped === 0 && tel19.pickups.picked === 0 && tel19.pickups.expired === 0 &&
+        tel19.pickups.byKind.SPREAD === 0 && tel19.pickups.byKind.OVERDRIVE === 0 && tel19.pickups.byKind.SHIELD === 0;
+      ok('telemetry zeroed on enterCombat (restart parity: fresh entry reads all zeros, waveReached 1)',
+        allZero, JSON.stringify(tel19));
+    }
+    if (!parityChecked) ok('telemetry zeroed on enterCombat (restart parity: fresh entry reads all zeros, waveReached 1)',
+      false, bp19 ? 'victory phase missing after the boss stage' : 'no balanceProbe report (old build: red by absence)');
+  }
 
 
   /* --- R-c commit 4: SPIN N-key regression probe (?debug=1&spin=1, page over the SAME CDP session) ---

@@ -1,0 +1,23 @@
+== RECONSTRUCTION (2026-11-07) — the original capture was deleted by a later cleanup glob
+   (`rm flow-diag-pattern-*.txt` before the wired runs); this file transcribes the anomaly's
+   recorded data VERBATIM from the session record (the grep-extracted rate object and the
+   full draws array were captured to the transcript before deletion). The original file was
+   the complete flow-check output of the run: FLOW-CHECK FAIL — 169 passed, 1 failed, with
+   this single red: "elite rate within the exact central 95% band for p=0.22 over 50 real
+   rolls ([6,17], coverage 95.99%)". Every other assert passed.
+== RUN CONDITIONS: the orchestrator's exact pattern (npm run build && dep-check && boot-marks
+   immediately before flow-check), round-1 instrumentation committed at 6d391d7, build from
+   the branch at that state.
+== THE RECORDED RATE OBJECT (grep-extracted from the original output):
+{"rolls":50,"elites":21,"meanDraw":0.4293,"mismatches":0,"killsFailed":0,"aliveLeaks":0,"notWave5":0,
+ "draws":[0.019,0.174,0.086,0.687,0.504,0.033,0.571,0.906,0.545,0.163,0.531,0.678,0.085,0.95,0.187,0.318,0.174,0.258,0.068,0.64,0.214,0.804,0.448,0.815,0.138,0.056,0.527,0.906,0.939,0.204,0.893,0.919,0.205,0.203,0.607,0.306,0.109,0.94,0.761,0.389,0.062,0.083,0.591,0.02,0.004,0.703,0.036,0.783,0.782,0.444]}
+== DERIVED (computed from the array at capture time): count below 0.22 = 21 (indices
+   0,1,2,5,9,12,14,16,18,20,24,25,29,32,33,36,40,41,43,44,46); mean = 0.4293; min 0.0040;
+   max 0.9500; decile histogram [11,6,5,3,2,6,4,4,3,6] (the excess concentrates below 0.1:
+   11 vs 5 expected). mismatches 0: every counted elite flag EQUALS its own draw's verdict
+   (< 0.22) — the batch of TRUE draws skewed low; the counter counted them honestly.
+
+== ALSO LOST TO THE SAME GLOB: flow-diag-pattern-3.txt (the same pattern, next run) —
+   recorded values from the session record: rate 14/50, meanDraw 0.4588, mismatches 0,
+   killsFailed 0, aliveLeaks 0, notWave5 0, FLOW-CHECK PASS — 170 passed, 0 failed
+   (in-band; its data is cited in report §11's table with this note as provenance).

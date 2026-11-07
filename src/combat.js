@@ -17,7 +17,7 @@ import { KINDS as EFFECT_KINDS } from './powerups.js';
 import { noiseBurst, loopStart, musicEvict, musicSetDuck, alarmTick, proximityTick } from './audio.js'; // story-009 audio + hit voices that stayed with combat (the fire-path/effect voices moved to weapons.js with their call sites)
 import { initWeapons, makeBolt, fireTick, boltsTick, effectsTick, applyEffect, T_CHARGE, BOLT_LIFE } from './weapons.js'; // review-fix split (story-018 review round): the fire path + projectile/effect side — verbatim moves; combat calls them at the same tickCombat positions and composes POWERUP_API around the imported applyEffect
 import { stageShip, combatFlow } from './launch.js';
-import { droneProbeTick, bossProbeTick, pitchProbeTick, dressingProbeTick, chargeProbeTick, powerupProbeTick, resetProbes } from './probes.js'; // rider R-e: the probe drives + their state live in probes.js — combat calls them, never the reverse (dep-check: acyclic)
+import { droneProbeTick, bossProbeTick, pitchProbeTick, dressingProbeTick, chargeProbeTick, powerupProbeTick, balanceProbeTick, resetProbes } from './probes.js'; // rider R-e: the probe drives + their state live in probes.js — combat calls them, never the reverse (dep-check: acyclic; story-019 adds balanceProbeTick through the same re-export wiring)
 import * as DRESSING from './arena-dressing.js'; // story-017: combat-only ambient field + shell visual (GDD §3.6)
 
 const ARENA_Y = 18; // story-016: re-anchored as the sphere CENTER's y — O = (0, ARENA_Y, 0) (the spawn point)
@@ -63,6 +63,35 @@ const BOLT_POOL = 36;
 const HP_MAX = 100, SHIELD_MAX = 50, SHIELD_REGEN_DELAY = 3, SHIELD_REGEN_RATE = 14;
 const DEATH_SLOWMO = 0.7;    // seconds of real time at timeScale 0.3 before gameover (a click lands it sooner)
 const SCORE_WAVE = 150; // the wave-clear bonus (the kill-site scores moved to weapons.js with the kill sites — review-fix split)
+const SCORE_BOSS = 1000; // story-019: the boss-defeat reward — LOCKED flat (player decision 2026-11-04/05, story-019 L12-13); NOT a tuning knob. Lives beside SCORE_WAVE because the award reads/writes C.score HERE (architecture §8.1): boss.js stays a pure signal source — threading score through the api would extend the surface and boss.js importing combat.js is a cycle.
+
+// story-019: the balance telemetry accumulator (GDD §3.7 — the stage's namesake). A per-run
+// bag of EVENT-DRIVEN counters: incremented only at existing event sites (kill / hit / shot /
+// damage / wave-increment / score events), never per-frame, nothing in the render loop.
+// Accuracy is DERIVED by the reader (hits/shots) — never stored as a division. Lives ON C so
+// the weapons.js seam (the fire path + kill sites since the review-fix split) increments
+// through the same live reference with zero new imports. Zeroed in enterCombat beside
+// score/kills (the L453 pattern); exposed via combatState().telemetry (probe surface only —
+// zero player UI).
+function freshTelemetry() {
+  return {
+    kills: { gunner: 0, rammer: 0, orb: 0 }, // by kind, any bolt
+    eliteKills: { gunner: 0, rammer: 0 }, // subset of kills — elite is a flag, not a kind
+    chargedKills: 0, // kills by charged bolt — the skill signal
+    shots: { stream: 0, charged: 0 }, // bolts spawned (a SPREAD fan counts each fan bolt)
+    hits: { stream: 0, charged: 0 }, // bolts that hit anything (1:1 max — bolts die on hit)
+    damageTaken: { bolt: 0, ram: 0, dive: 0, bossDash: 0 }, // summed damage by honest source —
+    // 'bolt' honestly merges gunner fire AND the boss volley (both ride the E.bolts pool and
+    // the same player scan through the enemies api); 'dive'/'bossDash' are tagged by their
+    // per-caller api wraps (the orb's / the boss's only damage source each — drone.js and
+    // boss.js stay zero-diff)
+    deathBy: null, // the killing blow's source (probe-forced deaths pass no source — stays null)
+    scoreBy: { gunner: 0, rammer: 0, orb: 0, waveBonus: 0, boss: 0 },
+    waveReached: 1,
+    waveTimes: [], // combat-clock time at each wave increment (≤ 6 events/run)
+    pickups: { dropped: 0, picked: 0, expired: 0, byKind: { SPREAD: 0, OVERDRIVE: 0, SHIELD: 0 } }, // read as deltas over powerups.stats() at dump time (the soft dep — fields read 0 if the events never fire)
+  };
+}
 
 const C = {
   ready: false, scene: null, camera: null, rocket: null, ui: null, api: null,
@@ -73,6 +102,8 @@ const C = {
   chargeT: 0, charging: false, // story-018: hold accumulator (s) + past-threshold latch — zeroed on death/pause/exit (GDD §3.2 cancel rules)
   effects: { SPREAD: 0, OVERDRIVE: 0, SHIELD: 0 }, // story-018: seconds remaining per pickup effect — OWNER: combat.js (architecture §7.2; the entity side lives in powerups.js)
   fired: { stream: 0, charged: 0 }, // story-018 probe surface: fire-path bolts spawned this fight (story-019's telemetry supersedes)
+  bossAwarded: false, // story-019: the SCORE_BOSS exactly-once latch (reset in enterCombat beside score/kills)
+  telemetry: freshTelemetry(), telemetryPuBase: null, // story-019: the event-driven accumulator + the powerups.stats() baseline its pickup counters delta over
   wave: 0, waveGapT: 0, score: 0, kills: 0,
   time: 0, // story-014: per-fight combat clock — scaled sdt while alive (the world's slow-mo slows it), frozen while dead; reset each enterCombat. NOT game.time (the global clock — launch phases own it)
 
@@ -116,7 +147,8 @@ export function prepareCombat(scene, camera, rocket, ui, api) {
   DRESSING.prepareDressing(scene, { AMBIENT_FIELD_COUNT, AMBIENT_FIELD_SEED, SHELL_VISUAL_MAX_OPACITY, R_SOFT, R_HARD, ARENA_Y }); // story-017: baseline member — the ambient field + shell visual are created ONCE here (never per-entry allocation) and hide/show with the combat lifecycle
   POWERUPS.preparePowerups(scene); // story-018: the pickup pool joins the entity baseline — created ONCE, pre-warmed 6 (restarts allocate nothing new; the restartProbe baseline RISES by 6, recorded)
   C.bossApi = { // the boss's tick/death api — EFFECTS + the combat probe surfaces, drone-tick api shape extended for slow-mo + report
-    damagePlayer, explosion: (p) => EFFECTS.explosion(p), shake: (a) => EFFECTS.shake(a),
+    damagePlayer: (n) => damagePlayer(n, 'bossDash'), // story-019: the dash ram is the boss's ONLY damage source — the api wrap tags it (boss.js zero-diff)
+    explosion: (p) => EFFECTS.explosion(p), shake: (a) => EFFECTS.shake(a),
     setTimeScale: (v) => C.api.setTimeScale(v), getTimeScale: () => C.api.getTimeScale(),
     // story-014: the bossDefeated signal IS the victory trigger. Deliberately handled in this
     // wrapper (combat.js owns the api object; boss.js stays a pure signal source) and fired on
@@ -131,6 +163,16 @@ export function prepareCombat(scene, camera, rocket, ui, api) {
         // stage-2 review (finding 1): the exactly-once counter — the completion block's
         // re-fire class must be COUNTABLE by the harness, not just unobservable.
         window.__stage2.bossDefeatedReports = (window.__stage2.bossDefeatedReports || 0) + 1;
+        // story-019: the locked flat boss reward — awarded BEFORE go('victory') so the card
+        // freezes it same-frame (victory.enter reads cs.score inside the go() call stack,
+        // phases.js). Its OWN latch, independent of the dead/victory guards: a forced second
+        // completion re-enters this branch (the counter stays countable) but the award happens
+        // exactly once per fight; enterCombat resets the latch beside score/kills.
+        // SPEC-REVIEW ROUND (2026-11-07): scoreBy.boss rides the SAME latch guard — it was a
+        // dead field before (the dump-sanity assert checks presence only, so boss:0 passed
+        // vacuously on a run whose score included the +1000; the strengthened harness clause
+        // pins scoreBy.boss === 1000).
+        if (!C.bossAwarded) { C.bossAwarded = true; C.score += SCORE_BOSS; C.telemetry.scoreBy.boss += SCORE_BOSS; }
         // stage-2 review (finding 3): the victory frame must not continue into wavesTick —
         // with the field now clear it grants the wave-clear bonus AFTER the card froze its
         // score (the card's "final score" was not the internal final).
@@ -291,19 +333,21 @@ function steer(dt) {
 // before, so powerups.js's callback surface is unchanged.
 const POWERUP_API = { picked: applyEffect }; // composed ONCE — powerups.js never reads combat state (acyclic)
 
-function damagePlayer(n) {
+function damagePlayer(n, source) { // story-019: optional source tag — the four honest sources ('bolt' = gunner fire AND the boss volley, honestly merged: both ride E.bolts through the enemies api call site; 'ram' = raider contact; 'dive' tagged by the DRONES api wrap; 'bossDash' by the bossApi wrap). Probe-forced deaths (probeDamagePlayer) pass no source — they are not gameplay damage and never reach the accumulator.
   if (C.dead) return;
   const toShield = Math.min(C.shield, n);
   C.shield -= toShield;
   const toHull = n - toShield;
   C.hp = Math.max(0, C.hp - toHull);
   C.regenT = 0;
+  if (source && C.telemetry.damageTaken[source] !== undefined) C.telemetry.damageTaken[source] += n;
   EFFECTS.hitVeil(260);
   EFFECTS.shake(0.16);
   noiseBurst({ dur: 0.3, vol: 0.5, f0: 260, f1: 90 });
   if (C.hp <= 0) {
     C.dead = true;
     C.deathT = 0;
+    if (source && C.telemetry.damageTaken[source] !== undefined) C.telemetry.deathBy = source; // the killing blow's source
     C.api.setTimeScale(0.3); // death slow-mo (spec §in-scope)
     EFFECTS.shake(0.45);
     noiseBurst({ dur: 1.1, vol: 0.8, f0: 700, f1: 60 });
@@ -320,10 +364,14 @@ function wavesTick(dt) {
   // waves simply continue after the boss dies).
   if (ENEMIES.aliveCount() === 0 && ENEMIES.queuedCount() === 0 &&
       DRONES.aliveCount() === 0 && DRONES.queuedCount() === 0 && !BOSS.alive()) {
-    if (C.waveGapT <= 0) { C.waveGapT = 1.6; if (C.wave > 0) C.score += SCORE_WAVE * C.wave; }
+    if (C.waveGapT <= 0) {
+      C.waveGapT = 1.6;
+      if (C.wave > 0) { const bonus = SCORE_WAVE * C.wave; C.score += bonus; C.telemetry.scoreBy.waveBonus += bonus; } // story-019: score-by-source at the existing bonus event
+    }
     C.waveGapT -= dt;
     if (C.waveGapT <= 0) {
       C.waveGapT = 0; C.wave++;
+      C.telemetry.waveReached = C.wave; C.telemetry.waveTimes.push(+C.time.toFixed(2)); // story-019: the pacing curve — free at the existing increment event (≤ 6 events/run)
       if (C.wave > BOSS_WAVE && BOSS.eligible()) BOSS.spawnBoss(C.pos); // story-013: the warden arrives
       else { ENEMIES.startWave(C.wave, C.pos); DRONES.startWave(C.wave); }
     }
@@ -404,6 +452,9 @@ export function enterCombat(scene, camera, rocket, ui, api) {
   C.effects = { SPREAD: 0, OVERDRIVE: 0, SHIELD: 0 }; // story-018: effect timers wipe beside score/kills (the L453 pattern)
   C.fired = { stream: 0, charged: 0 }; // story-018 probe counters restart beside kills (the L453 pattern)
   C.score = 0; C.kills = 0; C.wave = 1; C.waveGapT = 0;
+  C.bossAwarded = false; // story-019: the award latch is per-fight — a fresh combat can be awarded again (re-entry after victory starts at score 0)
+  C.telemetry = freshTelemetry(); // story-019: the accumulator restarts beside score/kills (the L453 pattern) — the mutation "forget to zero" is pinned by the restart-parity assert
+  C.telemetryPuBase = POWERUPS.stats(); // the pickup counters are per-page cumulative (powerups.js) — the run reads deltas over this entry baseline
   C.time = 0; // story-014: the clock is per-fight — every combat entry restarts it
   C.scriptT = -1; C.scriptDone = false; C.scriptDrone = null;
   C.victoryFired = false; // stage-2 review (finding 3): the flag is per-fight — a fresh combat grants waves again
@@ -435,8 +486,8 @@ export function tickCombat(dt, t) {
   steer(dt);
   fireTick(dt);
   boltsTick(dt);
-  ENEMIES.tickEnemies(dt, C.pos, { damagePlayer, explosion: (pos) => EFFECTS.explosion(pos) });
-  DRONES.tickDrones(dt, C.pos, { damagePlayer, explosion: (pos) => EFFECTS.explosion(pos) });
+  ENEMIES.tickEnemies(dt, C.pos, { damagePlayer, explosion: (pos) => EFFECTS.explosion(pos) }); // story-019: the bolt/ram tags ride the enemies.js call sites (the file's only two damage values: 12 = gunner/boss-volley bolt, 25 = ram)
+  DRONES.tickDrones(dt, C.pos, { damagePlayer: (n) => damagePlayer(n, 'dive'), explosion: (pos) => EFFECTS.explosion(pos) }); // story-019: the orb's ONLY damage source is the dive — the api wrap tags it (drone.js zero-diff)
   BOSS.tickBoss(dt, C.pos, C.bossApi); // story-013: the warden — single-entity state machine
   wavesTick(dt);
   POWERUPS.tickPowerups(dt, C.pos, POWERUP_API); // story-018: age/spin/blink/despawn + the full-3D pickup check → api.picked
@@ -447,6 +498,7 @@ export function tickCombat(dt, t) {
   dressingProbeTick(dt, C, probeEnv); // story-017: deterministic dressing walk (?dressingProbe=1)
   chargeProbeTick(dt, C, probeEnv); // story-018: deterministic charged-shot walk (?chargeProbe=1)
   powerupProbeTick(dt, C, probeEnv); // story-018: deterministic pickup/effect walk (?powerupProbe=1)
+  balanceProbeTick(dt, C, probeEnv); // story-019: elite/table/telemetry walk (?balanceProbe=1) — the drive grows with the story's commits
   DRESSING.tickDressing(dt, Math.hypot(C.pos.x, C.pos.y - ARENA_Y, C.pos.z)); // story-017: slow whole-group rotation + shell opacity from 3D proximity (the ring's driver grammar)
 
   // shield regen after a clean 3 s — story-018: while SHIELD is active the regen delay reads 0
@@ -602,6 +654,19 @@ export function clearCombat() {
 }
 
 /* ---------- probe surface (window.__stage2 reads these) ---------- */
+function telemetryDump() { // story-019: one dump — the accumulator's live numbers + the pickup counters as deltas over the entry baseline (powerups.js's stats() is per-page cumulative; the delta keeps the run honest across restarts). Fresh objects — the harness never holds a live reference.
+  const T = C.telemetry, s = POWERUPS.stats(), b = C.telemetryPuBase || s;
+  return {
+    kills: { ...T.kills }, eliteKills: { ...T.eliteKills }, chargedKills: T.chargedKills,
+    shots: { ...T.shots }, hits: { ...T.hits }, damageTaken: { ...T.damageTaken },
+    deathBy: T.deathBy, scoreBy: { ...T.scoreBy },
+    waveReached: T.waveReached, waveTimes: [...T.waveTimes],
+    pickups: {
+      dropped: s.dropped - b.dropped, picked: s.picked - b.picked, expired: s.expired - b.expired,
+      byKind: { SPREAD: s.byKind.SPREAD - b.byKind.SPREAD, OVERDRIVE: s.byKind.OVERDRIVE - b.byKind.OVERDRIVE, SHIELD: s.byKind.SHIELD - b.byKind.SHIELD },
+    },
+  };
+}
 export function combatState() {
   return {
     hp: C.hp, shield: C.shield, score: C.score, wave: C.wave, kills: C.kills,
@@ -620,6 +685,7 @@ export function combatState() {
     charging: C.charging, // story-018: past the threshold — stream suppressed, release fires the charged bolt
     effects: { SPREAD: +C.effects.SPREAD.toFixed(2), OVERDRIVE: +C.effects.OVERDRIVE.toFixed(2), SHIELD: +C.effects.SHIELD.toFixed(2) }, // story-018: seconds remaining per effect (the EXPOSED surface — GDD names it combatState().effects)
     fired: { stream: C.fired.stream, charged: C.fired.charged }, // story-018 probe surface (pre-telemetry; story-019 supersedes)
+    telemetry: telemetryDump(), // story-019: the tuning surface (GDD §3.7) — probe reads only, zero player UI
     pos: C.pos.toArray().map((v) => +v.toFixed(2)), // probe surface — flow-check's keyboard-motion assert (story-003)
     dead: C.dead,
   };
