@@ -51,6 +51,11 @@
   the boss reward (1000 flat) are recorded in the story files BEFORE any Stage 4 code
   (stage-3 GATE.md known-limitation). R-c main.js refactor is mandatory FIRST (500/500).
   Charged-shot parameters pending the Stage 4 GDD pass (`design/gdd/stage-4-balance.md`).
+- Story 020 = Stage 5 — ship prep (opened 2026-11-07): ledger `one-shot-work/stage-5/`.
+  Gate-first commit landed BEFORE any Stage 5 code (stage-4 precedent). Settings
+  persistence = mute-only per the disk-truth scope finding (mute is the build's only
+  user-facing setting; the quality ladder is automatic; a settings page stays out per
+  HANDOFF L517) — presented for player confirmation at the open checkpoint.
 - **Backlog (player screenshots, 2026-11-04): title screen barely shows the hero ship** —
   small, dark, hidden behind the title text and HIGH SCORE line (pre-existing camera framing;
   tickTitle orbits at r=6.8 with the ship centered behind the UI stack). Fix rides with
