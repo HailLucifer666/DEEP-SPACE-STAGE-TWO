@@ -48,3 +48,12 @@ which recorded owed verdicts rather than blocking on them.
 RESULT: **PASS (machine gates)** — player checkpoint pending: the owed verdicts + the
 three decision items above + Stage 5 go-ahead. The gate reduces risk; it does not prove
 the absence of bugs.
+
+CHECKPOINT RECORD (2026-11-07): the checkpoint dialog was presented with all four items
+(flake policy / hint text / E.lastRoll / Stage 5 go-ahead) — UNANSWERED, same as the
+stage-3 close attempt. Working defaults adopted, each reversible and none executed
+beyond the recording: flake policy = Option A recommended (stage-5 rider); hint text =
+keep + re-word the §8.5 discoverability item to measure suppression-readability and chip
+legibility (GDD note below); E.lastRoll = gate behind the probe flag (stage-5 rider);
+Stage 5 = NOT STARTED — opens on the player's word. Verdicts (S3X + stage-3/4 look/feel)
+remain OWED, revocable at any tag.

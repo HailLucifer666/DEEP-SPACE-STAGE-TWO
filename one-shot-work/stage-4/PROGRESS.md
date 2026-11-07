@@ -40,6 +40,8 @@ flow-check 114 → 170 asserts. Scoreboard: 19/20 stories; stages 0-4 closed.
 Remaining: Stage 5 (story-020 settings persistence + README/deploy + host choice) + the
 two owner chores (TD-007 git identity, TD-08 build litter) + the checkpoint items
 (verdicts, flake policy, hint text, E.lastRoll) recorded in GATE.md.
+CHECKPOINT 2026-11-07: dialog presented — UNANSWERED (stage-3 precedent). Working
+defaults recorded in GATE.md; Stage 5 NOT STARTED (opens on the player's word).
 
 Extra riders recorded at R-c close (2026-11-06):
 - flow-check.mjs is 1641 lines at stage close (1147 at the R-c close review; story-018/019 added the charge/powerup/balance blocks) vs the 800-line file budget — if the budget covers tooling, a flow-check decomposition is a future R-series target (stage-review finding 9; not this stage).
