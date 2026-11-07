@@ -1627,6 +1627,179 @@ try {
   ok('review: bossDefeated reported exactly once (completion re-fire class)',
     (await evl(`window.__stage2.bossDefeatedReports || 0`)) === 1,
     `reports=${await evl(`window.__stage2.bossDefeatedReports || 0`)}`);
+  ok('CONSOLE [] (story-014 edge page)', errs.length === 0, errs.join(' | '));
+
+  /* --- story-020 settings persistence (?debug=1&goto=combat, page over the SAME CDP session) ---
+     The build's only user-facing setting is mute (M key in combat / the [ SOUND: ON/OFF ] title
+     button — both funnel through audio.js setMuted, the single write choke point). Pre-story the
+     flag lived in `let muted = false` with zero persistence: every reload reset it to unmuted.
+     The fix: store.js gains the guarded MUTED_KEY pair (readMuted/writeMuted — mechanical mirrors
+     of the highscore pair, same story-007 laziness contract, same §8.9 corrupt-reads-as-safe
+     rule); setMuted writes through (both toggle paths covered by construction); boot()'s
+     post-storage-warm block restores via restoreMuted(readMuted()) — restore READS, never writes
+     — then refreshSoundButton(). The probe surface is window.__stage2: the live flag (the
+     pre-existing `muted` getter) + the RAW stored value (`mutedRaw()` — through store.js's
+     guarded readMutedRaw, so corrupt seeds are visible to the harness without touching
+     internals). Reloads here are REAL Page.navigate reloads over the same profile, so
+     localStorage genuinely persists — the same mechanism the highscore ledger rides.
+     The toggle is driven through the REAL key path: input.js onKeydown's combat-branch KeyM →
+     setMuted(!isMuted()) — synthetic KeyboardEvent on window, the same listener a player's M
+     press hits. (The M key only reaches setMuted in COMBAT — hence ?goto=combat on every page.)
+     RED-FIRST (2026-11-07, unmodified story-019 gate build — product code untouched, only this
+     harness differs): 7 of the 18 new asserts FAIL for no-persistence reasons —
+     `M-key write-through at the store` + `raw key still '1' after the reload` + `unmute
+     write-through at the store` + `raw key '0' after the unmute reload` (mutedRaw absent → raw
+     null; nothing ever wrote the key), `mute survives a real reload` (the in-memory flag resets
+     to false at eval — the exact bug), `M-key unmute in-session` (m reads TRUE — the reload lost
+     the mute, so this page's M press RE-MUTED: the toggle's baseline is itself
+     persistence-dependent; on the fixed build the same press unmutes), and `corrupt seed
+     survives boot byte-identical` (mutedRaw absent → null ≠ 'garbage' — red by absence, the
+     droneProbe pattern). Green-by-design on the old build (keep-passing): the default /
+     corrupt / numeric-garbage boot-state reads (old build ignores the key → boots unmuted — the
+     safe-by-accident side), the in-session MUTE toggle assert (m:true — the first toggle always
+     worked), the laziness marks (story-007's ordering predates this story), and the CONSOLE []
+     pages. Pre-existing defect witnessed in the same record (reported, not fixed): the
+     M-key path never calls refreshSoundButton — the in-session label reads `[ SOUND: ON ]`
+     while muted (input.js's KeyM branch predates this story; the label only refreshes at the
+     warm block and on btn-sound clicks). Full output:
+     production/qa/evidence/story-020-settings-persistence/flow-red-story020.txt.
+     MUTATIONS (branch, post-green, each: mutate → npm run build → FULL flow-check → git restore
+     → rebuild; the mutation is VERIFIED applied by reading its red output — a silent no-op
+     proves nothing):
+       A. audio.js setMuted: the `writeMuted(muted)` write-through line removed (2026-11-07) →
+          RED `M-key write-through at the store` (raw null — nothing writes), `mute survives a
+          real reload` (in-memory flag lost at eval — the story's own bug re-created),
+          `raw key still '1' after the reload` (null), `unmute write-through` (raw stays '1' —
+          the unmute never wrote '0'), `raw key '0' after the unmute reload` ('1'). The named
+          adjacent keep-passing holds: both in-session toggle asserts stay GREEN (the toggle
+          itself works — only persistence dies). flow-mutation-a-writethrough-removed.txt.
+       B. audio.js readMuted... (store.js readMuted): the `=== '1'` clamp replaced by the
+          parsed string's truth — `!!Number(get(MUTED_KEY))`, no finite/0-1 clamp (2026-11-07)
+          → RED `numeric garbage '2' boots unmuted` (boots MUTED-from-garbage: Number('2') = 2
+          is truthy without the clamp). KNOWN DISCRIMINATION BOUND, recorded: the AC's
+          'garbage' seed CANNOT red this mutation — Number('garbage') is NaN, falsy by accident,
+          not by guard — so the block seeds '2' (numeric garbage) as the value the unclamped
+          parse turns into mute state; the 'garbage' page stays green under B and its assert
+          name says why. flow-mutation-b-unclamped-parse.txt.
+       C. audio.js module top: `setMuted(readMuted());` — the restore moved to module eval (the
+          pre-story naive wiring; readMuted IS called at eval and setMuted's write-through fires
+          getStorage() THERE) (2026-11-07) → RED `corrupt seed survives boot byte-identical`
+          (the eval-time setMuted rewrote 'garbage' → '0' BEFORE the warm read — the rewrite
+          class) in flow-check, AND in tools/boot-marks.mjs on a cold profile the capability
+          probe fired at module eval: navT0 (navigation → module eval) exploded from the
+          documented ~100-200 ms band into seconds — the story-007 stall moved in front of the
+          title mark. The marks-ORDERING assert stays green under C (main.js's warm marks are
+          unconditional — the ordering cannot see an eval-time probe; the stall itself is the
+          witness). flow-mutation-c-eval-restore.txt + boot-marks-mutation-c.txt.
+       D. main.js warm block: `restoreMuted(readMuted())` → `setMuted(readMuted())` (2026-11-07)
+          → RED `corrupt seed survives boot byte-identical` (the warm setMuted(false) writes '0'
+          over the seeded 'garbage' — boot rewrote what it just read). Only meaningful against a
+          seeded non-default corrupt value: with '1' stored, setMuted(true) would rewrite '1'
+          byte-identically and the assert could never red. flow-mutation-d-setmuted-restore.txt. */
+  await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat' });
+  {
+    const t0 = Date.now();
+    for (;;) {
+      try { if (await J(`(window.__stage2 && __stage2.phase) || 'boot'`) === 'combat') break; } catch {}
+      if (Date.now() - t0 > 60000) break;
+      await sleep(300);
+    }
+  }
+  // laziness re-run per build (story-007 contract, existing marks, no new tolerance): the warm
+  // block fires storeStart/storeEnd in a setTimeout(0) scheduled AFTER mark('title') — the
+  // marks must read behind the title mark on every build. A pre-title storeStart is the
+  // eval-time-probe class (mutation C's boot-marks half is its timing witness; the ordering
+  // here cannot see an eval probe — recorded in the mutation note above).
+  let bm20 = null;
+  {
+    const t0 = Date.now();
+    for (;;) {
+      try { bm20 = await J(`({ t: (window.__BOOT && __BOOT.title) ?? null, s: (window.__BOOT && __BOOT.storeStart) ?? null, e: (window.__BOOT && __BOOT.storeEnd) ?? null })`); } catch { bm20 = null; }
+      if (bm20 && bm20.t != null && bm20.s != null && bm20.e != null) break;
+      if (Date.now() - t0 > 30000) break;
+      await sleep(200);
+    }
+  }
+  ok('story-020: storage marks behind the title mark (storeStart > title, storeEnd ≥ storeStart — story-007 laziness, re-run per build)',
+    !!bm20 && bm20.t != null && bm20.s != null && bm20.e != null && bm20.s > bm20.t && bm20.e >= bm20.s, JSON.stringify(bm20));
+  // one reader for the whole block: live flag (pre-existing __stage2.muted getter), the sound
+  // button label (warm-restore refresh writes it before combat lands), the RAW stored value.
+  const muteState20 = () => J(`({ m: (window.__stage2 && __stage2.muted) ?? null,
+    label: (document.getElementById('btn-sound') || {}).textContent || null,
+    raw: (window.__stage2 && __stage2.mutedRaw) ? __stage2.mutedRaw() : null })`);
+  const d20a = await muteState20();
+  ok('story-020: boots unmuted by default (muted false, [ SOUND: ON ])', d20a.m === false && d20a.label === '[ SOUND: ON ]', JSON.stringify(d20a));
+  await key('KeyM', 'keydown');
+  await key('KeyM', 'keyup');
+  await sleep(150);
+  const d20b = await muteState20();
+  ok('story-020: M-key toggle mutes in-session (muted true)', d20b.m === true, JSON.stringify(d20b));
+  ok("story-020: M-key write-through at the store (raw stage2.muted = '1')", d20b.raw === '1', `raw=${JSON.stringify(d20b.raw)}`);
+  ok('CONSOLE [] (story-020 toggle page)', errs.length === 0, errs.join(' | '));
+  await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat' });
+  {
+    const t0 = Date.now();
+    for (;;) {
+      try { if (await J(`(window.__stage2 && __stage2.phase) || 'boot'`) === 'combat') break; } catch {}
+      if (Date.now() - t0 > 60000) break;
+      await sleep(300);
+    }
+  }
+  const d20c = await muteState20();
+  ok('story-020: mute survives a real reload (boots muted, [ SOUND: OFF ])', d20c.m === true && d20c.label === '[ SOUND: OFF ]', JSON.stringify(d20c));
+  ok("story-020: raw key still '1' after the reload (persisted, not session-only)", d20c.raw === '1', `raw=${JSON.stringify(d20c.raw)}`);
+  await key('KeyM', 'keydown');
+  await key('KeyM', 'keyup');
+  await sleep(150);
+  const d20d = await muteState20();
+  ok('story-020: M-key unmute in-session (muted false)', d20d.m === false, JSON.stringify(d20d));
+  ok("story-020: unmute write-through at the store (raw stage2.muted = '0')", d20d.raw === '0', `raw=${JSON.stringify(d20d.raw)}`);
+  ok('CONSOLE [] (story-020 muted-reload page)', errs.length === 0, errs.join(' | '));
+  await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat' });
+  {
+    const t0 = Date.now();
+    for (;;) {
+      try { if (await J(`(window.__stage2 && __stage2.phase) || 'boot'`) === 'combat') break; } catch {}
+      if (Date.now() - t0 > 60000) break;
+      await sleep(300);
+    }
+  }
+  const d20e = await muteState20();
+  ok('story-020: unmute survives a real reload (boots unmuted — persistence asserted BOTH ways)', d20e.m === false && d20e.label === '[ SOUND: ON ]', JSON.stringify(d20e));
+  ok("story-020: raw key '0' after the unmute reload", d20e.raw === '0', `raw=${JSON.stringify(d20e.raw)}`);
+  ok('CONSOLE [] (story-020 unmuted-reload page)', errs.length === 0, errs.join(' | '));
+  // corrupt-read safety (§8.9 proven, not assumed): the HARNESS seeds the raw key directly —
+  // the game itself has zero storage access outside store.js. The seed is a non-default,
+  // non-canonical value, which is also what makes the byte-identical assert below
+  // mutation-discriminable (a setMuted-based restore would rewrite it; see mutation D).
+  await evl(`localStorage.setItem('stage2.muted', 'garbage')`);
+  await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat' });
+  {
+    const t0 = Date.now();
+    for (;;) {
+      try { if (await J(`(window.__stage2 && __stage2.phase) || 'boot'`) === 'combat') break; } catch {}
+      if (Date.now() - t0 > 60000) break;
+      await sleep(300);
+    }
+  }
+  const d20f = await muteState20();
+  ok("story-020: corrupt value 'garbage' boots unmuted, no crash (§8.9 never truthy)", d20f.m === false && d20f.label === '[ SOUND: ON ]', JSON.stringify(d20f));
+  ok("story-020: corrupt seed survives boot byte-identical (restore reads, never rewrites)", d20f.raw === 'garbage', `raw=${JSON.stringify(d20f.raw)}`);
+  ok('CONSOLE [] (story-020 corrupt page)', errs.length === 0, errs.join(' | '));
+  // numeric garbage: the value class the unclamped-parse mutation (B) turns into mute state —
+  // Number('garbage') is NaN (falsy by accident), Number('2') is 2 (truthy without the clamp).
+  await evl(`localStorage.setItem('stage2.muted', '2')`);
+  await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat' });
+  {
+    const t0 = Date.now();
+    for (;;) {
+      try { if (await J(`(window.__stage2 && __stage2.phase) || 'boot'`) === 'combat') break; } catch {}
+      if (Date.now() - t0 > 60000) break;
+      await sleep(300);
+    }
+  }
+  const d20g = await muteState20();
+  ok("story-020: numeric garbage '2' boots unmuted (the 0-1 clamp — mutation B's discriminator)", d20g.m === false, JSON.stringify(d20g));
 
   ok('CONSOLE []', errs.length === 0, errs.join(' | '));
 } catch (e) {
