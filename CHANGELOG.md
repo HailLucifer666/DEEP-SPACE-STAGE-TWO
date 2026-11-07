@@ -3,9 +3,49 @@
 All notable changes to STAGE TWO. Format: Keep-a-Changelog-ish, newest first.
 Tagged states: see `git tag` (chain: good-s4 → good-gofix → good-feel → good-launch →
 good-assets → good-controls → good-rift → good-title → good-arena → good-raiders →
-good-pips → good-studio).
+good-pips → good-studio → the dated chain good-2026-11-04…good-2026-11-04-j
+(stage 0–1), good-2026-11-05…-f (stages 2–3), good-2026-11-06…-07 (stage 4),
+good-2026-11-07-b/-c/-d (stage 5)).
 
 ## [Unreleased]
+
+### Stage 5 — ship prep (2026-11-07, tags good-2026-11-07-b…good-2026-11-07-c)
+- **story-020 settings persistence** — the mute choice survives a reload through the
+  existing guarded store: `writeMuted`/`readMuted` mirror the highscore pair (lazy
+  probe — no storage touch before the title mark, corrupt-reads-unmuted, honest warn
+  on a refused write); `setMuted` persists at the single choke point (M key + sound
+  button covered by construction); `restoreMuted` applies in the boot warm block
+  without rewriting, and its live-context branch is the documented fallback for a
+  gesture that beats the warm block during GLB load. Red-first: 181/7 on the
+  unmodified build; mutations A–D each red for the stated mechanism. flow-check
+  170 → 188. Reviews: spec COMPLIANT (4 deviations adjudicated legitimate), quality
+  CONCERNS → APPROVE (the fix was comment-truth: the gesture-race fallback named
+  load-bearing instead of deletable-as-dead-code).
+- **Stage-5 riders** (the stage-4 checkpoint's working defaults, player-approved
+  2026-11-07):
+  - *Rider A — flake-budget policy executed*: drop-rate band [11,25] → [9,28] (exact
+    binomial coverage 95.05% → 99.14%), kind-split χ²(2) 5.991 → 9.210 (99%);
+    OVERDRIVE bands KEPT with the deterministic-bounds derivation recorded beside the
+    asserts (in-regime [8,11] burst / [7,9] boss — nothing widened without arithmetic;
+    independently re-verified in review); both recorded mutations re-run RED;
+    joint false-red ≈14% → ≈3%.
+  - *Rider B — the E.lastRoll diagnostic gated*: the merge-halt per-spawn record now
+    builds only under `?balanceProbe=1` (self-read flag — the reverse import is a
+    cycle); production spawns allocate nothing; the balance drive is byte-identical
+    with the flag on (mechanism gates green, mismatches 0/50).
+  - *Rider C — GDD §8.5 re-worded*: the discoverability item now measures hint
+    comprehension (the shipped hint bar pre-empts unprompted discovery by design —
+    the stage-4 ruling); doc-only, hint text untouched.
+  - *Rider D — M-key label staleness fixed* (pre-existing: `input.js` KeyM never
+    refreshed the sound button — witnessed in story-020's transcripts, ruled a
+    rider-sized follow-up by spec review). flow-check 188 → 190.
+- **README.md** — portfolio framing for an interview reviewer: play/build/test
+  instructions (including the `EDGE` override for the stale harness Edge pin),
+  architecture summary, design decisions, honest known limitations, process-evidence
+  map. GitHub Pages is the chosen host (deploy is a separate owner-approved step).
+- **Stage-5 close** — smoke record `production/qa/smoke-2026-11-07-stage5.md`;
+  GATE.md: PASS (machine gates) — ship checkpoint pending (deploy go, TD-007, TD-08,
+  the owed look/feel verdicts).
 
 ### Stage 4 — balance + telemetry (2026-11-06/07, tags good-2026-11-06…good-2026-11-07)
 - **R-c main.js refactor (TD-003 closed)** — main.js 500→255 lines: the UI banner moved to
