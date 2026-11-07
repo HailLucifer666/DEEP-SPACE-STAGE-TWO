@@ -9,7 +9,7 @@
 
 | File | Change |
 | --- | --- |
-| `src/store.js:40-61` | The story-020 block: `MUTED_KEY = 'stage2.muted'` (L43), `readMuted()` (L44-48 — pre-warm guard returns `false` without triggering the capability probe, the readHighscore-L24 precedent; the read is `=== '1'` so ONLY the canonical `'1'` is muted — `'garbage'`, `'2'`, `'0'`, `null` all read unmuted, the §8.9 rule; never throws), `writeMuted(m)` (L50-53 — stores `'1'`/`'0'` through `getStorage()` inside try/catch with an honest `console.warn` on refusal, the stage-1 dishonest-write rule), `readMutedRaw()` (L56-61 — the probe seam, see Deviation 1: guarded raw read, pre-warm returns `null` without probing). Mechanical mirrors of the highscore pair they sit beside. |
+| `src/store.js:40-61` | The story-020 block: `MUTED_KEY = 'stage2.muted'` (L43), `readMuted()` (L44-48 — pre-warm guard returns `false` without triggering the capability probe, the readHighscore pre-warm guard is the precedent; the read is `=== '1'` so ONLY the canonical `'1'` is muted — `'garbage'`, `'2'`, `'0'`, `null` all read unmuted, the §8.9 rule; never throws), `writeMuted(m)` (L50-53 — stores `'1'`/`'0'` through `getStorage()` inside try/catch with an honest `console.warn` on refusal, the stage-1 dishonest-write rule), `readMutedRaw()` (L56-61 — the probe seam, see Deviation 1: guarded raw read, pre-warm returns `null` without probing). Mechanical mirrors of the highscore pair they sit beside. |
 | `src/audio.js:6` | `import { writeMuted } from './store.js';` — the one new import edge (store is self-contained; audio→store acyclic, dep-check verifies). |
 | `src/audio.js:47` | `setMuted` gains the write-through: `writeMuted(muted);` immediately after the flag flip — the SINGLE write choke point, so the M key (input.js L46) and the sound button (main.js L111 click) both persist with zero call-site changes, exactly as the story specifies. |
 | `src/audio.js:54-60` | New `restoreMuted(m)` export: applies the stored value WITHOUT writing (no `writeMuted`, no `musicFlush` — at the warm block the context is not yet unlocked, and `audioUnlock`'s own flush covers the gesture path). Sets the master gain if a context already exists (a first gesture that beat the warm block), else `ensure()` reads `muted` when the context is first built — a persisted-muted boot comes up silent at the master gain. |
@@ -286,3 +286,57 @@ evidence files land with commit 3):
 - The M-key label staleness fix (§7.1) — pre-existing, report-only.
 - Headless boot-marks contrast number — the story's battery names the headed run; the
   headless contrast is a story-006 tool capability, not an 020 AC.
+
+## 10. Comment-fix round (2026-11-07, lead-programmer quality review — comment/label changes ONLY, zero behavior change, zero new asserts)
+
+Reviewer scope: findings 1-4 applied, findings 4/5 of the review's own numbering
+(mutation-history comment length, combat-wait poll duplication) recorded with NO ACTION —
+honored exactly; nothing beyond the four items below was touched.
+
+1. **`src/audio.js` restoreMuted comment (L54-62)** — the false invariant "at the warm block
+   the context is not yet unlocked" REPLACED with the true ordering story: the unlock
+   listeners attach at main.js's module tail, so a gesture during GLB load can fire
+   `audioUnlock` first (context built unmuted, master.gain 0.9); the `c && master`
+   setTargetAtTime branch is the gesture-beat-the-warm-block fallback — without it the flag
+   would say muted while the gain stayed 0.9. The branch is now documented as load-bearing
+   so no maintainer deletes it as dead code. Comment grew 5 → 7 lines (restoreMuted body
+   unchanged, now L63-66; setMuted/writeMuted/isMuted line refs unchanged).
+2. **`src/main.js` L150-154 warm-block comment** — "this runs before any first-gesture
+   audioUnlock" (a false invariant) replaced with: this normally precedes the first
+   gesture; if a gesture during load beat it, restoreMuted's context branch applies the
+   gain to the live context. The warm-block line itself moved L154 → L155 (one comment
+   line longer); the `mutedRaw` getter moved L219 → L220. Code unchanged.
+3. **`tools/flow-check.mjs` L1743** — the laziness assert label renamed to
+   `story-020: warm-block marks fire after the title mark (placement pin — cannot see an
+   eval-time probe; that class rides boot-marks + the C cascade)`. The old name
+   ("storage marks behind the title mark…") overstated what the ordering can see; the
+   placement pin is what it IS. Assert body identical (`s >= t && e >= s`); the same-ms
+   legality rationale lives in the block comment above it and in Deviation 4.
+4. **`src/store.js` L45** — "readHighscore L24 is the precedent" → "the readHighscore
+   pre-warm guard is the precedent" (the rotting line-number pin dropped; §1's table
+   mention corrected to match).
+
+`git diff` verified comment/label-only before building (the only non-`//` changed lines
+are the store.js trailing comment and the flow-check label pair — no code token moved).
+
+**Battery after the fixes (all real outputs, this tree):**
+
+- `npm run build` — `[build] index.html  mode=bundle  4.41 MB  (333 ms)`.
+- `node tools/dep-check.mjs` — `main.js lines: 261 (limit 500)` · `[dep-check] PASS —
+  acyclic, structural rules hold`.
+- `node tools/flow-check.mjs` — `FLOW-CHECK PASS — 188 passed, 0 failed`
+  (`flow-green-commentfix.txt`); the ONLY output-visible change is the renamed laziness
+  label (assert delta: none — 188 = 188, and its read is healthy:
+  `{"t":283,"s":355,"e":355}`).
+- `node tools/boot-marks.mjs` (headed) — `title 1456 < storeStart 1691 < storeEnd 5324`
+  (storage marks behind the title mark, cold probe ≈ 3.6 s behind title),
+  `MODULE → TITLE (player wait)  1456 ms` (documented band 158–2492 ms),
+  `STATE {"phase":"title","rocket":"glb",...}`, `CONSOLE []`.
+
+Session note (recorded honestly): between the evidence commit (6ce392a) and this round,
+the working tree was found checked out on `master`, which had advanced by one docs-only
+commit (`d8cd685` — `one-shot-work/stage-5/PROGRESS.md` only, zero overlap with any file
+this story touches). The branch `story-020-settings-persistence` and its three commits were
+verified intact (`git log` + content checks) before checking it back out; no master commit
+was merged into the branch (the orchestrator owns the merge — the docs commit cannot
+conflict with this story's files).

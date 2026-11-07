@@ -42,7 +42,7 @@ export function writeHighscore(n) {
 // future player setting lands on this same surface (the stage-5 scope record: mute-only).
 export const MUTED_KEY = 'stage2.muted';
 export function readMuted() {
-  if (!storageImpl) return false; // story-007: pre-warm read never triggers the probe — readHighscore L24 is the precedent
+  if (!storageImpl) return false; // story-007: pre-warm read never triggers the probe — the readHighscore pre-warm guard is the precedent
   try {
     return storageImpl.get(MUTED_KEY) === '1'; // ONLY the canonical '1' is muted — 'garbage', '2', '0', null all read unmuted (§8.9)
   } catch { return false; }

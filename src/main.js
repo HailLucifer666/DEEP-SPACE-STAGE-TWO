@@ -148,9 +148,10 @@ function boot() {
     // story-007: warm storage behind the rendered title — the cold-profile probe (3-5 s) lands
     // after first paint, then the HIGH SCORE line re-renders with the saved value
     // story-020: the mute choice restores in the SAME post-warm block — restoreMuted READS the
-    // stored value without writing (boot must not rewrite what it just read), and the ordering is
-    // load-bearing: this runs before any first-gesture audioUnlock, and ensure() reads `muted`
-    // when the context is first built, so a persisted-muted boot comes up silent at the master gain
+    // stored value without writing (boot must not rewrite what it just read). This normally
+    // precedes the first gesture, and ensure() reads `muted` when the context is first built, so
+    // a persisted-muted boot comes up silent at the master gain; if a gesture during load beat
+    // it, restoreMuted's context branch applies the gain to the live context.
     window.setTimeout(() => { mark('storeStart'); getStorage(); mark('storeEnd'); refreshRecordLine(); restoreMuted(readMuted()); refreshSoundButton(); }, 0);
     if (SPIN) setupSpinViewer(); // after title.enter — it re-hides the overlay (closed viewer)
     if (GOTO === 'launch') window.setTimeout(() => setPhase('pad'), 200);

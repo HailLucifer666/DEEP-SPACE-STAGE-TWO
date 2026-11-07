@@ -53,9 +53,11 @@ export function setMuted(m) {
 export function isMuted() { return muted; }
 export function restoreMuted(m) { // story-020: boot applies the STORED value WITHOUT writing — the
   // warm restore must not rewrite what it just read (one explicit export, one job). No musicFlush:
-  // at the warm block the context is not yet unlocked, and audioUnlock's own musicFlush covers the
-  // gesture path; a pre-unlock flush could only defer again. ensure() reads `muted` when the
-  // context is first built, so a persisted-muted boot comes up silent at the master gain.
+  // a flush here could only defer again pre-unlock, and audioUnlock's own musicFlush covers the
+  // gesture path. The `c && master` branch is the gesture-beat-the-warm-block fallback — a gesture
+  // during GLB load creates the context unmuted before this runs; without it the flag would say
+  // muted while the gain stayed 0.9. In the normal order ensure() reads `muted` when the context
+  // is first built, so a persisted-muted boot comes up silent at the master gain.
   muted = !!m;
   const c = getC();
   if (c && master) master.gain.setTargetAtTime(muted ? 0 : 0.9, c.currentTime, 0.05);

@@ -1740,7 +1740,7 @@ try {
       await sleep(200);
     }
   }
-  ok('story-020: storage marks behind the title mark (storeStart ≥ title — never BEFORE, same-ms legal — storeEnd ≥ storeStart; story-007 laziness, re-run per build)',
+  ok('story-020: warm-block marks fire after the title mark (placement pin — cannot see an eval-time probe; that class rides boot-marks + the C cascade)',
     !!bm20 && bm20.t != null && bm20.s != null && bm20.e != null && bm20.s >= bm20.t && bm20.e >= bm20.s, JSON.stringify(bm20));
   // one reader for the whole block: live flag (pre-existing __stage2.muted getter), the sound
   // button label (warm-restore refresh writes it before combat lands), the RAW stored value.
