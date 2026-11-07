@@ -5,6 +5,7 @@
 // (combatApi's `input` handle is forwarded through the context, so no import cycle).
 // Every listener only records, never interprets.
 import { audioUnlock, audioSuspend, audioResume, setMuted, isMuted } from './audio.js';
+import { refreshSoundButton } from './hud.js'; // rider D (2026-11-07): the M path refreshes the button label like the click path — hud.js imports only store.js + audio.js, so this edge is acyclic (dep-check proves it)
 import * as COMBAT from './combat.js';
 import * as TRANSITION from './transition.js';
 import { nextNose, nextTop } from './ship-fix.js';
@@ -43,7 +44,7 @@ function onKeydown(e) {
     }
     if (e.code === 'Space') { e.preventDefault(); input.boost = true; } // Space = boost (rebind 2026-11-03); fire is LMB-only
     if (e.code === 'KeyP' || e.code === 'Escape') { e.preventDefault(); setPaused(!paused); }
-    if (e.code === 'KeyM') setMuted(!isMuted());
+    if (e.code === 'KeyM') { setMuted(!isMuted()); refreshSoundButton(); } // rider D (2026-11-07, story-020 spec-review ruling): the KeyM path now refreshes the label IN-SESSION — pre-riders only the btn-sound click path (main.js) and the boot warm block did, so a muted session read "[ SOUND: ON ]" until reload
     return;
   }
   if (ctx.probs.phase === 'transition') { e.preventDefault(); TRANSITION.transitionSkip(); return; }

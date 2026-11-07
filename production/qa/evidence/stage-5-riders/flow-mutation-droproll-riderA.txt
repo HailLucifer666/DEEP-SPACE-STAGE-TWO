@@ -1,0 +1,4 @@
+[build] index.html  mode=bundle  4.41 MB  (318 ms)
+FAIL  drop rate p=0.18 within the binomial 99% band [9,28] (100 real bolt-path kills; flake policy 2026-11-07)  [{"kills":100,"drops":0}]
+FAIL  kind split ≈ 1/3 each — joint χ² goodness-of-fit at 99% over 300 real drops (χ²(2) ≤ 9.210; flake policy 2026-11-07)  [{"SPREAD":0,"OVERDRIVE":0,"SHIELD":0,"drops":0,"timeout":true}]
+FLOW-CHECK FAIL — 186 passed, 2 failed

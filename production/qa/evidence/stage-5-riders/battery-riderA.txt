@@ -1,0 +1,13 @@
+main.js lines: 261 (limit 500)
+[dep-check] PASS — acyclic, structural rules hold
+PASS  CONSOLE []
+
+FLOW-CHECK PASS — 188 passed, 0 failed
+  normals+texture sweep (both)       6 ms
+  post-parse → scene ready           9 ms
+  scene ready → title                23 ms
+  MODULE → TITLE (player wait)       1409 ms
+  TRUE wait (navigation → title)     5021 ms
+  MODULE → FIRST TICK                57 ms
+STATE {"phase":"title","rocket":"glb","fps":0,"bootMs":5683,"gpu":"ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"}
+CONSOLE []

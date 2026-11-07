@@ -1,0 +1,11 @@
+2
+[build] index.html  mode=bundle  4.41 MB  (302 ms)
+main.js lines: 263 (limit 500)
+[dep-check] PASS — acyclic, structural rules hold
+
+FLOW-CHECK PASS — 189 passed, 0 failed
+  MODULE → TITLE (player wait)       246 ms
+  TRUE wait (navigation → title)     3876 ms
+  MODULE → FIRST TICK                63 ms
+STATE {"phase":"title","rocket":"glb","fps":10,"bootMs":4137,"gpu":"ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"}
+CONSOLE []

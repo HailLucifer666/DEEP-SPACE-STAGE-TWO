@@ -1,0 +1,3 @@
+OK
+FAIL  rider B: E.lastRoll diagnostic gated — flag-off real-spawn page reads null AND the flag-on balance drive still recorded all 50 draws  [{"flagOffLastRoll":"absent","flagOnDraws":50}]
+FLOW-CHECK FAIL — 188 passed, 1 failed
