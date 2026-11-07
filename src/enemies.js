@@ -40,6 +40,18 @@ export const ELITE_SCORE_MULT = 2; // EXPORTED — the kill sites (src/weapons.j
 const TRIM_TINT = 0xff3b2f;        // the shipped trim emissive — restored on every spawn (pool reuse)
 const GLOW_TINT = 0xff6a3c;        // the shipped engine-glow color — restored on every spawn
 
+// RIDER B (2026-11-07, stage-5): the E.lastRoll merge-halt diagnostic RECORD (spawnRaider) is
+// gated behind ?balanceProbe=1 — pre-riders it allocated unconditionally on EVERY spawn in
+// production (stage-4 GATE DECISION 3 + stage-4 PROGRESS finding 6). The import direction is
+// forced one way: probes-balance.js imports enemies.js (ENEMIES.lastRollProbe), so enemies
+// CANNOT import probes-balance (a cycle — dep-check would fail); the flag is read DIRECTLY
+// here instead. Split of ownership: probes-balance owns the DRIVE (the ?balanceProbe=1 walk);
+// enemies reads the SAME flag for the diagnostic CAPTURE only. Flag off: E.lastRoll stays
+// null through every spawn and lastRollProbe() returns null; flag on: byte-identical to the
+// pre-rider behavior (the balance drive's rate stage reads it — its mechanism-gate asserts
+// are the regression proof).
+const BALANCE_DIAG = new URLSearchParams(location.search).get('balanceProbe') === '1';
+
 // derived wave math — the only place difficulty numbers live
 export const waveCount = (w) => Math.min(RAIDER_POOL, 3 + Math.floor(w * 1.5));
 export const waveSpeed = (w) => Math.min(12, 6.5 + w * 0.45);
@@ -193,7 +205,7 @@ function spawnRaider(playerPos, forceKind) {
     eliteDraw = Math.random();
     rolled = eliteDraw < ELITE_CHANCE;
   }
-  E.lastRoll = {
+  if (BALANCE_DIAG) E.lastRoll = { // RIDER B (2026-11-07): the RECORD is diagnostic-only — gated behind ?balanceProbe=1 (BALANCE_DIAG above); the eliteDraw capture stays unconditional because it IS the roll (the stamp consumes it), only the record is gated. Flag off: E.lastRoll stays null through every spawn.
     draw: eliteDraw, rolled, wave: E.wave,
     skipped: forceKind ? 'forceKind' : (eliteDraw === null ? 'wave' : null),
     sib: { angle: a, kindDraw, hold, orbit, fireT },

@@ -8,6 +8,7 @@
 import { THREE, EffectComposer, RenderPass, UnrealBloomPass, OutputPass } from 'stage-two-lib';
 import * as LAUNCH from './launch.js';
 import * as COMBAT from './combat.js';
+import * as ENEMIES from './enemies.js'; // rider B (2026-11-07): lastRollProbe for the __stage2.lastRoll diagnostic surface (acyclic — enemies imports only stage-two-lib + pool; dep-check proves the new edge)
 import { audioUnlock, isAudioLive, setMuted, isMuted, restoreMuted,
   musicState, loopsCount, alarmActive } from './audio.js';
 import { loadAssets, assetReport } from './assets.js';
@@ -218,6 +219,7 @@ window.__stage2 = {
   get paused() { return paused; },
   get muted() { return isMuted(); },
   mutedRaw: () => readMutedRaw(), // story-020: the RAW stage2.muted value — corrupt seeds visible to the harness (store.js guarded read)
+  get lastRoll() { return ENEMIES.lastRollProbe(); }, // rider B (2026-11-07): the elite-roll diagnostic surface for the harness — null when ?balanceProbe=1 is off (the record is gated in enemies.js), the last spawn's roll when on (the mutedRaw precedent)
   bootMs: () => Math.round(performance.now() - PERF_T0),
   // SHIP1: numbers-only orientation check (patch C). plumeAnchorY lists the y of every
   // group riding the wrap — expect [-0.8] (the plume pivot) once launch.js welds it.

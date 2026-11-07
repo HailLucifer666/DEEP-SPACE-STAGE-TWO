@@ -1,0 +1,6 @@
+[build] index.html  mode=bundle  4.41 MB  (302 ms)
+  weapons.js  ->  audio.js, boss.js, drone.js, effects.js, enemies.js, powerups.js
+main.js lines: 263 (limit 500)
+[dep-check] PASS — acyclic, structural rules hold
+PASS  rider B: E.lastRoll diagnostic gated — flag-off real-spawn page reads null AND the flag-on balance drive still recorded all 50 draws  [{"flagOffLastRoll":null,"flagOnDraws":50}]
+FLOW-CHECK PASS — 189 passed, 0 failed

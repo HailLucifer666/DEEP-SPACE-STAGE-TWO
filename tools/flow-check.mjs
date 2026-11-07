@@ -1831,6 +1831,23 @@ try {
   const d20b = await muteState20();
   ok('story-020: M-key toggle mutes in-session (muted true)', d20b.m === true, JSON.stringify(d20b));
   ok("story-020: M-key write-through at the store (raw stage2.muted = '1')", d20b.raw === '1', `raw=${JSON.stringify(d20b.raw)}`);
+  // RIDER B (2026-11-07): the E.lastRoll merge-halt diagnostic is GATED behind ?balanceProbe=1
+  // (stage-4 GATE DECISION 3 + stage-4 PROGRESS finding 6 — pre-riders the per-spawn record
+  // allocated unconditionally in production). This page runs WITHOUT balanceProbe and REAL
+  // combat spawns have happened (wave 1's seed spawn fires at combat entry), so the harness
+  // surface must read null here — while the flag-on balance page (earlier in this same run)
+  // must still show all 50 recorded draws (the gate must never dim the on-path; the existing
+  // mechanism-gate assert mismatches===0 pins it too). RED-FIRST (2026-11-07, rider A build @
+  // 5425135 — product code byte-identical to master): RED — the record populated
+  // unconditionally on every spawn and the __stage2.lastRoll surface was absent (undefined ≠
+  // null). Transcript: production/qa/evidence/stage-5-riders/flow-red-riderB.txt. MUTATION
+  // (2026-11-07): the gate removed in enemies.js (the record back to unconditional) → build →
+  // FULL flow-check → RED again (the flag-off page reads a populated record). Transcript:
+  // production/qa/evidence/stage-5-riders/flow-mutation-lastroll-gate-removed.txt.
+  const flagOffLastRoll = await evl(`window.__stage2 ? (window.__stage2.lastRoll === undefined ? 'absent' : window.__stage2.lastRoll) : 'no __stage2'`);
+  ok('rider B: E.lastRoll diagnostic gated — flag-off real-spawn page reads null AND the flag-on balance drive still recorded all 50 draws',
+    flagOffLastRoll === null && !!rt.draws && rt.draws.length === 50 && rt.draws.every((d) => d != null),
+    JSON.stringify({ flagOffLastRoll, flagOnDraws: rt.draws ? rt.draws.length : null }));
   ok('CONSOLE [] (story-020 toggle page)', errs.length === 0, errs.join(' | '));
   await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat' });
   {

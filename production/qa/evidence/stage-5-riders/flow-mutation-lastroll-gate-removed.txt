@@ -1,0 +1,3 @@
+[build] index.html  mode=bundle  4.41 MB  (283 ms)
+FAIL  rider B: E.lastRoll diagnostic gated — flag-off real-spawn page reads null AND the flag-on balance drive still recorded all 50 draws  [{"flagOffLastRoll":{"draw":null,"rolled":false,"wave":1,"skipped":"wave","sib":{"angle":1.4111181977536753,"kindDraw":null,"hold":22.14036978788491,"orbit":-1,"fireT":1.5639743500818521}},"flagOnDraws":50}]
+FLOW-CHECK FAIL — 188 passed, 1 failed
