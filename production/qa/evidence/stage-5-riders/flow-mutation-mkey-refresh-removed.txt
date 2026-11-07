@@ -1,0 +1,3 @@
+[build] index.html  mode=bundle  4.41 MB  (287 ms)
+FAIL  rider D: M press flips the label IN-SESSION (no reload — the KeyM path refreshes the button)  [{"m":true,"label":"[ SOUND: ON ]","raw":"1"}]
+FLOW-CHECK FAIL — 189 passed, 1 failed

@@ -1,0 +1,14 @@
+8:import { refreshSoundButton } from './hud.js'; // rider D (2026-11-07): the M path refreshes the button label like the click path — hud.js imports only store.js + audio.js, so this edge is acyclic (dep-check proves it)
+47:    if (e.code === 'KeyM') { setMuted(!isMuted()); refreshSoundButton(); } // rider D (2026-11-07, story-020 spec-review ruling): the KeyM path now refreshes the label IN-SESSION — pre-riders only the btn-sound click path (main.js) and the boot warm block did, so a muted session read "[ SOUND: ON ]" until reload
+ src/input.js | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+[build] index.html  mode=bundle  4.41 MB  (291 ms)
+main.js lines: 263 (limit 500)
+[dep-check] PASS — acyclic, structural rules hold
+
+FLOW-CHECK PASS — 190 passed, 0 failed
+  MODULE → TITLE (player wait)       719 ms
+  TRUE wait (navigation → title)     2944 ms
+  MODULE → FIRST TICK                49 ms
+STATE {"phase":"title","rocket":"glb","fps":0,"bootMs":5703,"gpu":"ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"}
+CONSOLE []

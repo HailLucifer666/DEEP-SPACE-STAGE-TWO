@@ -1848,6 +1848,19 @@ try {
   ok('rider B: E.lastRoll diagnostic gated — flag-off real-spawn page reads null AND the flag-on balance drive still recorded all 50 draws',
     flagOffLastRoll === null && !!rt.draws && rt.draws.length === 50 && rt.draws.every((d) => d != null),
     JSON.stringify({ flagOffLastRoll, flagOnDraws: rt.draws ? rt.draws.length : null }));
+  // RIDER D (2026-11-07): the M-key path refreshes the button label IN-SESSION. The defect is
+  // PRE-EXISTING (story-020 spec-review ruling, 2026-11-07: input.js's combat-branch KeyM line
+  // never called refreshSoundButton — only main.js's btn-sound click path and the boot warm
+  // block did; ruled out of story-020's locked scope, rider-sized), already WITNESSED in
+  // story-020's own green transcript (production/qa/evidence/story-020-settings-persistence/
+  // flow-green-final.txt L173: in-session `m:true, label "[ SOUND: ON ]"`). RED-FIRST
+  // (2026-11-07, rider C build @ 3046252 — input.js byte-identical to master): RED — the
+  // label stayed "[ SOUND: ON ]" while muted. Transcript:
+  // production/qa/evidence/stage-5-riders/flow-red-riderD.txt. MUTATION (2026-11-07): the
+  // refreshSoundButton() call removed from input.js's KeyM branch → build → FULL flow-check →
+  // RED again. Transcript: production/qa/evidence/stage-5-riders/flow-mutation-mkey-refresh-removed.txt.
+  ok('rider D: M press flips the label IN-SESSION (no reload — the KeyM path refreshes the button)',
+    d20b.m === true && d20b.label === '[ SOUND: OFF ]', JSON.stringify(d20b));
   ok('CONSOLE [] (story-020 toggle page)', errs.length === 0, errs.join(' | '));
   await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat' });
   {

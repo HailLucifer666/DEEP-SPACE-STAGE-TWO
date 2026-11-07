@@ -1,0 +1,5 @@
+[build] index.html  mode=bundle  4.41 MB  (289 ms)
+main.js lines: 263 (limit 500)
+[dep-check] PASS — acyclic, structural rules hold
+PASS  rider D: M press flips the label IN-SESSION (no reload — the KeyM path refreshes the button)  [{"m":true,"label":"[ SOUND: OFF ]","raw":"1"}]
+FLOW-CHECK PASS — 190 passed, 0 failed
