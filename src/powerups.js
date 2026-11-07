@@ -1,7 +1,8 @@
 // STAGE TWO — combat pickups (story-018, GDD §3.3): killed enemies drop timed powerups.
 // ENTITY-side only (architecture §7.1): the drop roll, the pickup pool (makePool contract —
 // reuse-first, steal-oldest at saturation, kill() the single retirement path), despawn/blink
-// and the full-3D pickup check. The EFFECT side (timers, apply, expire) lives in src/combat.js
+// and the full-3D pickup check. The EFFECT side (timers, apply, expire) lives in src/weapons.js
+// (applyEffect/effectsTick — src/weapons.js since the story-018 review split; was combat.js)
 // — powerups.js NEVER reads combat state (acyclic by construction): it imports stage-two-lib +
 // pool.js only, and combat.js composes the `picked` api it calls back through.
 // Drop sites (the ONLY callers of maybeDrop): the two bolt-kill sites in the bolt scan

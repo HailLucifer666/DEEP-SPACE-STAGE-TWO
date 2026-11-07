@@ -371,10 +371,12 @@ Per-spawn stamps in spawnRaider's elite branch: `u.elite`, `u.hp × 3`, `u.speed
 `scale.setScalar(ELITE_SCALE)`, trim retint — and because the pool REUSES instances, **every
 spawn RESETS scale/tint/elite** (normal spawns restore emissive 0xff3b2f and scale 1) so reuse
 never leaks an elite skin. Steering consumes `u.speedMult` at the two E.speed sites (gunner
-vRadial/vTang, rammer sp) — non-elites multiply by 1, zero diff. Contact radius: the spec does
-not list one — recommend `u.r = R_RAIDER × ELITE_SCALE` pending the GDD (a ×1.35 model with a
-0.9 hitbox reads unfair; open item, §8.5). Score ×2 applies at the combat.js kill sites via the
-imported ELITE_SCORE_MULT.
+vRadial/vTang, rammer sp) — non-elites multiply by 1, zero diff. Contact radius: `u.r =
+R_RAIDER × ELITE_SCALE` is STAMPED and probe-visible but NOT consumed by any collision scan —
+the orchestrator ruling (2026-11-07, stage-4 close) deferred the wiring: a bigger elite hitbox
+is a difficulty change needing a design decision; it rides the evidence-driven balance pass
+this stage's telemetry enables (story-019 report §10). Score ×2 applies at the WEAPONS.JS kill
+sites via the imported ELITE_SCORE_MULT (the sites moved there in story-018's review split).
 
 ### 8.3 Per-wave composition tables — src/enemies.js
 

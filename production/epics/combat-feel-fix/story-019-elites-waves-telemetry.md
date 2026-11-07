@@ -96,8 +96,13 @@ side-effects (spec is silent)". The card reads `cs.score` at the victory frame
       score 0.
 - [ ] High-score path: the +1000 writes through `writeHighscore` (`src/phases.js` L104) —
       probe persists, reloads, reads back (store.js guard intact).
-- [ ] Elites: probe forces wave ≥ 4 (spawn injection) → the elite rate lands in the
-      binomial 95% band for p = 0.22 over N = 50 real rolls; each elite stat (HP ×3 /
+- [ ] Elites: probe forces wave ≥ 4 (spawn injection) → the elite rate is gated by
+      MECHANISM checks + the exact 99.9% sanity band [3,21] (AMENDED 2026-11-07 per the
+      orchestrator ruling after the merge halt: the original 95% band reded on the
+      environment's run-level Math.random batching — a captured 3.4σ draw batch,
+      root cause open; the mechanism gates — draw↔flag agreement, kills/leaks/wave
+      integrity — replace the distribution gate; ELITE_CHANCE→0 mutation re-verified RED,
+      `flow-mutation-elite-chance-0-mechgates.txt`); each elite stat (HP ×3 /
       speed ×1.15 / score ×2 / tint 0xffa02f / scale ×1.35) asserted via probe fields;
       wave < 4 produces zero elites; a former elite's respawn reads normal (the
       unconditional per-spawn reset).

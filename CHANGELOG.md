@@ -7,6 +7,42 @@ good-pips → good-studio).
 
 ## [Unreleased]
 
+### Stage 4 — balance + telemetry (2026-11-06/07, tags good-2026-11-06…good-2026-11-07)
+- **R-c main.js refactor (TD-003 closed)** — main.js 500→255 lines: the UI banner moved to
+  `src/hud.js`, the ROCKET banner to `src/rocket.js` (both verbatim, call-time ctx getters,
+  live-bound spinRig), boot() decomposed into three ≤50-line helpers. Bonus: the branch
+  exposed a latent master crash — pressing N on the title threw a TypeError (`ctx.activeFix`
+  was never wired); fixed with a red-proven regression assert (flow-check 114 → 115).
+- **story-018 charged shot + pickups** — the fire trigger gains a second stage: the LMB-only
+  stream fires exactly as shipped below `T_CHARGE = 0.6 s` of continuous hold, then
+  suppresses while the charge fills (whine starts), and release fires ONE heavy bolt
+  (`CHARGE_DAMAGE = 6` vs the regular bolt's 1; weak-point 18 via the carried-damage param —
+  boss.js untouched). Cancels on death/pause/combat-exit (the release-during-pause ordering
+  was caught by review and fixed red-first). Enemies drop SPREAD/OVERDRIVE/SHIELD at 18%
+  (8 s life, 2 s blink, full-3D pickup radius 1.4, refresh-not-stack, concurrent kinds) via
+  the new `src/powerups.js`; charge ring + effect chips in the HUD; 4 synth recipes; controls
+  text in both homes. flow-check 115 → 147.
+- **story-019 elites + wave tables + telemetry + boss reward** — raiders gain elite variants
+  from wave 4 (0.22 per spawn: HP ×3, speed ×1.15, scale ×1.35, amber 0xffa02f, score ×2
+  shot-down only, unconditional per-spawn reset); waves 1–5 get authored deterministic
+  kind splits whose totals equal the derived curve exactly (boundary asserted both ways);
+  the 12-group event-driven telemetry accumulator (kills/hits/damage-by-source/score-by-
+  source/waveTimes/pickups) rides `combatState()`; defeating the boss awards the LOCKED
+  1000 flat (latched exactly-once, card reads it same-frame, high-score write-through).
+  flow-check 147 → 170.
+- **The merge-halt finding** — the elite-rate band reded 3× across merge batteries (18–20
+  elites per 50 rolls vs p = 0.22). Per-roll instrumentation proved the game mechanism exact
+  (350/350 draw↔flag agreement) and the ENVIRONMENT's Math.random delivers run-level
+  clustered batches (a captured 3.4σ draw batch; root cause open, recorded). The
+  distribution gate was replaced by mechanism gates batching cannot defeat + an exact 99.9%
+  sanity band; mutation discipline re-verified. Flake-budget policy (tighten remaining 95%
+  bands to 99%+; joint flake ≈14% → ≈4%) = stage-close decision.
+- **Stage-4 review** (per-story chains ×4 rounds + independent whole-stage pass): gate-ready
+  on substance; bookkeeping closes at the gate (TD-003 register row, LEDGER W3, story-019 AC
+  amended to the shipped gate); decision items recorded (hint-bar text vs the discoverability
+  playtest item; E.lastRoll diagnostic allocation; elite hitbox wiring DEFERRED to the
+  evidence-driven balance pass this stage's telemetry enables).
+
 ### Stage 3 — full 3D flight (2026-11-05, tags good-2026-11-05-c…good-2026-11-05-f)
 - **story-015 pitch + drift** — the ship leaves the plane: `forward()` goes 3D
   `(sin h·cos φ, sin φ, cos h·cos φ)` (the keystone — velocity, bolts, camera and probes

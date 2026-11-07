@@ -470,16 +470,16 @@ decisions, not balance surfaces.
 | charged bolt scale | 3.0 | 2-4 | feel | src/weapons.js (review-fix split from combat.js) | Readable under the shipped bloom chain; amber family (§3.2). |
 | `SUPPRESS_STREAM` | true (design const) | not tunable | design | src/weapons.js (review-fix split from combat.js) | The balance hinge (§3.1) — flipping it creates a dominant strategy; documented, not a knob. |
 | `BOLT_POOL` | 36 (raised from 24) | 24-48 | curve | src/combat.js | SPREAD+OVERDRIVE headroom (§3.8); prepare-time allocation, restart-clean preserved. |
-| `PICKUP_DROP_P` | 0.18 | 0.10-0.30 | curve | src/powerups.js | Inherited (HANDOFF L227); retune WITH telemetry (story-018 L70). |
+| `DROP_CHANCE` (GDD name: PICKUP_DROP_P) | 0.18 | 0.10-0.30 | curve | src/powerups.js | Inherited (HANDOFF L227); retune WITH telemetry (story-018 L70). |
 | pickup kind weights | uniform 1/3 | 0.2-0.5 each | curve | src/powerups.js | Least-assumption reading (§3.3); telemetry says if the dial should move. |
 | `PICKUP_POOL` | 6 | 4-10 | gate | src/powerups.js | ~1.8 drops/wave expected (§4.3); steal-oldest caps the rest. |
 | `PICKUP_LIFE` / blink | 8 s / 2 s | 5-12 / 1-3 | feel | src/powerups.js | Inherited (HANDOFF L227). |
 | `PICKUP_RADIUS` | 1.4 | 1.0-2.0 | feel | src/powerups.js | Inherited; full-3D check (§3.3). |
-| `EFFECT_DURATION` | 8 s | 5-12 | feel | src/powerups.js | Inherited; refresh-not-stack on re-pickup (§3.3). |
-| `SPREAD_ANGLE` | 6° | 4-10 | feel | src/weapons.js (review-fix split from combat.js) | Inherited; stream-only (§3.2). |
+| `EFFECT_T` (GDD name: EFFECT_DURATION) | 8 s | 5-12 | feel | src/powerups.js | Inherited; refresh-not-stack on re-pickup (§3.3). |
+| `SPREAD_ARC` (GDD name: SPREAD_ANGLE) | 6° | 4-10 | feel | src/weapons.js (review-fix split from combat.js) | Inherited; stream-only (§3.2). |
 | `OVERDRIVE_DIV` | 2.2 | 1.8-3.0 | curve | src/weapons.js (review-fix split from combat.js) | Inherited; stream interval only — `T_CHARGE` unchanged (§3.2). |
 | `ELITE_CHANCE` | 0.22 | 0.10-0.35 | curve | src/enemies.js | Inherited (HANDOFF L226); derived from wave, never a list (acceptance #18). |
-| `ELITE_WAVE_MIN` | 4 | 3-5 | gate | src/enemies.js | Inherited; kind intros land at waves 1/3 before elites (§3.5). |
+| `ELITE_MIN_WAVE` (GDD name: ELITE_WAVE_MIN) | 4 | 3-5 | gate | src/enemies.js | Inherited; kind intros land at waves 1/3 before elites (§3.5). |
 | `ELITE_HP_MULT / SPEED / SCALE / SCORE / TINT` | 3 / 1.15 / 1.35 / 2 / 0xffa02f | ±30% each | curve | src/enemies.js | Inherited; composed in §4.4. |
 | `TABLE_MAX_WAVE` | 5 | 4-6 | gate | src/enemies.js | The boss gate is wave 6 (`src/combat.js` L377) — the table covers the natural path (§3.5). |
 | `SCORE_BOSS` | **1000 — LOCKED** | not tunable | gate | src/combat.js | Player decision 2026-11-04/05 (story-019 L12-13); named const beside L62-66. |

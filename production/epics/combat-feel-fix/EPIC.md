@@ -25,7 +25,7 @@
 | 016 | spherical-arena | Logic/Feel | M | Complete |
 | 017 | world-3d | Visual/Feel | M | Complete |
 | 018 | charged-shot-pickups | Logic/Feel + UI | L | Complete |
-| 019 | elites-waves-telemetry | Logic | M | Pending |
+| 019 | elites-waves-telemetry | Logic | M | Complete |
 
 ## Notes
 
