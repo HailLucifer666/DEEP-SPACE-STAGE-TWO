@@ -1,0 +1,15 @@
+PASS  story-020: mute survives a real reload (boots muted, [ SOUND: OFF ])  [{"m":true,"label":"[ SOUND: OFF ]","raw":"1"}]
+PASS  story-020: raw key still '1' after the reload (persisted, not session-only)  [raw="1"]
+PASS  story-020: M-key unmute in-session (muted false)  [{"m":false,"label":"[ SOUND: OFF ]","raw":"0"}]
+PASS  story-020: unmute write-through at the store (raw stage2.muted = '0')  [raw="0"]
+PASS  CONSOLE [] (story-020 muted-reload page)
+PASS  story-020: unmute survives a real reload (boots unmuted — persistence asserted BOTH ways)  [{"m":false,"label":"[ SOUND: ON ]","raw":"0"}]
+PASS  story-020: raw key '0' after the unmute reload  [raw="0"]
+PASS  CONSOLE [] (story-020 unmuted-reload page)
+PASS  story-020: corrupt value 'garbage' boots unmuted, no crash (§8.9 never truthy)  [{"m":false,"label":"[ SOUND: ON ]","raw":"garbage"}]
+PASS  story-020: corrupt seed survives boot byte-identical (restore reads, never rewrites)  [raw="garbage"]
+PASS  CONSOLE [] (story-020 corrupt page)
+PASS  story-020: numeric garbage '2' boots unmuted (the 0-1 clamp — mutation B's discriminator)  [{"m":false,"label":"[ SOUND: ON ]","raw":"2"}]
+PASS  CONSOLE []
+
+FLOW-CHECK PASS — 188 passed, 0 failed

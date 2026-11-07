@@ -1134,10 +1134,13 @@ try {
      Deterministic in-page drive (src/probes-powerup.js powerupProbeTick — review-fix split,
      one walk per file; imports powerups.js — acyclic). Stages: drop rate over N = 100 REAL bolt-path kills (spawnForProbe target +
      a probe bolt into it — the same kill site combat's boltsTick owns, so maybeDrop's real
-     Math.random rolls are counted; binomial 95% band for p = 0.18 computed exactly offline:
-     [11, 25] — widen trials, never hand-widen bounds) → kind split over M = 300 more real
-     rolls (uniform 1/3: joint χ² goodness-of-fit at 95% — χ²(2) ≤ 5.991, the three-independent-
-     95%-band form flaked ~14%/run) → despawn 8 s + blink last 2 s
+     Math.random rolls are counted; FLAKE POLICY (player-approved 2026-11-07 — stage-4 GATE
+     DECISION 1 + story-019 §11, Option A): every statistical band ≥ 99% per band (the measured
+     joint false-red of the remaining 95% bands was ~14%/run; exact binomial arithmetic for
+     p = 0.18, n = 100 recorded beside the assert — widen trials, never hand-widen bounds) →
+     kind split over M = 300 more real rolls (uniform 1/3: joint χ² goodness-of-fit at 99% —
+     χ²(2) ≤ 9.210, the three-independent-95%-band form flaked ~14%/run) → despawn 8 s + blink
+     last 2 s
      (forced drop, tracked via POWERUPS.eachAlive) → pickup radius full-3D (1.3 picks up,
      1.6 does not, vertical-offset 1.345 picks up — the story-015 lesson) → SPREAD (one shot
      = 3 bolts at ±6° about the ship's local up; charged stays single) → OVERDRIVE (measured
@@ -1184,10 +1187,37 @@ try {
   ok('pickup pool pre-warm: entity-baseline delta exactly +6 (all PICKUP_POOL entities allocated at prepare — restarts allocate nothing new, §8.6)',
     puX.baselinePickups === 6 && puX.baselineEntities >= 6,
     JSON.stringify({ baselinePickups: puX.baselinePickups, baselineEntities: puX.baselineEntities }));
-  ok('drop rate p=0.18 within the binomial 95% band (100 real bolt-path kills)',
-    puRate.kills === 100 && puRate.drops >= 11 && puRate.drops <= 25, JSON.stringify(puRate));
+  // FLAKE POLICY (player-approved 2026-11-07: stage-4 GATE DECISION 1 + story-019 §11 —
+  // Option A, every statistical band ≥ 99%): the old 95% band [11,25] covered 95.05% of the
+  // exact binomial (n = 100, p = 0.18) and the measured joint false-red of the remaining 95%
+  // bands was ~14%/run. Exact arithmetic (exact binomial pmf sums, computed offline 2026-11-07):
+  //   [11,25] = 95.05%   (the old band)
+  //   [ 9,27] = 98.71%   (the recorded exact-quantile band — NOT sufficient: still < 99%)
+  //   [ 9,28] = 99.14%   (SHIPPED — the smallest interval clearing 99% that contains [9,27]:
+  //                       the two one-step extensions are [8,27] = 98.95% (fails, P(X=8) = 0.24%)
+  //                       and [9,28] = 99.14% (passes, P(X=28) = 0.44%))
+  //   [ 8,28] = 99.39%   (the alternative — recorded, not shipped)
+  // Tails at the shipped band: P(X ≤ 8) = 0.38%, P(X ≥ 29) = 0.48% (joint miss 0.86%/run).
+  // Widen trials, never hand-widen bounds (house rule).
+  // MUTATION RE-RUN under the new band (rider A, 2026-11-07): the drop-roll mutation
+  // (powerups.js maybeDrop → unconditional `return false` — story-018's recorded mutation 2)
+  // re-applied → npm run build → FULL flow-check → RED `drop rate p=0.18 within the binomial
+  // 99% band [9,28]` reading {"kills":100,"drops":0} (0 < 9 — the new low edge holds
+  // discrimination) + the same-root kind-split red (total 0 < 300): 186 passed, 2 failed.
+  // Transcript: production/qa/evidence/stage-5-riders/flow-mutation-droproll-riderA.txt.
+  ok('drop rate p=0.18 within the binomial 99% band [9,28] (100 real bolt-path kills; flake policy 2026-11-07)',
+    puRate.kills === 100 && puRate.drops >= 9 && puRate.drops <= 28, JSON.stringify(puRate));
   ok('at most one drop per kill (100 kills → ≤ 100 drops)', puRate.kills === 100 && puRate.drops <= puRate.kills, JSON.stringify(puRate));
-  ok('kind split ≈ 1/3 each — joint χ² goodness-of-fit at 95% over 300 real drops (χ²(2) ≤ 5.991)',
+  // FLAKE POLICY (2026-11-07, same player-approved decision as the drop-rate band above):
+  // χ²(2) threshold 5.991 (95%) → 9.210 (99%). dof-2 survival S(x) = exp(−x/2):
+  // S(9.21034) = 0.01 exactly; 99.5% would be 10.59663 — NOT used (the policy is 99%).
+  // Discrimination boundary, recorded honestly: a gross kind skew still reds (all-one-kind
+  // reads χ² = 600 ≫ 9.210), while a mild 40/30/30 skew reads χ² ≈ 6.0 and is now GREEN by
+  // policy — the approved cost of the 95→99 retightening. No dedicated kind-skew mutation is
+  // recorded in any story ledger; the only recorded red on this assert is the drop-roll
+  // mutation's same-root zero-drop red (total < 300, threshold-independent) — re-run
+  // 2026-11-07, see the record beside the drop-rate assert above.
+  ok('kind split ≈ 1/3 each — joint χ² goodness-of-fit at 99% over 300 real drops (χ²(2) ≤ 9.210; flake policy 2026-11-07)',
     (() => {
       const ks = [puKinds.SPREAD, puKinds.OVERDRIVE, puKinds.SHIELD];
       if (!ks.every((n) => typeof n === 'number' && n >= 0)) return false;
@@ -1195,7 +1225,7 @@ try {
       if (total < 300) return false;
       const exp = total / 3;
       const x2 = ks.reduce((a, n) => a + (n - exp) * (n - exp) / exp, 0);
-      return x2 <= 5.991;
+      return x2 <= 9.210;
     })(), JSON.stringify(puKinds));
   ok('despawn at 8 s (alive at 7.9, gone at 8.1)', puDs.aliveAt79 === true && puDs.goneAt81 === true, JSON.stringify(puDs));
   ok('blink during the last 2 s (off before 6.0 s, on after — blink starts at LIFE − BLINK = 6.0)', puDs.blinkAt55 === false && puDs.blinkAt65 === true, JSON.stringify(puDs));
@@ -1212,7 +1242,41 @@ try {
   // resolves the old floor's internal inconsistency (an interval of 0.0725-0.075 passed the
   // honest band while forcing shots = 8, under the old floor). Discrimination retained: a
   // missing OVERDRIVE reads ~5 — a 3-shot gap; the ceiling is untouched.
-  ok('OVERDRIVE: shot count over the 0.6 s pre-suppression burst matches the ÷2.2 interval (0.0568 s → 10.6 expected, band [8,12] covers the 3-frame cadence quantization at dt ≳ 0.0238 + DT_CLAMP stalls; a missing OVERDRIVE reads ~5 → red) + the timestamp interval honest + charged single + suppression unchanged at T_CHARGE',
+  /* RIDER A RE-DERIVATION (2026-11-07, stage-5 flake-policy rider): [8,12] is a MECHANICAL
+     quantization band, not a frequency band — re-derived from the fire path's exact mechanism
+     (src/weapons.js fireTick: C.fireT decrements FIRST each frame and resets to the FULL
+     interval on fire — no overshoot carry — so the cadence quantizes to K = ceil(interval/dt)
+     frames per shot; the burst window ends at the suppression frame m = ceil(T_CHARGE/dt);
+     shots = 1 (the press-frame bolt) + floor((m − 1)/K), all in GAME time — PU.t and chargeT
+     accumulate the SAME dt). Per-dt table (uniform dt):
+       dt 0.0167 (60fps): K 4, m 36 → 9     dt 0.02 (50fps): K 3, m 30 → 10
+       dt 0.0238 (42fps): K 3, m 26 → 9     dt 0.025 (40fps): K 3, m 24 → 8
+       dt 0.0284:         K 2, m 22 → 11    dt 0.03  (33fps): K 2, m 20 → 10
+       dt 0.04  (25fps):  K 2, m 15 → 8     dt 0.05 (clamp):  K 2, m 12 → 6
+     Over the OBSERVED environment cadence band (committed history: intervals 0.0667-0.0714 s →
+     dt ≈ 0.0167-0.0238 — the 2026-11-06 widen record's own basis) the deterministic range is
+     [8, 11] ⊂ [8, 12] — coverage ≥ 99% BY CONSTRUCTION in-regime, so the band changes NOTHING
+     (rider rule: no widening without arithmetic). The absolute honest max is 11 (each
+     post-press shot is ≥ 0.0568 game-s apart; 10 gaps = 0.568 ≤ 0.6, an 11th gap = 0.625 > 0.6
+     is unreachable), so the ceiling never masks a real bug. CAVEAT recorded honestly: a
+     SUSTAINED ≤ 23 fps stall (dt ≥ 0.043 through the whole window — the FRAME-CAP note's
+     ~15 fps class) reads 6-7, outside the band — but in that same regime the measured interval
+     reads K·dt ≥ 0.086 > 0.075, so the interval assert (this same ok(), untouched by this
+     rider) co-reds: the shot-count band is never the SOLE discriminator there. Recorded
+     population: six burst samples (9,9,9,9,9,8) + boss-window samples 7-10 — zero sub-8
+     observations; the stall class's frequency is unmeasured (arithmetic cannot establish ≥ 1%),
+     so the band stays PUT. The old label's "+ DT_CLAMP stalls" claim was falsified by the
+     dt-0.05 row (6 < 8) — label corrected, band untouched.
+     MUTATION RE-RUN (rider A, 2026-11-07): the T_CHARGE mutation (weapons.js T_CHARGE 0.6 →
+     0.06 — story-018's recorded mutation 1, the only recorded mutation whose red set includes
+     the OVERDRIVE shot-count asserts) re-applied → npm run build → FULL flow-check → RED both
+     OVERDRIVE asserts (burst {"suppressAt":0.067,"shots":1,"frameDt":0.0167}; boss window
+     {"shots":1,"frameDt":0.0199} — 1 ≪ 8 / 1 ≪ 7, the unchanged bands hold discrimination) +
+     the same-root tap/hold reds: 184 passed, 4 failed. Adjacent keep-passing: the drop-rate
+     band read {"kills":100,"drops":15} — inside [9,28] (the rider A band change is
+     behavior-neutral on honest rolls) and the kind split {98,103,100} green under 9.210.
+     Transcript: production/qa/evidence/stage-5-riders/flow-mutation-tcharge-riderA.txt. */
+  ok('OVERDRIVE: shot count over the 0.6 s pre-suppression burst matches the ÷2.2 interval (0.0568 s, band [8,12] — mechanical quantization band re-derived 2026-11-07, see above; a missing OVERDRIVE reads ~5 → red) + the timestamp interval honest + charged single + suppression unchanged at T_CHARGE',
     typeof puOd.shots === 'number' && puOd.shots >= 8 && puOd.shots <= 12 &&
     typeof puOd.interval === 'number' && puOd.interval >= 0.045 && puOd.interval <= 0.075 &&
     puOd.chargedSingle === 1 && typeof puOd.suppressAt === 'number' && Math.abs(puOd.suppressAt - 0.6) <= 0.1, JSON.stringify(puOd));
@@ -1223,7 +1287,19 @@ try {
   ok('HUD chips: name + seconds while active (GDD §8.3 "name + seconds" — the \\d+s form), gone after expiry',
     typeof puRf.chipsActive === 'string' && puRf.chipsActive.includes('SPREAD') && /\d+s/.test(puRf.chipsActive) &&
     puRf.chipsGone === '', JSON.stringify(puRf));
-  ok('effects apply during the boss fight (boss itself never drops) — shot count over the 0.5 s window matches the ÷2.2 interval (band [7,11]: design ≈ 9, the 0.6 s suppression caps ANY continuous hold, margin over DT_CLAMP stalls; a missing OVERDRIVE reads ~4-5 → red)',
+  /* RIDER A RE-DERIVATION (2026-11-07, same no-carry cadence model as the burst assert
+     above): window 0.5 s — it ends BEFORE suppression (T_CHARGE 0.6 caps only longer holds;
+     the drive releases at 0.5 s), so m = ceil(0.5/dt) frames are all stream-eligible. Table:
+       dt 0.0167: m 30, K 4 → 8    dt 0.02:  m 25, K 3 → 9    dt 0.0238: m 21, K 3 → 8
+       dt 0.025:  m 20, K 3 → 7    dt 0.0284: m 18, K 2 → 9  dt 0.03:   m 17, K 2 → 9
+       dt 0.04:   m 13, K 2 → 7    dt 0.05:  m 10, K 2 → 5 (sustained-stall class)
+     Over the observed cadence band the deterministic range is [7, 9] ⊂ [7, 11] — coverage
+     ≥ 99% BY CONSTRUCTION in-regime, band unchanged (no widening without arithmetic).
+     Absolute honest max 9 (8 gaps × 0.0568 = 0.454 ≤ 0.5; 9 gaps = 0.511 > 0.5 — 10
+     unreachable), so the 11 ceiling is pure margin over jitter. Same caveat as the burst: a
+     sustained ≤ 23 fps stall reads 5-6, co-red by the interval band (K·dt ≥ 0.086 > 0.075);
+     recorded population 7-10, zero sub-7 observations — band stays PUT. */
+  ok('effects apply during the boss fight (boss itself never drops) — shot count over the 0.5 s window matches the ÷2.2 interval (band [7,11] — mechanical quantization band re-derived 2026-11-07, see above; a missing OVERDRIVE reads ~4-5 → red)',
     puBs.bossAliveAtPickup === true && typeof puBs.shots === 'number' && puBs.shots >= 7 && puBs.shots <= 11 &&
     typeof puBs.interval === 'number' && puBs.interval >= 0.045 && puBs.interval <= 0.075, JSON.stringify(puBs));
   {
