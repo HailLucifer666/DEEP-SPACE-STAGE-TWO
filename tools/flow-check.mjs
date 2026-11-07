@@ -1667,12 +1667,15 @@ try {
      → rebuild; the mutation is VERIFIED applied by reading its red output — a silent no-op
      proves nothing):
        A. audio.js setMuted: the `writeMuted(muted)` write-through line removed (2026-11-07) →
-          RED `M-key write-through at the store` (raw null — nothing writes), `mute survives a
-          real reload` (in-memory flag lost at eval — the story's own bug re-created),
-          `raw key still '1' after the reload` (null), `unmute write-through` (raw stays '1' —
-          the unmute never wrote '0'), `raw key '0' after the unmute reload` ('1'). The named
-          adjacent keep-passing holds: both in-session toggle asserts stay GREEN (the toggle
-          itself works — only persistence dies). flow-mutation-a-writethrough-removed.txt.
+          RED 182/6: `M-key write-through at the store` (raw null — nothing writes), `mute
+          survives a real reload` (m:false — the in-memory flag lost at eval, the story's own
+          bug re-created), `raw key still '1' after the reload` (null), `M-key unmute
+          in-session` (m:true — the reload lost the mute, so the press RE-MUTED: the toggle's
+          baseline is persistence-dependent, the same cascade the red-first run recorded),
+          `unmute write-through` (raw null), `raw key '0' after the unmute reload` (null). The
+          named adjacent keep-passing holds where it is meaningful: the in-session MUTE toggle
+          stays GREEN (the toggle itself works — only persistence dies) alongside all 176
+          non-story asserts. flow-mutation-a-writethrough-removed.txt.
        B. audio.js readMuted... (store.js readMuted): the `=== '1'` clamp replaced by the
           parsed string's truth — `!!Number(get(MUTED_KEY))`, no finite/0-1 clamp (2026-11-07)
           → RED `numeric garbage '2' boots unmuted` (boots MUTED-from-garbage: Number('2') = 2
@@ -1682,20 +1685,37 @@ try {
           parse turns into mute state; the 'garbage' page stays green under B and its assert
           name says why. flow-mutation-b-unclamped-parse.txt.
        C. audio.js module top: `setMuted(readMuted());` — the restore moved to module eval (the
-          pre-story naive wiring; readMuted IS called at eval and setMuted's write-through fires
-          getStorage() THERE) (2026-11-07) → RED `corrupt seed survives boot byte-identical`
-          (the eval-time setMuted rewrote 'garbage' → '0' BEFORE the warm read — the rewrite
-          class) in flow-check, AND in tools/boot-marks.mjs on a cold profile the capability
-          probe fired at module eval: navT0 (navigation → module eval) exploded from the
-          documented ~100-200 ms band into seconds — the story-007 stall moved in front of the
-          title mark. The marks-ORDERING assert stays green under C (main.js's warm marks are
-          unconditional — the ordering cannot see an eval-time probe; the stall itself is the
-          witness). flow-mutation-c-eval-restore.txt + boot-marks-mutation-c.txt.
+          pre-story naive wiring; readMuted IS called at eval) (2026-11-07) → flow-check RED
+          183/5, ALL one root, and the root is worse than the naive wiring looks: the eval-time
+          readMuted runs PRE-WARM (storageImpl null — the laziness guard legitimately returns
+          false), and setMuted's write-through then PERSISTS that false — every page load
+          CLOBBERS the stored value ('1' → '0'; the seeded 'garbage' → '0'). Reds: `mute
+          survives a real reload` (m:false — the stored mute was destroyed before the warm read),
+          `raw key still '1' after the reload` ('0'), `M-key unmute in-session` (m:true — the
+          reload lost the mute, the press re-muted), `unmute write-through` ('1' — then '0' is
+          what the NEXT eval clobbers it to), `corrupt seed survives boot byte-identical`
+          ('garbage' → '0'). Keep-passing: the in-session MUTE toggle (page 1: m:true, raw '1'
+          — the toggle itself works; only persistence dies). AND tools/boot-marks.mjs (cold
+          profile): the capability probe fired at module eval — TRUE wait (navigation → title)
+          11,420 ms vs the green build's 6,078-6,535 ms band (the story-007 cold stall moved IN
+          FRONT of the title mark, inside navT0), and the storage-marks gap collapsed from
+          4,238 ms (green: the probe behind title) to 0 ms (the probe already fired at eval —
+          the warm getStorage() is a memoized no-op). MODULE → TITLE itself stays in band
+          (138 ms — the marks are relative to PERF_T0, captured after the eval stall; TRUE wait
+          is the witness). The marks-ORDERING assert stays green under C (main.js's warm marks
+          are unconditional — the ordering cannot see an eval-time probe). 
+          flow-mutation-c-eval-restore.txt + boot-marks-mutation-c.txt.
        D. main.js warm block: `restoreMuted(readMuted())` → `setMuted(readMuted())` (2026-11-07)
-          → RED `corrupt seed survives boot byte-identical` (the warm setMuted(false) writes '0'
-          over the seeded 'garbage' — boot rewrote what it just read). Only meaningful against a
-          seeded non-default corrupt value: with '1' stored, setMuted(true) would rewrite '1'
-          byte-identically and the assert could never red. flow-mutation-d-setmuted-restore.txt. */
+          → RED `corrupt seed survives boot byte-identical` ALONE (187/1): the warm
+          setMuted(false) writes '0' over the seeded 'garbage' — boot rewrote what it just read.
+          Persistence itself stays green (setMuted writes the same canonical values — the
+          corrupt-read assert reads '0' → unmuted ✓). Only meaningful against a seeded
+          non-default corrupt value: with '1' stored, setMuted(true) would rewrite '1'
+          byte-identically and the assert could never red. (Mutation-craft note, recorded
+          honestly: the first D application appended the comment INSIDE the setTimeout line and
+          the `//` swallowed the `}, 0);` line-ender — build failed, caught by reading the build
+          output before any run; re-applied with the line-ender intact.)
+          flow-mutation-d-setmuted-restore.txt. */
   await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat' });
   {
     const t0 = Date.now();

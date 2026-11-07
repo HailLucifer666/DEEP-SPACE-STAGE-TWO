@@ -1,0 +1,39 @@
+BOOT MARKS (headed) — ms since module eval, url file:///E:/Game%20Build/index.html?debug=1
+  t0             0
+  bodyStart      (never fired)
+  storeStart     1560
+  storeEnd       6080
+  uiEnd          (never fired)
+  preBoot        0
+  probe          6
+  bootStart      6
+  fonts          171
+  veilShown      373
+  rendererStart  7
+  renderer       19
+  heroB64Start   22
+  heroB64        29
+  heroParseStart 30
+  heroParse      1312
+  propB64Start   32
+  propB64        38
+  propParseStart 38
+  propParse      1324
+  glbsDone       1328
+  title          1340
+  firstTick      47
+DERIVED
+  module → WebGL device ready        19 ms
+  WebGL device creation              12 ms
+  b64 decode (hero)                  7 ms
+  b64 decode (prop)                  6 ms
+  gltf.parse (hero)                  1282 ms
+  gltf.parse (prop)                  1286 ms
+  normals+texture sweep (both)       8 ms
+  post-parse → scene ready           16 ms
+  scene ready → title                12 ms
+  MODULE → TITLE (player wait)       1340 ms
+  TRUE wait (navigation → title)     6963 ms
+  MODULE → FIRST TICK                47 ms
+STATE {"phase":"title","rocket":"glb","fps":0,"bootMs":6089,"gpu":"ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"}
+CONSOLE []
