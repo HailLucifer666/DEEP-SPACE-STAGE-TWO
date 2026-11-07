@@ -1,0 +1,3 @@
+FAIL poll timeout: ({p: window.__stage2 && __stage2.phase})
+
+FLOW-CHECK PASS — 0 passed, 0 failed

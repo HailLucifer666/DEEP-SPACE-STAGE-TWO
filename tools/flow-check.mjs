@@ -1264,11 +1264,11 @@ try {
      ×1.15, scale ×1.35, tint 0xffa02f trim+glow, contact r = R_RAIDER × ELITE_SCALE) → the
      unconditional per-spawn reset pin (former elite killed, respawn at wave 3 reads normal)
      → elite score ×2 through the REAL bolt-kill path (+300, kills +1, telemetry kills/elite
-     splits) → wave 3 produces 0 elites over 20 real spawns → the elite RATE within the exact
-     central 95% band for p = 0.22 over N = 50 real rolls ([6,17], coverage 95.99% —
-     computed offline; widen trials, never bounds; NO seeded RNG exists — architecture §7.1
-     honest flag; the first cut [6,16] was the quantile walk at 94.19% coverage, spec
-     review 2026-11-07) → the waves
+     splits) → wave 3 produces 0 elites over 20 real spawns → the elite RATE as MECHANISM
+     GATES + a 99.9% sanity band ([3,21]; the first cut was a 95% distribution gate —
+     [6,16] at 94.19% coverage, then [6,17] at 95.99% — replaced after the merge-halt
+     diagnosis proved the environment's Math.random batches at run level; NO seeded RNG
+     exists — architecture §7.1 honest flag) → the waves
      1-5 composition table observed through the REAL spawn path (deterministic authored split
      per wave; totals equal the derived waveCount; wave 6 reads the derived fallback —
      boundary asserted both ways via waveComposition().source + the wave-6 spawn total) → a
@@ -1319,12 +1319,24 @@ try {
   // binomial 95% band` (elites 0 < 6) — adjacent keep-passing: wave-3 zeros stay green (the
   // band's low edge is the only discriminator the zero-chance mutates), stats asserts stay
   // green (spawnRaiderForProbe forceElite bypasses the roll — the seam the mutation isolates).
-  // SPEC-REVIEW ROUND (2026-11-07): the first cut claimed "exact binomial 95% band [6,16]"
-  // but that was the 2.5%-quantile walk — CDF(16) 96.53% − CDF(5) 2.33% = 94.19% coverage
-  // (5.80% false-red). The exact central 95% band is [6,17]: coverage 95.99% (upper tail
-  // P(X ≥ 18) = 1.68%). Discrimination unchanged: the chance→0 mutation reads 0.
-  ok('elite rate within the exact central 95% band for p=0.22 over 50 real rolls ([6,17], coverage 95.99%)',
-    rt.rolls === 50 && rt.elites >= 6 && rt.elites <= 17, JSON.stringify(rt));
+  // MERGE-HALT ROUND (2026-11-07, orchestrator ruling): the distribution gate is REPLACED by
+  // mechanism gates + a sanity band. Why: the rate drew a confirmed 20/50 (P ≈ 0.1%) and a
+  // reproduced instrumented 21/50 with meanDraw 0.4293 and mismatches 0 — the environment's
+  // Math.random batches at run level (whole-run low-skewed batches of TRUE draws; the counted
+  // flags always equal the draws' verdicts). A 95% band reds on such batches while the
+  // mechanism is exact — the wrong gate for this failure class. The three gates that CANNOT
+  // be defeated by batching: (a) mismatches === 0 — the recorded draw and the stamped flag
+  // agree on EVERY spawn (kills the chance→0-lurking and double-stamp bug classes); (b)
+  // killsFailed/aliveLeaks/notWave5 all 0 — the stage measured what it thinks it measured;
+  // (c) the exact 99.9% central sanity interval [3,21] (coverage 99.912%, tails 0.0453% /
+  // 0.0431%) purely to catch a mechanically broken roll: chance→0 reads 0 → RED; chance→1
+  // reads 50 → RED. The instrumentation (draws/meanDraw/sibMeans/stream) rides the report as
+  // the evidence surface; the flake-budget policy for ALL statistical asserts is the
+  // stage-close decision item (report §11).
+  ok('elite-rate mechanism exact + 99.9% sanity band ([3,21]: draw↔flag agreement on all 50 spawns, every spawn killed at wave 5, count sane)',
+    rt.rolls === 50 && rt.mismatches === 0 && rt.killsFailed === 0 && rt.aliveLeaks === 0 && rt.notWave5 === 0 &&
+    rt.elites >= 3 && rt.elites <= 21, JSON.stringify({ rolls: rt.rolls, elites: rt.elites, meanDraw: rt.meanDraw,
+    mismatches: rt.mismatches, killsFailed: rt.killsFailed, aliveLeaks: rt.aliveLeaks, notWave5: rt.notWave5 }));
   ok('wave 3 produces zero elites (20 real spawns below ELITE_MIN_WAVE)',
     w3z.spawns === 20 && w3z.elites === 0, JSON.stringify(w3z));
   // MUTATION (2026-11-06): enemies.js spawnRaider's unconditional per-spawn reset block

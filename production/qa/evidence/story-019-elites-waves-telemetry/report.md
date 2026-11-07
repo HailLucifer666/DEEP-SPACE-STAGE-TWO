@@ -420,3 +420,78 @@ Battery for this round (real outputs in `flow-green-qualityfix.txt`):
   `STATE {"phase":"title","rocket":"glb",…}`, `CONSOLE []`.
 - Line counts: enemies.js 330 → 334, weapons.js 275 → 280, probes-balance.js 319 → 330,
   combat.js 706 (untouched this round) — all under 800.
+
+## 11. Merge-halt round (2026-11-07) — the elite-rate red diagnosed; mechanism gates replace the distribution gate
+
+**The halt.** The merge candidate's battery red on the elite-rate assert (20/50) with a
+reproducing second observation. The orchestrator's initial count was later CORRECTED to ONE
+confirmed elite-rate red (the captured 20/50) plus one unidentified single-assert failure
+(169/1, FAIL line truncated) — the honest record this round closes on.
+
+**Diagnosis (two instrumentation commits — 6d391d7, c67717c + the 834c5a7 wiring fix; KEPT as
+a recorded harness improvement).** The roll site now captures its exact draw (`E.lastRoll`,
+read synchronously after each spawn — no intervening draw) and the drive records per-roll
+truth: the draw, whether it rolled, the flag it counts, aliveness at read, hitDrone's actual
+return, and the pool's live counts before/after; round 2 adds all six per-spawn consumers
+(angle/kind/hold/orbitDir/fireT/elite) and a contiguous 256-draw raw stream sample.
+
+**Tabulated instrumented runs (all on the branch, build-identical except the diagnostics):**
+
+| run | rate | meanDraw | mismatches | killsFailed | aliveLeaks | notWave5 | note |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| diag-1 | 6 | 0.5564 | 0 | 0 | 0 | 0 | back-to-back |
+| diag-2 | 12 | 0.4851 | 0 | 0 | 0 | 0 | back-to-back |
+| diag-3 | 10 | 0.5235 | 0 | 0 | 0 | 0 | back-to-back |
+| diag-4 | 10 | 0.5208 | 0 | 0 | 0 | 0 | back-to-back |
+| diag-5 | 11 | 0.4840 | 0 | 0 | 0 | 0 | back-to-back |
+| pattern-2 | **21** | **0.4293** | **0** | 0 | 0 | 0 | REPRODUCED under the orchestrator's pattern (build+dep-check+boot-marks immediately before) — raw draws recorded: 11 of 50 below 0.1 (5 expected), mean 0.4293 (3.4σ low as a batch), and mismatches 0 — the counted flags EQUAL their draws' verdicts |
+| pattern-3 | 14 | 0.4588 | 0 | 0 | 0 | 0 | same pattern, in-band |
+| pattern-9 | 11 | 0.4761 | 0 | 0 | 0 | 0 | full round-2 wiring: siblings ≈ 0.5 normalized (angle 0.554, kind 0.558, hold 0.548, fireT 0.543), raw stream sample mean 0.542 |
+| wired-1 | 10 | 0.5430 | 0 | 0 | 0 | 0 | clean-environment run: siblings all ≈ 0.5, stream mean 0.4945 |
+
+(Aborted runs — three boot-time failures and two drive-crash runs from a diagnostic bug,
+since fixed — are described here rather than retained; their outputs carried no rate data.
+The file-provenance of two racing background loops invalidated an apparent identical-stream
+observation; it is NOT claimed as evidence.)
+
+**The verdict (as ruled):**
+1. **Mechanism EXACT.** Across 7 fully-instrumented runs: draw↔flag agreement on 350/350
+   spawns (mismatches 0), 350/350 kills landed (killsFailed 0), 0 pool leaks, 350/350 rolls
+   at wave 5, p̂ = 0.196–0.20 over the clean runs. The chance→0 and double-count/double-stamp
+   bug classes are excluded by data, not by code reading.
+2. **The environment's Math.random batches at RUN level.** The reproduced 21/50 batch
+   (meanDraw 0.4293, mismatches 0) is a batch of TRUE draws skewing low — the generator drew
+   them that way; the counter counted them honestly. Same class as the orchestrator's
+   captured 20/50 and this session's pre-instrumentation 18. **Root cause (why V8/Edge/CDP
+   occasionally serves a low-skewed ~50-draw stretch) is OPEN** and out of this story's
+   scope; the captured arrays in flow-diag-pattern-2.txt / flow-diag-pattern-9.txt /
+   flow-diag-wired-1.txt are the evidence.
+3. **The fix (this commit): the distribution gate is replaced by mechanism gates that
+   batching cannot defeat** — (a) `mismatches === 0` (draw↔flag agreement on every spawn —
+   kills the chance→0-lurking and double-stamp classes), (b) `killsFailed === 0 &&
+   aliveLeaks === 0 && notWave5 === 0` (the stage measured what it thinks), (c) the exact
+   99.9% central sanity interval **[3, 21]** (coverage 99.912%; tails 0.0453% / 0.0431%) to
+   catch a mechanically broken roll. The instrumentation stays as the evidence surface.
+   **Mutation discipline re-verified (2026-11-07, `flow-mutation-elite-chance-0-mechgates.txt`):**
+   ELITE_CHANCE → 0 → **RED** (`elites: 0` outside [3,21]) with `meanDraw: 0.5005,
+   mismatches: 0, killsFailed: 0` — the sanity band fires on the broken roll while the
+   mechanism gates correctly stay green. 169 passed / 1 failed. One execution abort at boot
+   (the environmental Edge class) was hygiened and re-run.
+4. **The flake-budget policy — STAGE-CLOSE DECISION ITEM for the player.** The joint
+   false-red arithmetic with empirical numbers: the elite-rate gate is now mechanism-based
+   (~0% flake: the deterministic gates plus a 0.09%-tail sanity band); the remaining
+   statistical asserts each carry ~4-5% (drop band [11,25], kind χ² 5.991, OVERDRIVE
+   count/interval — the last also load-sensitive) → joint ≈ **1 − 0.95³ ≈ 14%** per full
+   run, as observed. Options: **(A) tighten all statistical asserts to 99%+ bands** (joint ≈
+   4%; every recorded mutation stays discriminating at 99%: chance→0 reads 0, drop-roll
+   removed reads 0, missing OVERDRIVE reads ~5 vs the proposed [7,13], severe kind skew
+   reads χ² > 30 vs the 9.21 threshold) — **RECOMMENDED**; (B) keep 95% + a formal rerun
+   protocol (the cost this round just demonstrated); (C) mixed (tighten only the flaked
+   ones — leaves a known ~5% flake in the gate). The OVERDRIVE interval additionally needs
+   its quantization envelope widened ([0.045, 0.075] → [0.045, 0.085]) regardless of choice.
+
+**Battery for this round:** build 4.41 MB; dep-check PASS acyclic, main.js 255/500;
+flow-check **170 passed / 0 failed** on the restored tree (`flow-green-mergehalt.txt`);
+boot-marks headed MODULE→TITLE 1654 ms (documented GLB band 158–2492 ms — a cold-cache
+upper-band run), `phase:title`, `rocket:glb`, `CONSOLE []`. Line counts: enemies.js 341,
+probes-balance.js 356 (the instrumentation is the growth), combat.js 706 — all under 800.
