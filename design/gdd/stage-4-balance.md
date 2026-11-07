@@ -571,8 +571,13 @@ adjacent keep-passing cases ship with each mutation (story-018 L96-100, story-01
 
 ### 8.5 Experiential criteria (playtest, stage close — joins the owed look/feel list)
 
-- Charged shot discoverable without instructions: within a new player's first two waves they
-  hold past the threshold at least once unprompted (the whine is the teacher — §3.1).
+- Charged shot executes from the hint (hint comprehension): after reading the hint bar's
+  charge line, the player executes at least one full charge-release within their first two
+  waves (the whine confirming the hold — §3.1).
+  *Re-worded 2026-11-07 per the stage-4 checkpoint ruling — the shipped hint bar pre-empts
+  unprompted discovery by design; what the playtest measures is whether the hint translates
+  into the behavior, and whether suppression reads as charging (item 2) and chips stay
+  legible (item 3).*
 - The stream never feels downgraded: no "my gun stopped working" reports at the threshold —
   the suppression must read as *charging*, not jamming.
 - A pickup is legible: what it does, how long is left (chip + effect identity).
