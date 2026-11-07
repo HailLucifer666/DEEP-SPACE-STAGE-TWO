@@ -67,3 +67,15 @@ rewrite + TD-018 content pass BEFORE the repo goes public), (2) TD-007 git-ident
 rewrite go, (3) TD-08 litter deletion go (~1.0 GB measured), (4) the owed S3X +
 stage-3/4 look/feel verdicts. The gate reduces risk; it does not prove the absence of
 bugs.
+
+CHECKPOINT RECORD (2026-11-07): the ship-checkpoint dialog was presented with all
+three go/no-go items (TD-007 with backup-first / TD-08 ~1.0 GB / repo publication
+sequencing) — UNANSWERED, same as the stage-3 and stage-4 close attempts. Working
+defaults adopted, each reversible and none executed beyond this recording: TD-007 =
+HOLD (nothing rewrites history without the explicit go), TD-08 = HOLD (the ~1.0 GB
+litter harms nothing where it sits), repo publication = HOLD until the playtest
+sign-off (the repo-LAST ruling stands; the submission-link track — itch/Netlify for
+the recruiter — is the parallel session's thread and was not touched). The owed
+S3X + stage-3/4 look/feel verdicts remain OWED, revocable at any tag (rollback =
+git checkout good-2026-11-07-d). Stage 5 is CLOSED on machine gates; every remaining
+item opens on the player's word, exactly as Stage 4 handed it over.
