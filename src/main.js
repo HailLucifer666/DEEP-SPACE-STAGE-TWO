@@ -8,10 +8,10 @@
 import { THREE, EffectComposer, RenderPass, UnrealBloomPass, OutputPass } from 'stage-two-lib';
 import * as LAUNCH from './launch.js';
 import * as COMBAT from './combat.js';
-import { audioUnlock, isAudioLive, setMuted, isMuted,
+import { audioUnlock, isAudioLive, setMuted, isMuted, restoreMuted,
   musicState, loopsCount, alarmActive } from './audio.js';
 import { loadAssets, assetReport } from './assets.js';
-import { getStorage, readHighscore } from './store.js';
+import { getStorage, readHighscore, readMuted, readMutedRaw } from './store.js';
 import { setPhase, initPhases } from './phases.js';
 import { input, paused, attachInput, onTitleAction, initInput } from './input.js';
 import { loop, fps, dprCtl, initLoop, composerIsDead } from './loop.js';
@@ -147,7 +147,11 @@ function boot() {
     mark('title'); // title overlay live — the first thing a player can act on
     // story-007: warm storage behind the rendered title — the cold-profile probe (3-5 s) lands
     // after first paint, then the HIGH SCORE line re-renders with the saved value
-    window.setTimeout(() => { mark('storeStart'); getStorage(); mark('storeEnd'); refreshRecordLine(); }, 0);
+    // story-020: the mute choice restores in the SAME post-warm block — restoreMuted READS the
+    // stored value without writing (boot must not rewrite what it just read), and the ordering is
+    // load-bearing: this runs before any first-gesture audioUnlock, and ensure() reads `muted`
+    // when the context is first built, so a persisted-muted boot comes up silent at the master gain
+    window.setTimeout(() => { mark('storeStart'); getStorage(); mark('storeEnd'); refreshRecordLine(); restoreMuted(readMuted()); refreshSoundButton(); }, 0);
     if (SPIN) setupSpinViewer(); // after title.enter — it re-hides the overlay (closed viewer)
     if (GOTO === 'launch') window.setTimeout(() => setPhase('pad'), 200);
     if (GOTO === 'transition') window.setTimeout(() => setPhase('transition'), 200);
@@ -212,6 +216,7 @@ window.__stage2 = {
   get time() { return game.time; },
   get paused() { return paused; },
   get muted() { return isMuted(); },
+  mutedRaw: () => readMutedRaw(), // story-020: the RAW stage2.muted value — corrupt seeds visible to the harness (store.js guarded read)
   bootMs: () => Math.round(performance.now() - PERF_T0),
   // SHIP1: numbers-only orientation check (patch C). plumeAnchorY lists the y of every
   // group riding the wrap — expect [-0.8] (the plume pivot) once launch.js welds it.

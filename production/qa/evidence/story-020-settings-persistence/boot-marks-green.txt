@@ -1,39 +1,39 @@
 BOOT MARKS (headed) — ms since module eval, url file:///E:/Game%20Build/index.html?debug=1
   t0             0
   bodyStart      (never fired)
-  storeStart     1628
-  storeEnd       5234
+  storeStart     810
+  storeEnd       5048
   uiEnd          (never fired)
   preBoot        0
   probe          6
-  bootStart      7
-  fonts          174
-  veilShown      383
-  rendererStart  8
+  bootStart      6
+  fonts          87
+  veilShown      741
+  rendererStart  7
   renderer       25
-  heroB64Start   29
-  heroB64        37
-  heroParseStart 37
-  heroParse      1349
-  propB64Start   38
-  propB64        45
-  propParseStart 45
-  propParse      1364
-  glbsDone       1368
-  title          1380
-  firstTick      54
+  heroB64Start   28
+  heroB64        47
+  heroParseStart 47
+  heroParse      793
+  propB64Start   48
+  propB64        75
+  propParseStart 75
+  propParse      776
+  glbsDone       801
+  title          810
+  firstTick      (never fired)
 DERIVED
   module → WebGL device ready        25 ms
-  WebGL device creation              17 ms
-  b64 decode (hero)                  8 ms
-  b64 decode (prop)                  7 ms
-  gltf.parse (hero)                  1312 ms
-  gltf.parse (prop)                  1319 ms
-  normals+texture sweep (both)       11 ms
-  post-parse → scene ready           19 ms
-  scene ready → title                12 ms
-  MODULE → TITLE (player wait)       1380 ms
-  TRUE wait (navigation → title)     6078 ms
-  MODULE → FIRST TICK                54 ms
-STATE {"phase":"title","rocket":"glb","fps":0,"bootMs":5249,"gpu":"ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"}
+  WebGL device creation              18 ms
+  b64 decode (hero)                  19 ms
+  b64 decode (prop)                  27 ms
+  gltf.parse (hero)                  746 ms
+  gltf.parse (prop)                  701 ms
+  normals+texture sweep (both)       6 ms
+  post-parse → scene ready           8 ms
+  scene ready → title                9 ms
+  MODULE → TITLE (player wait)       810 ms
+  TRUE wait (navigation → title)     6535 ms
+  MODULE → FIRST TICK                n/a
+STATE {"phase":"title","rocket":"glb","fps":60,"bootMs":5110,"gpu":"ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"}
 CONSOLE []

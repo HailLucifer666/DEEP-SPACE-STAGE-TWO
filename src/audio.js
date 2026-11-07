@@ -1,6 +1,9 @@
 // STAGE TWO — synthesis engine. Every sound is math; zero asset files.
 // Contract: nothing throws on a missing/suspended context (guard §8.3); looping
 // nodes register in a set so phase exits can fade them (state-machine contract §10).
+// story-020: the mute choice persists through the guarded store — audio.js imports store.js
+// (store is self-contained, zero imports: audio→store is acyclic, dep-check verifies).
+import { writeMuted } from './store.js';
 let AC = null;
 let master = null;
 let muted = false;
@@ -41,11 +44,22 @@ export function isAudioLive() {
 
 export function setMuted(m) {
   muted = !!m;
+  writeMuted(muted); // story-020: the single write choke point — the M key (input.js) and the sound
+  // button (main.js) both funnel through setMuted, so both persist with zero call-site changes
   const c = getC();
   if (c && master) master.gain.setTargetAtTime(muted ? 0 : 0.9, c.currentTime, 0.05);
   if (!muted) musicFlush(); // story-009: flush a musicTo that deferred while muted (spec §2)
 }
 export function isMuted() { return muted; }
+export function restoreMuted(m) { // story-020: boot applies the STORED value WITHOUT writing — the
+  // warm restore must not rewrite what it just read (one explicit export, one job). No musicFlush:
+  // at the warm block the context is not yet unlocked, and audioUnlock's own musicFlush covers the
+  // gesture path; a pre-unlock flush could only defer again. ensure() reads `muted` when the
+  // context is first built, so a persisted-muted boot comes up silent at the master gain.
+  muted = !!m;
+  const c = getC();
+  if (c && master) master.gain.setTargetAtTime(muted ? 0 : 0.9, c.currentTime, 0.05);
+}
 
 // pause: freeze the audio clock (context suspend) — resumes without losing scheduled state
 export function audioSuspend() {
