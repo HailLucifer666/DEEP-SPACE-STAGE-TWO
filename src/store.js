@@ -34,3 +34,28 @@ export function writeHighscore(n) {
     console.warn('[stage2] highscore write failed — score not persisted:', e && e.message);
   }
 }
+
+// story-020: the mute choice rides the SAME guarded store and the SAME contracts as the
+// highscore pair above — story-007 laziness (a pre-warm read never triggers the capability
+// probe), §8.9 (a corrupt/garbage value reads as the safe default, never as truthy), and the
+// stage-1 honest-warn rule (a refused write is warned about, never pretended saved). Any
+// future player setting lands on this same surface (the stage-5 scope record: mute-only).
+export const MUTED_KEY = 'stage2.muted';
+export function readMuted() {
+  if (!storageImpl) return false; // story-007: pre-warm read never triggers the probe — the readHighscore pre-warm guard is the precedent
+  try {
+    return storageImpl.get(MUTED_KEY) === '1'; // ONLY the canonical '1' is muted — 'garbage', '2', '0', null all read unmuted (§8.9)
+  } catch { return false; }
+}
+export function writeMuted(m) {
+  try { getStorage().set(MUTED_KEY, m ? '1' : '0'); }
+  catch (e) { // stage-1 review (writeHighscore precedent): a throw means the REAL backend refused — never pretend it was saved
+    console.warn('[stage2] muted write failed — setting not persisted:', e && e.message);
+  }
+}
+export function readMutedRaw() { // story-020 probe seam: the RAW stored value for the harness
+  // (window.__stage2.mutedRaw — corrupt seeds must stay visible to flow-check). Guarded like
+  // the pair: pre-warm returns null without triggering the probe, never throws.
+  if (!storageImpl) return null;
+  try { return storageImpl.get(MUTED_KEY); } catch { return null; }
+}
