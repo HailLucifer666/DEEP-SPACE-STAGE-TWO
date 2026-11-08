@@ -49,4 +49,17 @@ OVERDRIVE interval band co-red class (TD-017) was observed twice in ~8 full runs
 during A1 bring-up and zero times in the two consecutive closing greens — rerun
 policy stands, no band widened.
 
+## Merged-master confirmation runs (same day, appended)
+
+After the `--no-ff` merge (merged tree byte-identical to the branch tree —
+`git rev-parse^{tree}` equal), the full battery was re-run on `master` per the house
+convention: dep-check PASS (271/500). Flow-check went **254/1 three consecutive times**,
+every red the documented TD-017 OVERDRIVE-interval class under a sustained ~48 fps
+stall (frameDt 0.0207–0.0211 vs the 60 fps the bands were derived at; run 3's red moved
+to the sibling OVERDRIVE assert while the first passed — the machine-load signature).
+The byte-identical tree read **255/0 three times earlier the same day** at nominal
+frame rate. Nothing widened, nothing altered, all reds recorded
+(`build/flow-master-merge-run1.txt`, `-run3.txt`; run 2 not captured to file). The
+close tag is held until one green `flow-check` on master with the machine idle.
+
 The gates reduce risk; they do not prove the absence of bugs.

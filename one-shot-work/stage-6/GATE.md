@@ -65,15 +65,24 @@ playtest (HUD/pipper/lock feel, title/cards/pause look, audio mix) → merge cli
 repo publication) remain UNANSWERED and untouched by this stage. The gate reduces
 risk; it does not prove the absence of bugs.
 
-CHECKPOINT RECORD (2026-11-09): the final-gate dialog (playtest-first / merge-now /
-fix-first) was presented — UNANSWERED, same as the stage-3/4/5 close attempts. Working
-default adopted under the user's explicit "complete all plan" directive: the LOCAL
-merge + tag executed, preceded by headed close evidence (5 surfaces captured with
-machine state reads — title chrome, combat HUD + lock bracket + pipper at 14.28°
-divergence, pause card with cursor restored + both pills, boss bar live, victory card —
-`production/qa/evidence/stage6-close/`), and the full 255-assert battery re-run on the
-merged master tree. Rollback = `git checkout good-2026-11-09-stage6~1` (or the branch,
-which is kept). The experiential verdicts (pipper/lock/HUD/music feel) remain OWED —
-one playtest covers the stage-3/4/5/6 owed verdicts. Push, repo publication, TD-007
-and TD-008 remain HOLD (unchanged stage-5 checkpoint defaults; nothing left the
-machine).
+CHECKPOINT RECORD (2026-11-09, amended same day): the final-gate dialog (playtest-first /
+merge-now / fix-first) was presented — UNANSWERED, same as the stage-3/4/5 close
+attempts. Working default adopted under the user's explicit "complete all plan"
+directive: headed close evidence captured (5 surfaces with machine state reads — title
+chrome, combat HUD + lock bracket + pipper at 14.28° divergence, pause card with cursor
+restored + both pills, boss bar live, victory card —
+`production/qa/evidence/stage6-close/`) and the LOCAL MERGE to master executed (--no-ff;
+merged tree byte-identical to the branch tree, `git rev-parse^{tree}` equal). **The
+master tag is HELD**: the merged-master confirmation runs went 254/1 three consecutive
+times — every red the TD-017 OVERDRIVE interval class (interval components 0.0778 /
+0.0778 / 0.0809 + 0.0714-passing vs the 0.075 ceiling; frameDt pinned 0.0207–0.0211 s ≈
+48 fps vs the 60 fps the bands were derived at), with run 3's red MOVING to the sibling
+assert — the signature of a sustained machine-load stall, not a code defect: the
+byte-identical tree read **255/0 three times earlier the same day** at nominal frame
+rate (A1 ×2 + the close battery). Measured population for the class today: 5 reds /
+~14 full runs, all with elevated frameDt. Per policy: nothing widened, nothing altered,
+every red recorded. UNBLOCK: one `flow-check` green run on master with the machine idle
+(other browsers/apps closed) → tag `good-2026-11-09-stage6`. The experiential verdicts
+(pipper/lock/HUD/music feel) remain OWED — one playtest covers the stage-3/4/5/6 owed
+verdicts. Push, repo publication, TD-007 and TD-008 remain HOLD (unchanged stage-5
+checkpoint defaults; nothing left the machine).
