@@ -156,13 +156,55 @@ body.playing.paused, body.playing.paused *{cursor:auto !important;}
 #hud.assemble #tele{animation:teleIn .7s cubic-bezier(.16,.9,.24,1) both;}
 @keyframes teleIn{from{transform:translateX(26px);opacity:0;}to{transform:translateX(0);opacity:1;}}
 
-/* S4 combat: hull/shield/boost bars + score */
-#hud-bars{position:absolute;left:22px;bottom:20px;font:700 11px/1.6 ui-monospace,Consolas,monospace;
-  letter-spacing:.14em;color:#bfe9ff;text-shadow:0 0 10px rgba(125,215,255,.4);}
-#hud-bars .bar{width:180px;height:6px;background:rgba(255,255,255,.09);border:1px solid rgba(125,215,255,.28);
-  border-radius:3px;margin:2px 0 8px;overflow:hidden;}
-#hud-bars .bar i{display:block;height:100%;background:#ff5a3c;transition:width .18s ease;}
-#hud-bars .bar.sh i{background:#7dd7ff;}
+/* S4 combat → stage-6 H1: labeled HULL/SHIELD/BOOST meter rows (label + track + fill) — a
+   presentation-only restyle of the SAME change-gated writer values (combat.js's lastBars
+   gate untouched; honesty law: no new values, the fill IS the value the text stack wrote —
+   visual-audit F1). Numbers ride the label as the secondary read. */
+#hud-bars{position:absolute;left:22px;bottom:20px;display:grid;row-gap:7px;
+  font:700 11px/1.4 'Rajdhani','Segoe UI',sans-serif;letter-spacing:.14em;color:#bfe9ff;
+  text-shadow:0 0 10px rgba(125,215,255,.4);}
+#hud-bars .meter{display:grid;grid-template-columns:86px 180px;align-items:center;column-gap:10px;}
+#hud-bars .ml{white-space:pre;}
+#hud-bars .mtrack{width:180px;height:8px;background:rgba(255,255,255,.09);border:1px solid rgba(125,215,255,.28);
+  border-radius:4px;overflow:hidden;}
+#hud-bars .mtrack i{display:block;height:100%;background:#ff5a3c;transition:width .18s ease;}
+#hud-bars .mtrack.sh i{background:#7dd7ff;}
+#hud-bars .mtrack.bo i{background:#9fd8ff;}
+/* stage-6 H1: dedicated boss HP bar — the fight's central state gets a bar, not a text line
+   (visual-audit F1; boss.js untouched, its barLine() text write retired from combat.js's
+   #hud-bars string). Fed from BOSS.state() {hp,maxHp}; the fill steps in 5% increments (the
+   charge-meter change-gate pattern, combat.js). Amber fill = the boss's own color language
+   (the weak-point node 0xffc85a); label/track stay cyan (scope.md color rule). No clip-path
+   polygons (flow-check counts #hud clip-path children = the 8 edge pips exactly). */
+#boss-bar{position:absolute;top:16px;left:50%;transform:translateX(-50%);width:min(46vw,440px);
+  display:flex;align-items:center;gap:10px;}
+#boss-bar .bb-label{font:700 12px/1 'Rajdhani','Segoe UI',sans-serif;letter-spacing:.3em;color:#bfe9ff;
+  text-shadow:0 0 10px rgba(125,215,255,.4);}
+#boss-bar .bb-track{flex:1;height:10px;background:rgba(255,255,255,.09);border:1px solid rgba(125,215,255,.35);
+  border-radius:5px;overflow:hidden;}
+#boss-bar .bb-track i{display:block;height:100%;width:calc(var(--w,0)*1%);
+  background:linear-gradient(90deg,#c88a3c,#ffc85a);transition:width .18s ease;
+  box-shadow:0 0 12px rgba(255,200,90,.5);}
+/* stage-6 H1: wave banner — the #combat-online reveal grammar (opacity/blur/scale + .on)
+   re-instanced at the top strip so it never covers the reticle center (audit F3 budget);
+   pointer-events: none via #hud. Writer: combat.js (entry wave + the wavesTick increment,
+   ~2 s window). */
+#wave-banner{position:absolute;top:72px;left:0;right:0;text-align:center;
+  font-weight:900;font-family:'Orbitron',ui-monospace,Consolas,monospace;font-size:clamp(20px,3.6vw,34px);
+  letter-spacing:.42em;padding-left:.42em;color:#bfe9ff;opacity:0;filter:blur(10px);transform:scale(1.06);
+  transition:opacity .5s ease, filter .6s ease, transform .6s ease;
+  text-shadow:0 0 30px rgba(125,215,255,.45);}
+#wave-banner.on{opacity:1;filter:blur(0);transform:scale(1);}
+/* stage-6 H1: kill-only hit marker — small cyan X anchored at the reticle (the sight-confirm
+   decision, documented in combat.js's H1 writer block). Two crossing bars (::before/::after),
+   no clip-path polygons. Shows ~150 ms on a registered kill (weapons.js kill sites stamp the
+   timestamp; the writer owns element + countdown), then gone. */
+#hit-mark{position:absolute;left:0;top:0;width:22px;height:22px;margin:-11px 0 0 -11px;
+  filter:drop-shadow(0 0 6px rgba(125,215,255,.6));}
+#hit-mark::before,#hit-mark::after{content:'';position:absolute;left:50%;top:50%;width:22px;height:2px;
+  margin:-1px 0 0 -11px;background:rgba(125,215,255,.95);}
+#hit-mark::before{transform:rotate(45deg);}
+#hit-mark::after{transform:rotate(-45deg);}
 #hud-score{position:absolute;top:18px;left:22px;font:700 13px/1.4 ui-monospace,Consolas,monospace;
   letter-spacing:.18em;color:#bfe9ff;text-shadow:0 0 12px rgba(125,215,255,.4);}
 /* story-018: effect chips — one chip per active effect, name + whole seconds left
@@ -242,6 +284,21 @@ body.playing.paused, body.playing.paused *{cursor:auto !important;}
        counts #hud clip-path children = the 8 edge pips exactly). Writers: aim-assist.js. -->
   <div id="pipper" hidden></div>
   <div id="lock-bracket" hidden></div>
+  <!-- stage-6 H1: dedicated boss HP bar — fed from BOSS.state() {hp,maxHp} via combat.js's
+       change-gated writer; the BOSS text line left #hud-bars (the boss's own write now).
+       The dying window never renders it (boss.js barLine:389's rule, mirrored in the writer). -->
+  <div id="boss-bar" hidden><span class="bb-label">BOSS</span><span class="bb-track"><i></i></span></div>
+  <!-- stage-6 H1: wave banner — the #combat-online reveal grammar re-instance; announces each
+       wave start (combat entry + the wavesTick increment), auto-hides (~2 s), drained on
+       clearCombat. Top strip: never covers the reticle center. -->
+  <div id="wave-banner" hidden></div>
+  <!-- stage-6 H1: kill-only hit marker — small cyan X. ANCHOR DECISION (the card's pick-one):
+       the RETICLE — the sight-confirmation convention (the confirmation reads where the player
+       aims; the in-world explosion already marks the death location), zero projection math in
+       the synchronous kill sites (the C.tmp/C.tmp2 clobber hazards) and no matrixWorld
+       staleness. Registered kills only (weapons.js raider + orb kill sites stamp the
+       timestamp); the boss kill is not a registered kill — no marker there. -->
+  <div id="hit-mark" hidden></div>
 </div>
 <div id="hitveil"></div>
 <!-- T1: pause card gains real pills (RESUME / SOUND) in the .pill grammar — input.js setPaused

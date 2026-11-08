@@ -142,7 +142,7 @@ export function fireProbeTick(dt, C, env) {
       if (FP.sT >= 0.4) {
         cpFieldClear(C);
         FP.seen = new Set(); FP.stage = 1; FP.sT = 0; FP.mark = 0;
-        FP.s1 = { lockSeen: false, bracketOnLock: false, boltCaptured: false, dirDeg: null, killConfirmed: false };
+        FP.s1 = { lockSeen: false, bracketOnLock: false, boltCaptured: false, dirDeg: null, killConfirmed: false, markElSeen: false, killMarkSeen: false }; // stage-6 H1: kill-marker fields ride the stage record
       }
       return;
 
@@ -168,6 +168,14 @@ export function fireProbeTick(dt, C, env) {
       try {
         const el = document.getElementById('lock-bracket');
         if (el && el.hidden === false && FP.s1.lockSeen) FP.s1.bracketOnLock = true;
+      } catch { /* DOM read is best-effort */ }
+      // stage-6 H1: the kill-only hit marker — sampled beside the kill confirmation. The
+      // writer runs later in the same tickCombat (the probe ticks precede the HUD block), so
+      // the sticky sample catches the marker's visible ~150 ms window from the next tick.
+      // Element-absent (pre-H1) records honestly via markElSeen.
+      try {
+        const hm = document.getElementById('hit-mark');
+        if (hm) { FP.s1.markElSeen = true; if (FP.s1.killConfirmed && hm.hidden === false) FP.s1.killMarkSeen = true; }
       } catch { /* DOM read is best-effort */ }
       if (FP.sT >= 2.2) { // kill window done (press lands ~0.4 s + flight 0.2 s + margin)
         cpFieldClear(C); FP.target = null; FP.seen = new Set(); FP.stage = 2; FP.sT = 0; FP.mark = 0;

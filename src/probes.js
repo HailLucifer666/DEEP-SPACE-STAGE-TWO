@@ -37,13 +37,19 @@ const DRESSING_PROBE = qs.get('dressingProbe') === '1'; // story-017: determinis
 
 /* probe-owned state (the former C.dp* / C.bp* / C.pp fields in combat.js before R-e) — untouched by normal play */
 const DP = { t: -1, drone: null, win: 0, done: false, tele: false, dive: false, contact: false, samples: 0, mm: null };
-const BP = { t: -1, stage: 'spawn', stageT: 0, fired: 0, hpMark: 0, spawnWave: 0, hud: false, charged: false, raged: false, ragePinned: false, killed: false, done: false, dashPeakR3: 0, reorbitR3: 0, poleArmed: false, poleDone: false, poleQuietT: null, poleQuietAt: null, poleInDash: false, polePrev: null, poleL: null, poleE: null, poleDashPeakR3: 0, poleDashCapR3: null };
+const BP = { t: -1, stage: 'spawn', stageT: 0, fired: 0, hpMark: 0, spawnWave: 0, hud: false, charged: false, raged: false, ragePinned: false, killed: false, done: false, dashPeakR3: 0, reorbitR3: 0, poleArmed: false, poleDone: false, poleQuietT: null, poleQuietAt: null, poleInDash: false, polePrev: null, poleL: null, poleE: null, poleDashPeakR3: 0, poleDashCapR3: null,
+  // stage-6 H1 boss-bar / hit-marker evidence fields (the drive samples the new HUD chrome's
+  // real DOM state beside its existing walks; element-absent builds record honest reds)
+  barPct: null, hpAtBar: null, maxAtBar: null,
+  dyingSamples: 0, barElSeen: false, dyingBarVisible: false,
+  markSamples: 0, markElSeen: false, markOnHit: false };
 const PP = { state: null, done: false }; // the pitch walk's one probe-only object, rebuilt fresh on combat entry
 const DD = { t: 0, stage: 0, mark: 0, sub: null, done: false, minCl: 0, samples: 0, pulses: [], entryShown: null, opacityAt78: null, opacityAt60: null }; // story-017 dressing walk — page-scoped (see resetProbes note + dressingProbeTick)
 
 export function resetProbes() { // rider R-e: what enterCombat's inline probe resets did — same state, same window hygiene
   Object.assign(DP, { t: -1, drone: null, win: 0, done: false, tele: false, dive: false, contact: false, samples: 0, mm: null });
-  Object.assign(BP, { t: -1, stage: 'spawn', stageT: 0, fired: 0, hpMark: 0, spawnWave: 0, hud: false, charged: false, raged: false, ragePinned: false, killed: false, done: false, dashPeakR3: 0, reorbitR3: 0, poleArmed: false, poleDone: false, poleQuietT: null, poleQuietAt: null, poleInDash: false, polePrev: null, poleL: null, poleE: null, poleDashPeakR3: 0, poleDashCapR3: null });
+  Object.assign(BP, { t: -1, stage: 'spawn', stageT: 0, fired: 0, hpMark: 0, spawnWave: 0, hud: false, charged: false, raged: false, ragePinned: false, killed: false, done: false, dashPeakR3: 0, reorbitR3: 0, poleArmed: false, poleDone: false, poleQuietT: null, poleQuietAt: null, poleInDash: false, polePrev: null, poleL: null, poleE: null, poleDashPeakR3: 0, poleDashCapR3: null,
+    barPct: null, hpAtBar: null, maxAtBar: null, dyingSamples: 0, barElSeen: false, dyingBarVisible: false, markSamples: 0, markElSeen: false, markOnHit: false }); // stage-6 H1 evidence fields reset beside the rest
   PP.state = null; PP.done = false;
   window.__stage2.droneProbeLive = false;
   window.__stage2.bossProbeLive = false;
@@ -154,8 +160,28 @@ export function bossProbeTick(dt, C, env) {
   BP.stageT += rdt;
   window.__stage2.bossProbeLive = true;
   const st = BOSS.state();
-  // HUD evidence: sample the real DOM each tick while the boss lives
-  if (st && C.ui.hudBars && C.ui.hudBars.textContent.includes('BOSS')) BP.hud = true;
+  // HUD evidence: sample the real DOM each tick while the boss lives.
+  // stage-6 H1 SANCTIONED REWRITE (2026-11-08, stage-5 precedent one-shot-work/stage-5/
+  // GATE.md:18-22): this sampled the #hud-bars TEXT for 'BOSS' (the story-013 text-line
+  // presentation of boss HP). H1 removes the text line from the writer's string — the
+  // dedicated #boss-bar element owns boss HP now (polish-plan H1-1/2) — so the sample reads
+  // the element's state instead: unhidden + labeled while the boss lives (exact coverage
+  // preserved: the same alive-window visibility witness, surface moved text → element).
+  // The dying window is sampled separately in the death stage below (the never-BOSS-0%
+  // contract, boss.js:389).
+  if (st && st.phase !== 'dying' && C.ui.bossBar) {
+    BP.barElSeen = true;
+    if (!C.ui.bossBar.hidden && (C.ui.bossBar.textContent || '').includes('BOSS')) BP.hud = true;
+  }
+  if ((BP.stage === 'weak' || BP.stage === 'body') && st) { // stage-6 H1: kill-only marker evidence —
+    // these stages land 6 REAL player-bolt hits that register NO kill (the hp walk is
+    // scripted probeDamage; the bolt scan's boss path never increments C.kills): the hit
+    // marker must never show on a hit that is not a registered kill. Element-absent builds
+    // record honestly via markElSeen (the flow-check assert requires it).
+    BP.markSamples++;
+    const hm = C.ui.hitMark;
+    if (hm) { BP.markElSeen = true; if (hm.hidden === false) BP.markOnHit = true; }
+  }
   if (BOSS_SHOT) window.__stage2.bossShotPhase = st ? st.phase : 'dead';
 
   if (BP.stage === 'spawn') {
@@ -198,6 +224,17 @@ export function bossProbeTick(dt, C, env) {
       // the captured target to ≤ 68 so the dash peaks ≈ 78 and re-orbits inside.
       C.pos.set(0, env.ARENA_Y, 78); C.vel.set(0, 0, 0);
       BOSS.probeDamage(st.hp - 34, C.api); BP.charged = true; // 57% — below CHARGE_AT 0.66
+    }
+    if (BP.charged && BP.barPct == null) { // stage-6 H1: the bar FILL sampled against the scripted hp
+      // state — the drive set hp 34/60 at arming and the writer's 5%-stepped write lands that
+      // same tickCombat (the probe ticks precede the HUD writers), so this next-tick sample
+      // reads the 34-state write: --w must equal round((34/60)*20)*5. Element-absent builds
+      // record null (the honest red).
+      const bb = C.ui.bossBar;
+      const w = bb ? bb.style.getPropertyValue('--w') : '';
+      BP.barPct = w ? parseInt(w, 10) : null;
+      BP.hpAtBar = st ? st.hp : null;
+      BP.maxAtBar = st ? st.maxHp : null;
     }
     const hold = BOSS_SHOT ? 2.2 : 0;
     const ps = BOSS.probeStats();
@@ -279,6 +316,13 @@ export function bossProbeTick(dt, C, env) {
   }
   if (BP.stage === 'death') {
     if (!BP.killed && st) { BOSS.probeDamage(st.hp, C.api); BP.killed = true; }
+    if (st && st.phase === 'dying') { // stage-6 H1: the never-BOSS-0% window (boss.js:389's
+      // rule) — the bar must be ABSENT (hidden) through the whole cinematic; any visible
+      // sample sticks and reds. Element-absent builds record honestly via barElSeen.
+      BP.dyingSamples++;
+      const bb = C.ui.bossBar;
+      if (bb) { BP.barElSeen = true; if (bb.hidden === false) BP.dyingBarVisible = true; }
+    }
     const rep = window.__stage2.lastReport;
     if ((!BOSS.alive() && rep && rep.bossDefeated) || BP.stageT > 10) {
       BP.done = true;
@@ -291,7 +335,10 @@ export function bossProbeTick(dt, C, env) {
         chargeDash: ps.chargeDash, overshoot: ps.overshoot,
         deathSlowmo: ps.deathSlowmo,
         spawnWave: BP.spawnWave,
-        hudLine: BP.hud,
+        hudLine: BP.hud, // stage-6 H1 REWRITE: now means "the #boss-bar element was unhidden + labeled while alive" (was: the #hud-bars text contained 'BOSS' — the sanctioned surface move, see the sampling comment)
+        barPct: BP.barPct, hpAtBar: BP.hpAtBar, maxAtBar: BP.maxAtBar, // stage-6 H1: fill-tracks-hp evidence
+        dyingSamples: BP.dyingSamples, barElSeen: BP.barElSeen, dyingBarVisible: BP.dyingBarVisible, // stage-6 H1: never-BOSS-0%-while-dying evidence
+        markSamples: BP.markSamples, markElSeen: BP.markElSeen, markOnHit: BP.markOnHit, // stage-6 H1: kill-only marker evidence
         dashPeakR3: +BP.dashPeakR3.toFixed(2), reorbitR3: +BP.reorbitR3.toFixed(2), // story-016 shell guard (GDD §5.3)
         parkR3: +Math.hypot(C.pos.x, C.pos.y - env.ARENA_Y, C.pos.z).toFixed(2), // the parked ship's r3 — provenance for the two asserts above
         poleDashCapR3: BP.poleDashCapR3, poleDashPeakR3: +BP.poleDashPeakR3.toFixed(2), // pole scenario (fix-pass finding 1): captured dash-target r3 (clamp's own value) + sampled boss r3 peak over the phase

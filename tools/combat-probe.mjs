@@ -89,10 +89,15 @@ try {
   verdict('holdfire', c1.bolts > 0, { boltsAfterHold: c1.bolts });
 
   // 5. honest HUD values: no NaN/undefined anywhere in HUD text
+  // stage-6 H1: the scan covers the new chrome too (boss bar, wave banner, hit marker) —
+  // null-safe so a build without an element reads '' rather than failing the tool.
   const texts = await evl(`JSON.stringify([
     document.getElementById('hud-bars').textContent,
     document.getElementById('hud-score').textContent,
-    document.getElementById('debug').textContent])`);
+    document.getElementById('debug').textContent,
+    (document.getElementById('boss-bar') || { textContent: '' }).textContent,
+    (document.getElementById('wave-banner') || { textContent: '' }).textContent,
+    (document.getElementById('hit-mark') || { textContent: '' }).textContent])`);
   const bad = JSON.parse(texts).filter((s) => /NaN|undefined|null/i.test(s));
   verdict('honest', bad.length === 0, { bad });
 

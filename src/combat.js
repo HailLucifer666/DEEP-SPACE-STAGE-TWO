@@ -65,6 +65,10 @@ const HP_MAX = 100, SHIELD_MAX = 50, SHIELD_REGEN_DELAY = 3, SHIELD_REGEN_RATE =
 const DEATH_SLOWMO = 0.7;    // seconds of real time at timeScale 0.3 before gameover (a click lands it sooner)
 const SCORE_WAVE = 150; // the wave-clear bonus (the kill-site scores moved to weapons.js with the kill sites — review-fix split)
 const SCORE_BOSS = 1000; // story-019: the boss-defeat reward — LOCKED flat (player decision 2026-11-04/05, story-019 L12-13); NOT a tuning knob. Lives beside SCORE_WAVE because the award reads/writes C.score HERE (architecture §8.1): boss.js stays a pure signal source — threading score through the api would extend the surface and boss.js importing combat.js is a cycle.
+// stage-6 H1 HUD chrome consts (presentation, not tuning knobs): the wave banner's ~2 s reveal
+// window and the kill-only hit marker's ~150 ms life. KILL_MARK_S rides the initWeapons seam
+// (weapons.js's kill sites stamp the timestamp — the same live-seam pattern as C itself).
+const BANNER_T = 2.0, KILL_MARK_S = 0.15;
 
 // story-019: the balance telemetry accumulator (GDD §3.7 — the stage's namesake). A per-run
 // bag of EVENT-DRIVEN counters: incremented only at existing event sites (kill / hit / shot /
@@ -119,6 +123,10 @@ const C = {
   pips: [], pipDir: new THREE.Vector3(), pipFwd: new THREE.Vector3(), pipInv: new THREE.Quaternion(),
   retX: -1, retY: -1, lastBars: null, lastScore: null, // change-gates for DOM writes
   lastChips: null, lastChargePct: -1, lastChargeFull: null, // story-018: chip line + charge-meter change-gates
+  // stage-6 H1 chrome change-gates: boss bar (presence + 5%-stepped fill), wave banner
+  // (composed visibility+text signal), kill marker (visibility) — all DOM writes gated on
+  // these, the lastBars pattern (hard build constraint 1).
+  lastBossShow: null, lastBossPct: -1, bannerT: 0, lastBannerSig: '', killMarkLeft: 0, lastKillMark: false,
 };
 const qs = new URLSearchParams(location.search);
 const SCRIPTED_KILL = qs.get('scriptedKill') === '1';
@@ -229,7 +237,7 @@ const probeEnv = { forward, noseWorld, clamp, ARENA_Y, BOLT_LIFE, TURN_RATE, HP_
 // CALL-TIME read, never a snapshot; forward/noseWorld are live closures over C. ARENA_Y /
 // R_HARD / SHIELD_MAX are const primitives — immutable, snapshot-safe by construction. Called
 // once at module scope: the references never change for the page's lifetime.
-initWeapons({ C, forward, noseWorld, ARENA_Y, R_HARD, SHIELD_MAX });
+initWeapons({ C, forward, noseWorld, ARENA_Y, R_HARD, SHIELD_MAX, KILL_MARK_S });
 // stage-6 W1: the aim-lock seam — the same live-reference contract as initWeapons above
 // (call-time reads of C.pos/C.camera/C.api; forward is the live closure). NOT probeEnv — that
 // is the probes-only seam; the aim state is game code, not probe plumbing. Called once at
@@ -377,6 +385,7 @@ function wavesTick(dt) {
     C.waveGapT -= dt;
     if (C.waveGapT <= 0) {
       C.waveGapT = 0; C.wave++;
+      C.bannerT = BANNER_T; // stage-6 H1: the wave banner re-arms at the real increment point
       C.telemetry.waveReached = C.wave; C.telemetry.waveTimes.push(+C.time.toFixed(2)); // story-019: the pacing curve — free at the existing increment event (≤ 6 events/run)
       if (C.wave > BOSS_WAVE && BOSS.eligible()) BOSS.spawnBoss(C.pos); // story-013: the warden arrives
       else { ENEMIES.startWave(C.wave, C.pos); DRONES.startWave(C.wave); }
@@ -475,6 +484,8 @@ export function enterCombat(scene, camera, rocket, ui, api) {
   C.proxScanT = 0; C.nearest = null; // story-009: proximity scan restarts clean (§8.6)
   C.lastBars = null; C.lastScore = null; // clearCombat emptied the DOM — force one HUD rewrite
   C.lastChips = null; C.lastChargePct = -1; C.lastChargeFull = null; // story-018: same rewrite force for the chips + charge meter
+  C.lastBossShow = null; C.lastBossPct = -1; C.lastBannerSig = null; C.lastKillMark = false; // stage-6 H1: same rewrite force for the boss bar / banner / marker
+  C.bannerT = BANNER_T; C.killMarkLeft = 0; // stage-6 H1: the entry wave is announced like every increment; no marker rides a re-entry
   C.bolts.clear();
   POWERUPS.clearPowerups(); // story-018: the pickup pool drains with the pools — enterCombat needs no re-show (pickups are hidden until dropped, like bolts)
   ENEMIES.clearEnemies();
@@ -544,16 +555,65 @@ export function tickCombat(dt, t) {
   proximityTick(dt, C.dead ? null : C.nearest);
 
   // HUD — honest values, DOM writes only on change (feel: no per-frame innerHTML churn).
-  // story-013: the BOSS HP line rides this same change-gated wholesale write — presentation
-  // only (state lives in combatState().boss), present while the boss lives, gone after death.
+  // stage-6 H1: labeled meter rows (label + track + fill) — presentation only, the SAME
+  // values the text stack wrote (honesty law: no new values). The BOSS text line LEFT this
+  // write — the dedicated #boss-bar element owns boss HP now (one meaning per element;
+  // boss.js stays zero-diff, its barLine() text write retired from this path).
   if (C.ui.hudBars) {
-    const bossLine = BOSS.barLine();
     const bars =
-      `HULL ${fmt(C.hp)}<div class="bar"><i style="width:${fmt(clamp(C.hp, 0, HP_MAX))}%"></i></div>` +
-      `SHIELD ${fmt(C.shield)}<div class="bar sh"><i style="width:${fmt(clamp(C.shield, 0, SHIELD_MAX) * 2)}%"></i></div>` +
-      `BOOST ${fmt(C.boost * 100)}%` +
-      (bossLine ? `<div>${bossLine}</div>` : '');
+      `<div class="meter"><span class="ml">HULL ${fmt(C.hp)}</span><span class="mtrack"><i style="width:${fmt(clamp(C.hp, 0, HP_MAX))}%"></i></span></div>` +
+      `<div class="meter"><span class="ml">SHIELD ${fmt(C.shield)}</span><span class="mtrack sh"><i style="width:${fmt(clamp(C.shield, 0, SHIELD_MAX) * 2)}%"></i></span></div>` +
+      `<div class="meter"><span class="ml">BOOST ${fmt(C.boost * 100)}%</span><span class="mtrack bo"><i style="width:${fmt(C.boost * 100)}%"></i></span></div>`;
     if (bars !== C.lastBars) { C.ui.hudBars.innerHTML = bars; C.lastBars = bars; }
+  }
+
+  // stage-6 H1: dedicated boss HP bar — fed from BOSS.state() {hp,maxHp} (the state surface;
+  // boss.js untouched). Change-gated on presence + the 5%-stepped fill fraction (the
+  // charge-meter pattern). The dying window NEVER renders the bar (mirrors boss.js barLine's
+  // rule — "never BOSS 0%" during the cinematic); gone after death; drained by clearCombat.
+  if (C.ui.bossBar) {
+    const bs = BOSS.state();
+    const show = !!(bs && bs.maxHp > 0 && bs.phase !== 'dying');
+    const pct = show ? Math.round(clamp(bs.hp / bs.maxHp, 0, 1) * 20) * 5 : -1;
+    if (show !== C.lastBossShow || pct !== C.lastBossPct) {
+      C.ui.bossBar.hidden = !show;
+      if (show) C.ui.bossBar.style.setProperty('--w', pct);
+      C.lastBossShow = show; C.lastBossPct = pct;
+    }
+  }
+
+  // stage-6 H1: wave banner — announces each wave start (the enterCombat entry wave + the
+  // wavesTick increment above). The #combat-online reveal grammar re-instance (template CSS);
+  // inside #hud (input-events-none), top strip — never covers the reticle center (audit F3).
+  // Change-gated on the composed signal (visibility + text); the timer itself decrements per
+  // frame with zero DOM cost.
+  if (C.ui.waveBanner) {
+    C.bannerT -= dt;
+    const sig = C.bannerT > 0 ? `WAVE ${fmt(C.wave)}` : '';
+    if (sig !== C.lastBannerSig) {
+      if (sig) { C.ui.waveBanner.hidden = false; void C.ui.waveBanner.offsetWidth; C.ui.waveBanner.classList.add('on'); }
+      else { C.ui.waveBanner.classList.remove('on'); C.ui.waveBanner.hidden = true; }
+      C.ui.waveBanner.textContent = sig;
+      C.lastBannerSig = sig;
+    }
+  }
+
+  // stage-6 H1: kill-only hit marker — weapons.js's registered-kill sites (raider + orb bolt
+  // kills) stamp C.killMarkLeft = KILL_MARK_S through the seam; this writer owns the element +
+  // the countdown. ANCHOR DECISION (the card's pick-one): the RETICLE — the sight-confirmation
+  // convention (the confirmation reads where the player aims; the in-world explosion already
+  // marks the death location), zero projection math in the synchronous kill sites (the
+  // C.tmp/C.tmp2 clobber hazards), no matrixWorld staleness. ~150 ms real-time (the death-clock
+  // division — the boss cinematic's slow-mo can never stretch it), then gone. The boss kill is
+  // NOT a registered kill (no C.kills++ on that path) — no marker there; kill-only holds.
+  if (C.ui.hitMark) {
+    if (C.killMarkLeft > 0) C.killMarkLeft = Math.max(0, C.killMarkLeft - dt / Math.max(0.05, C.api.getTimeScale()));
+    const show = C.killMarkLeft > 0 && !C.dead;
+    if (show !== C.lastKillMark) {
+      if (show) { C.ui.hitMark.style.left = C.retX + 'px'; C.ui.hitMark.style.top = C.retY + 'px'; }
+      C.ui.hitMark.hidden = !show;
+      C.lastKillMark = show;
+    }
   }
   if (C.ui.hudScore) {
     const score = `SCORE ${fmt(C.score)}   WAVE ${fmt(C.wave)}`;
@@ -647,6 +707,10 @@ export function clearCombat() {
   if (C.ui.hudBars) C.ui.hudBars.innerHTML = ''; // pad phases must not inherit combat bars
   if (C.ui.hudScore) C.ui.hudScore.textContent = '';
   if (C.ui.hudChips) C.ui.hudChips.innerHTML = ''; // story-018: combat's chip line must not ride the pad (same class as the bars clear)
+  if (C.ui.bossBar) C.ui.bossBar.hidden = true; // stage-6 H1: the boss bar is combat's write — the pad never inherits it (the bars-clear class)
+  if (C.ui.waveBanner) { C.ui.waveBanner.classList.remove('on'); C.ui.waveBanner.hidden = true; C.ui.waveBanner.textContent = ''; } // stage-6 H1: same class — the pad never inherits a wave banner
+  if (C.ui.hitMark) C.ui.hitMark.hidden = true; // stage-6 H1: same class — the pad never inherits a kill marker
+  C.lastBossShow = null; C.lastBossPct = -1; C.lastBannerSig = ''; C.bannerT = 0; C.killMarkLeft = 0; C.lastKillMark = false; // stage-6 H1: the banner's drained signal is '' (bannerVisible reads false on the pad); boss/marker gates force a rewrite on re-entry (the lastBars pattern)
   if (C.ui.reticle) { // story-018: the charge meter is combat's write — the pad gets a clean reticle
     C.ui.reticle.classList.remove('charge', 'charge-full');
     C.ui.reticle.style.removeProperty('--p');
@@ -700,6 +764,9 @@ export function combatState() {
     fired: { stream: C.fired.stream, charged: C.fired.charged }, // story-018 probe surface (pre-telemetry; story-019 supersedes)
     lock: AIM.enabled(), // stage-6 W1 honesty surface: the aim-lock toggle state (the pipper/bracket render state the harness can read; ?lock=0 reads OFF)
     lockTarget: AIM.lockState(), // stage-6 W1 honesty surface: null or { kind, x, y, z } — the bracket's anchor; NEVER 'boss' (excluded by construction)
+    pipper: AIM.pipperState(), // stage-6 H1 honesty rider (W1's chair flag): { visible, divergenceDeg } — the pipper writer's OWN stored state, never recomputed (its visibility gate rides pointer-divergence, the same input-state class as the pre-law reticle)
+    bannerVisible: C.lastBannerSig !== '', // stage-6 H1: the wave banner's real render state (the writer's change-gate)
+    markerVisible: C.lastKillMark === true, // stage-6 H1: the hit marker's real render state
     telemetry: telemetryDump(), // story-019: the tuning surface (GDD §3.7) — probe reads only, zero player UI
     pos: C.pos.toArray().map((v) => +v.toFixed(2)), // probe surface — flow-check's keyboard-motion assert (story-003)
     dead: C.dead,

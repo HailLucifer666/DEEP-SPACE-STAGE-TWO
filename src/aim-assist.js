@@ -172,19 +172,33 @@ export function biasDir(dir, fromPos) { // rotates dir ≤BIAS_MAX_DEG toward th
 
 /* ---------- HUD writers (change-gated; the card puts these here, combat hands camera via the seam) ---------- */
 let pipShow = false; // last pipper gate
+let pipDivDeg = 0; // stage-6 H1 honesty rider: the divergence the gate measured this tick (deg off the bolt path) — pipperState() reads THIS stored state, never recomputes
 let brVis = false, brX = -1, brY = -1; // last bracket gates (integer-px change gate)
+
+// stage-6 H1 honesty rider (W1's chair flag): the pointer-divergence from the bolt path in
+// DEGREES, computed from the same pointer read the visibility gate uses — NDC pointer →
+// angular via the live camera frustum (fov vertical, aspect-scaled horizontal). The VISIBILITY
+// gate itself stays px-based (PIPPER_ON_PX — the W1 law); this is the honest companion the
+// harness reads through combatState().pipper.
+function pipDivergenceDeg(inp) {
+  if (!C.camera || !Number.isFinite(C.camera.fov) || !Number.isFinite(C.camera.aspect)) return 0;
+  const t = Math.tan(C.camera.fov * Math.PI / 360);
+  return +(Math.atan(Math.hypot(inp.mouse.x * t * C.camera.aspect, inp.mouse.y * t)) * 180 / Math.PI).toFixed(2);
+}
 
 export function hudTick() { // called once per tickCombat, after the edge-pip block
   if (!C || !C.ready) return;
   // pipper — analytic anchor ≈ screen center (header decision); renders ONLY while the
-  // reticle (the pointer, px) diverges past PIPPER_ON_PX; self-hides aligned; hidden while
+  // reticle (pointer, px) diverges past PIPPER_ON_PX; self-hides aligned; hidden while
   // dead. No clip-path (flow-check counts #hud clip-path children — the 8 edge pips).
   if (C.ui.pipper) {
     const inp = C.api.input;
     let show = false;
+    pipDivDeg = 0;
     if (!C.dead && inp.mouseActive) {
       const dx = inp.px.x - window.innerWidth / 2, dy = inp.px.y - window.innerHeight / 2;
       show = Math.hypot(dx, dy) >= PIPPER_ON_PX;
+      pipDivDeg = pipDivergenceDeg(inp);
     }
     if (show !== pipShow) { C.ui.pipper.hidden = !show; pipShow = show; }
   }
@@ -226,4 +240,10 @@ export function lockState() { // null or a fresh { kind, x, y, z } — the brack
   if (!lockTarget || !lockTarget.userData || !lockTarget.userData.alive) return null;
   const p = lockTarget.position;
   return { kind: lockTarget.userData.kind || 'orb', x: +p.x.toFixed(2), y: +p.y.toFixed(2), z: +p.z.toFixed(2) };
+}
+export function pipperState() { // stage-6 H1 honesty rider: the pipper's real render state — the
+  // writer's OWN stored gate + the divergence it measured (never recomputed here, so this can
+  // never disagree with the element the way a second gate could). Zero-state before the first
+  // hudTick (not ready / never in combat): { visible: false, divergenceDeg: 0 }.
+  return { visible: pipShow, divergenceDeg: pipDivDeg };
 }

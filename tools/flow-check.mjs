@@ -120,6 +120,46 @@ try {
   ok('wave 1 raider count unchanged (4)', cs12.enemies === 4, `enemies=${cs12.enemies}`);
   ok('boss slot null before spawn (story-013 keep-passing)', cs12.boss === null, `boss=${JSON.stringify(cs12.boss)}`);
 
+  /* --- stage-6 H1 (HUD rebuild): labeled meters + the wave banner at combat entry ---
+     RED-FIRST 2026-11-08 (branch polish/stage6-experience, product untouched — only this
+     harness + the probe drives differ): #hud-bars carried the story-004 text-stack markup
+     (no .meter rows) and #wave-banner did not exist — every assert below records RED for
+     absence (the sanctioned red class). Transcript: production/qa/evidence/stage6-h1/
+     flow-red-h1.txt. The meters are a presentation-only restyle of the SAME change-gated
+     writer values (honesty law: label + track + fill, no new values — the fill IS the value
+     the text wrote). The banner is the #combat-online reveal grammar re-instanced at the top
+     strip (input-events-none via #hud; never covers the reticle center — audit F3 budget). */
+  const h1Entry = await J(`({
+    meters: (() => { const bars = document.getElementById('hud-bars'); if (!bars) return null;
+      const rows = [...bars.querySelectorAll('.meter')];
+      return { n: rows.length,
+        labels: rows.map((r) => (r.querySelector('.ml') || {}).textContent || ''),
+        fills: rows.map((r) => { const i = r.querySelector('.mtrack i'); return i ? i.style.width : null; }) };
+    })(),
+    cs: __stage2.combatState(),
+    banner: (() => { const el = document.getElementById('wave-banner');
+      return el ? { hidden: el.hidden, text: el.textContent } : null; })(),
+  })`);
+  const h1m = h1Entry.meters || { n: 0, labels: [], fills: [] }, h1b = h1Entry.banner;
+  ok('H1: labeled HULL/SHIELD/BOOST meter rows at combat entry — label + track + fill, fills equal the combatState values (honesty: same values the text stack wrote)',
+    h1m.n === 3 && h1m.labels[0] === 'HULL 100' && h1m.labels[1] === 'SHIELD 50' && h1m.labels[2] === 'BOOST 100%' &&
+    h1m.fills[0] === '100%' && h1m.fills[1] === '100%' && h1m.fills[2] === '100%' &&
+    h1Entry.cs.hp === 100 && h1Entry.cs.shield === 50,
+    JSON.stringify({ meters: h1m, cs: { hp: h1Entry.cs.hp, shield: h1Entry.cs.shield, boost: h1Entry.cs.boost } }));
+  ok('H1: wave banner shows at the entry wave start (WAVE 1 — the #combat-online reveal grammar re-instance)',
+    !!h1b && h1b.hidden === false && h1b.text === 'WAVE 1', JSON.stringify(h1b));
+  let bannerHid = false;
+  {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await J(`(() => { const el = document.getElementById('wave-banner'); return el ? { hidden: el.hidden } : null; })()`);
+      if (v && v.hidden === true) { bannerHid = true; break; }
+      if (Date.now() - t0 > 5000) break;
+      await sleep(200);
+    }
+  }
+  ok('H1: wave banner auto-hides within the ~2 s window (transient — not a permanent second score line)', bannerHid === true, `hid=${bannerHid}`);
+
   /* --- T1 pause card (stage 6): real keys + real element clicks, run while the fight is fresh ---
      The pause card ships two pills (RESUME / SOUND) with the cursor precondition from the
      polish audit (ux-audit F3 CRITICAL): pause does NOT change phase, and body.playing carries
@@ -552,9 +592,16 @@ try {
       // execution context dies — raw reads throw and would kill the run before the asserts
       try {
         const csx = await J(`(window.__stage2 && __stage2.combatState) ? __stage2.combatState() : null`);
-        if (csx && csx.boss) { // sample the HUD line while the boss lives — independent of the probe's own record
-          const hud = await evl(`document.getElementById('hud-bars').textContent`);
-          if (hud.includes('BOSS')) hudBossSeen = true;
+        if (csx && csx.boss) { // sample the boss BAR element while the boss lives — independent of the probe's own record
+          // stage-6 H1 SANCTIONED REWRITE (2026-11-08, stage-5 precedent one-shot-work/stage-5/
+          // GATE.md:18-22): this sampling read the #hud-bars TEXT for 'BOSS' (the story-013
+          // text-line presentation of boss HP). H1 removes the text line from the writer's
+          // string — the dedicated #boss-bar element owns boss HP now (polish-plan H1-1/2) —
+          // so the sample reads the element's unhidden + labeled state instead. Exact coverage
+          // preserved: the same alive-window visibility witness, surface moved text → element.
+          const bb = await J(`(() => { const el = document.getElementById('boss-bar');
+            return el ? { hidden: el.hidden, labeled: (el.textContent || '').includes('BOSS') } : null; })()`);
+          if (bb && bb.hidden === false && bb.labeled) hudBossSeen = true;
           // stage-6 W1 rider: the lock surface, sampled live while the boss lives (it sweeps its
           // orbit through every azimuth — including the nose cone). The bracket must never
           // anchor the boss: raiders locking is legitimate and ignored; only a boss-kind target
@@ -624,8 +671,40 @@ try {
   ok('boss death slow-mo engaged', bpX.deathSlowmo === true, `slowmo=${bpX.deathSlowmo}`);
   ok('bossDefeated reported via api.report', bpX.bossDefeated && bpX.bossDefeated.slowmo === true,
     JSON.stringify(bpX.bossDefeated || null)); // the drive observed the death report (lastReport is single-slot; the probe carries what it saw)
-  ok('BOSS HP line shows in #hud-bars while alive', bpX.hudLine === true || hudBossSeen, `probe=${bpX.hudLine} sampled=${hudBossSeen}`);
-  ok('BOSS HP line gone from #hud-bars after death', !((await evl(`document.getElementById('hud-bars').textContent`)).includes('BOSS')));
+  /* --- stage-6 H1 SANCTIONED ASSERT REWRITES (stage-5 precedent one-shot-work/stage-5/
+     GATE.md:18-22) — REWRITTEN 2026-11-08, branch polish/stage6-experience.
+     The two story-013 BOSS-line asserts read the #hud-bars TEXT LINE ('BOSS ▍▍▍ 62%'). H1
+     moves boss HP to a dedicated #boss-bar element fed from BOSS.state() {hp,maxHp}
+     (polish-plan H1-1/H1-2): the text line is removed from the writer's string, so the text
+     asserts would keep pinning a removed presentation. Exact-coverage mapping:
+       'BOSS HP line shows in #hud-bars while alive' → 'H1: BOSS HP bar element shows while
+         alive' — the drive's BP.hud field AND this harness's independent sampling were
+         rewritten to the same alive-window witness on the new surface (element unhidden +
+         labeled). Coverage identical, surface text → element.
+       'BOSS HP line gone from #hud-bars after death' → 'H1: BOSS HP bar element gone after
+         death' — same post-death absence, read as the element's hidden state (the writer
+         hides it the moment BOSS.state() drains; clearCombat drains it again).
+     PRESERVED contract: the "never render BOSS 0% while dying" rule (boss.js:389's comment)
+     is now ASSERTED — the drive samples the dying window and the bar must be absent (below).
+     BYTE-INTACT: 'combatState().boss drains to null after death' (next assert) untouched;
+     the W1 lock-sampling assert after it untouched.
+     RED-FIRST 2026-11-08: on the pre-H1 build #boss-bar does not exist — every rewritten
+     assert reads null/undefined → RED (element absence, the sanctioned red). Transcript:
+     production/qa/evidence/stage6-h1/flow-red-h1.txt. */
+  ok('H1: BOSS HP bar element shows while alive (unhidden + labeled; rewrites the story-013 BOSS text-line assert — sanctioned, see the block above)',
+    bpX.hudLine === true || hudBossSeen, `probe=${bpX.hudLine} sampled=${hudBossSeen}`);
+  ok('H1: BOSS HP bar element gone after death (hidden — rewrites the gone-from-#hud-bars assert; sanctioned, see the block above)',
+    (await evl(`(document.getElementById('boss-bar') || { hidden: null }).hidden`)) === true);
+  ok('H1: boss bar fill tracks hp (the 5%-stepped rounded fraction of BOSS.state() hp/maxHp, change-gated — the charge-meter pattern; the drive sampled the fill against its scripted hp state)',
+    typeof bpX.barPct === 'number' && bpX.maxAtBar > 0 &&
+    bpX.barPct === Math.round((bpX.hpAtBar / bpX.maxAtBar) * 20) * 5,
+    `pct=${bpX.barPct} hp=${bpX.hpAtBar}/${bpX.maxAtBar}`);
+  ok('H1: the bar never renders BOSS 0% while dying (mirror of boss.js barLine:389 — absent through the whole death cinematic; the drive sampled the dying window)',
+    bpX.dyingSamples > 0 && bpX.barElSeen === true && bpX.dyingBarVisible !== true,
+    `samples=${bpX.dyingSamples} elSeen=${bpX.barElSeen} visibleDuringDying=${bpX.dyingBarVisible}`);
+  ok('H1: kill-only hit markers — the 6 real non-kill hits (weak+body ratio bolts) never mark, and the marker element exists',
+    bpX.markSamples > 0 && bpX.markElSeen === true && bpX.markOnHit !== true,
+    `samples=${bpX.markSamples} elSeen=${bpX.markElSeen} markedOnHit=${bpX.markOnHit}`);
   ok('combatState().boss drains to null after death', await evl(`__stage2.combatState().boss`) === null,
     JSON.stringify(await J(`__stage2.combatState().boss`)));
   // stage-6 W1 rider: the lock never brackets the boss while it lives (sampled above through the
@@ -765,6 +844,20 @@ try {
   const w1Pad = padLanded ? await J(`({ pip: !!document.getElementById('pipper') && document.getElementById('pipper').hidden,
     br: !!document.getElementById('lock-bracket') && document.getElementById('lock-bracket').hidden })`) : null;
   ok('W1: pad drains the pipper + lock bracket (clearCombat reset list)', !!w1Pad && w1Pad.pip === true && w1Pad.br === true, JSON.stringify(w1Pad));
+  // stage-6 H1 (hard build constraint 2): the boss bar + wave banner + hit marker are ALSO
+  // combat's writes — the pad never inherits them (clearCombat reset list extended beside the
+  // W1 drain above, which stays byte-intact). RED on the pre-H1 build: the elements do not
+  // exist (red by absence). bannerVisible false pins the honesty surface too.
+  const h1Pad = padLanded ? await J(`({
+    bb: (document.getElementById('boss-bar') || { hidden: null }).hidden,
+    wb: (document.getElementById('wave-banner') || { hidden: null }).hidden,
+    wbText: (document.getElementById('wave-banner') || { textContent: '' }).textContent,
+    hm: (document.getElementById('hit-mark') || { hidden: null }).hidden,
+    bannerVisible: (window.__stage2 && __stage2.combatState) ? __stage2.combatState().bannerVisible : 'none',
+  })`) : null;
+  ok('H1: pad drains the boss bar + wave banner + hit marker (clearCombat reset list extended; bannerVisible false)',
+    !!h1Pad && h1Pad.bb === true && h1Pad.wb === true && h1Pad.wbText === '' && h1Pad.hm === true && h1Pad.bannerVisible === false,
+    JSON.stringify(h1Pad));
   {
     let landed2 = false, cs14 = null, entries2 = 0;
     if (padLanded) {
@@ -1591,6 +1684,16 @@ try {
   // the victory-path assert: highscore === 1000 exactly after victory.enter's writeHighscore.
   ok('highscore ledger at balanceProbe time still carries the boss award (>= 1000; the exact persist→read-back is pinned on the victory path)',
     b19.highscore !== undefined && b19.highscore >= 1000, `highscore=${b19.highscore} finalScore=${bs.finalScore}`);
+  // stage-6 H1: the wave banner re-arms at the NATURAL wave increment. The drive ran one
+  // unpinned clear-field cycle (stage 8.5 — the only wavesTick advance in the whole battery;
+  // every other drive pins the wave at 1): the field clears, wavesTick counts its 1.6 s gap
+  // and increments to wave 2, and the banner writer re-arms at that increment point. The
+  // wave-clear bonus that rides the same event is absorbed by the delta-based score/telemetry
+  // asserts above (every mark is captured after this stage). RED on the pre-H1 build: no
+  // banner state, no element (red by absence).
+  ok('H1: wave banner re-arms on the natural wave increment (WAVE 2 — the drive observed the banner up at wave ≥ 2; element present + visible; hidden after the ~2 s window)',
+    b19.banner && b19.banner.seen === true && b19.banner.wave === 2 && b19.banner.elSeen === true &&
+    b19.banner.elVisible === true && b19.banner.hiddenAfter === true, JSON.stringify(b19.banner || null));
   ok('CONSOLE [] (balanceProbe page)', errs.length === 0, errs.join(' | '));
   {
     // telemetry restart parity (the zeroing mutation's red): the boss stage landed victory —
@@ -1723,6 +1826,12 @@ try {
     fs1.boltCaptured === true && typeof fs1.dirDeg === 'number' && fs1.dirDeg <= 1.1, `dirDeg=${fs1.dirDeg}`);
   ok('W1 fire-path baseline: the real fired bolt kills the seeded dead-ahead target (real trigger → spawnBolt → boltsTick)',
     fs1.killConfirmed === true, JSON.stringify(fs1));
+  // stage-6 H1: the kill-only hit marker — the registered kill (this stage's real bolt kill,
+  // the C.kills++ path) shows the marker; the element must exist (red-by-absence on the
+  // pre-H1 build). The kill-ONLY law's negative half — non-kill hits never mark — is the
+  // bossProbe page's 6-real-hit evidence.
+  ok('H1: hit marker shows on the registered kill (stage-1 real-bolt kill; element present, seen visible ~150 ms)',
+    fs1.markElSeen === true && fs1.killConfirmed === true && fs1.killMarkSeen === true, JSON.stringify(fs1));
   ok('W1: lock acquires an in-cone target (dead-ahead seed, acquire cone ≤6°)', fs2.lockSeen === true, JSON.stringify(fs2));
   ok('W1: hysteresis — the lock RETAINS a target parked at 8.5° (outside acquire 6°, inside retain ~10°)',
     fs2.lockRetainedSeen === true, JSON.stringify(fs2));
@@ -1751,6 +1860,16 @@ try {
   await sleep(300);
   const w1PipO = await J(`({ hidden: document.getElementById('pipper') ? document.getElementById('pipper').hidden : null })`);
   ok('W1: pipper renders while the reticle diverges past the threshold (the bolt-path marker appears)', w1PipO.hidden === false, JSON.stringify(w1PipO));
+  // stage-6 H1 pipper honesty rider (W1's chair flag): the pipper's visibility gate rides
+  // pointer-divergence — the same input-state class as the pre-law reticle — so combatState()
+  // now exposes the WRITER'S OWN stored state ({ visible, divergenceDeg }) and the harness can
+  // read the pipper's render state the same way .lock/.lockTarget read the bracket (honesty
+  // law). RED on the pre-H1 build (surface absent → red by absence).
+  const h1Pip = await J(`({ cs: (window.__stage2 && __stage2.combatState) ? __stage2.combatState().pipper : 'none',
+    elHidden: (document.getElementById('pipper') || { hidden: null }).hidden })`);
+  ok('H1: pipper honesty surface — combatState().pipper {visible, divergenceDeg} agrees with the element while diverged',
+    h1Pip.cs && h1Pip.cs !== 'none' && h1Pip.cs.visible === true && h1Pip.elHidden === false &&
+    typeof h1Pip.cs.divergenceDeg === 'number' && h1Pip.cs.divergenceDeg > 2, JSON.stringify(h1Pip));
   await evl(`window.dispatchEvent(new PointerEvent('pointermove', {clientX: Math.round(window.innerWidth/2), clientY: Math.round(window.innerHeight/2), bubbles: true}))`);
   await sleep(300);
   const w1PipR = await J(`({ hidden: document.getElementById('pipper') ? document.getElementById('pipper').hidden : null })`);

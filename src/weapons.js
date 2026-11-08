@@ -33,6 +33,7 @@ let C = null; // combat.js's live state bag — set once by initWeapons, read at
 let forward = null; // combat.js's 3D forward closure (story-015 keystone) — live, never copied
 let noseWorld = null; // combat.js's nose closure — live, never copied
 let ARENA_Y = 0, R_HARD = 0, SHIELD_MAX = 0; // const primitives in combat.js — immutable, snapshot-safe
+let KILL_MARK_S = 0; // stage-6 H1: the kill-marker window (s) — combat.js owns the const + the #hit-mark writer; the kill sites below only STAMP the timestamp (additive UI hooks, not logic changes)
 
 export function initWeapons(deps) {
   C = deps.C;
@@ -41,6 +42,7 @@ export function initWeapons(deps) {
   ARENA_Y = deps.ARENA_Y;
   R_HARD = deps.R_HARD;
   SHIELD_MAX = deps.SHIELD_MAX;
+  KILL_MARK_S = deps.KILL_MARK_S || 0; // stage-6 H1: rides the same seam (the const's single definition lives in combat.js)
 }
 
 const FIRE_INTERVAL = 1 / 8; // ~8/s hold-fire
@@ -200,6 +202,7 @@ export function boltsTick(dt) {
           if (d.userData.elite && C.telemetry.eliteKills[kind] !== undefined) C.telemetry.eliteKills[kind]++;
           if (b.userData.charged) C.telemetry.chargedKills++; // the skill signal
           if (C.telemetry.scoreBy[kind] !== undefined) C.telemetry.scoreBy[kind] += pts;
+          C.killMarkLeft = KILL_MARK_S; // stage-6 H1: kill-only hit marker — the REGISTERED-kill stamp (raider/gunner bolt kills); the #hit-mark writer in combat.js owns element + countdown
           dropAt(d.position); // story-018: raider drop site — bolt kills roll 18%, ram deaths never do (enemies.js untouched)
           EFFECTS.shake(0.06); // kill feedback (J)
           beep({ freq: 620, dur: 0.09, vol: 0.16, type: 'triangle' });
@@ -222,6 +225,7 @@ export function boltsTick(dt) {
           C.telemetry.kills.orb++; // story-019: orbs are excluded from elites (GDD §9 Decision 2) — the orb bucket never splits
           if (b.userData.charged) C.telemetry.chargedKills++;
           C.telemetry.scoreBy.orb += SCORE_ORB;
+          C.killMarkLeft = KILL_MARK_S; // stage-6 H1: kill-only hit marker — the orb's registered-kill stamp (same hook as the raider site)
           dropAt(o.position); // story-018: orb drop site (the position is clamped inside dropAt — orbs die outside the sphere legally)
           EFFECTS.shake(0.06);
           beep({ freq: 620, dur: 0.09, vol: 0.16, type: 'triangle' });

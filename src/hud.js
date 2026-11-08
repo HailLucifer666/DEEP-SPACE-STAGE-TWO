@@ -23,6 +23,7 @@ const ui = {
   hsLine: $('hs-line'), btnLaunch: $('btn-launch'), btnSkip: $('btn-skip'),
   hudBars: $('hud-bars'), hudScore: $('hud-score'), reticle: $('reticle'), hudChips: $('hud-chips'), // story-018: the effect-chip line joins the ui map (combat owns the write)
   pipper: $('pipper'), lockBr: $('lock-bracket'), // stage-6 W1: pipper = bolt path, bracket = lock target (element-budget law — one meaning each; change-gated writers in aim-assist.js)
+  bossBar: $('boss-bar'), waveBanner: $('wave-banner'), hitMark: $('hit-mark'), // stage-6 H1: boss HP bar (fed from BOSS.state() — the text line left #hud-bars), wave banner (#combat-online grammar), kill-only hit marker — change-gated writers in combat.js
   gameover: $('gameover'), goScore: $('go-score'), goHs: $('go-hs'), victory: $('victory'), vicScore: $('vic-score'),
   goReplay: $('go-replay'), goSkip: $('go-skip'), pause: $('pause'), vicTime: $('vic-time'), vicReplay: $('vic-replay'), // story-014 win card
   pauseResume: $('pause-resume'), pauseSound: $('pause-sound'), // T1: the pause card's pills (RESUME rides input.js's setPaused; SOUND mirrors btn-sound)
