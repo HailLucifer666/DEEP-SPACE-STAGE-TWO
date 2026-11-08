@@ -544,6 +544,7 @@ try {
   await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat&bossProbe=1' });
   let bp = null;
   let hudBossSeen = false;
+  let w1BossSamples = 0, w1BossKindLock = false; // stage-6 W1 rider (sampled below)
   {
     const t0 = Date.now();
     for (;;) {
@@ -554,6 +555,12 @@ try {
         if (csx && csx.boss) { // sample the HUD line while the boss lives — independent of the probe's own record
           const hud = await evl(`document.getElementById('hud-bars').textContent`);
           if (hud.includes('BOSS')) hudBossSeen = true;
+          // stage-6 W1 rider: the lock surface, sampled live while the boss lives (it sweeps its
+          // orbit through every azimuth — including the nose cone). The bracket must never
+          // anchor the boss: raiders locking is legitimate and ignored; only a boss-kind target
+          // reds. The DETERMINISTIC exclusion proof is the fireProbe walk's boss stage; this is
+          // the in-the-wild second witness. Pre-W1 build: csx.lockTarget undefined → samples stay 0.
+          if (csx.lockTarget !== undefined) { w1BossSamples++; if (csx.lockTarget && csx.lockTarget.kind === 'boss') w1BossKindLock = true; }
         }
         bp = await J(`(window.__stage2 && window.__stage2.bossProbe) || null`);
       } catch { bp = null; }
@@ -621,6 +628,11 @@ try {
   ok('BOSS HP line gone from #hud-bars after death', !((await evl(`document.getElementById('hud-bars').textContent`)).includes('BOSS')));
   ok('combatState().boss drains to null after death', await evl(`__stage2.combatState().boss`) === null,
     JSON.stringify(await J(`__stage2.combatState().boss`)));
+  // stage-6 W1 rider: the lock never brackets the boss while it lives (sampled above through the
+  // boss's whole orbit sweep — the boss crosses the nose cone, where a lockable boss would be
+  // acquired). RED on the pre-W1 build (lock surface absent → samples 0 — red by absence).
+  ok('W1: lock never brackets the boss (bossProbe live sampling across the orbit sweep; lock surface exposed)',
+    w1BossSamples > 0 && w1BossKindLock === false, `samples=${w1BossSamples} bossKindLock=${w1BossKindLock}`);
 
   /* --- story-014 victory card (same page: the bossDefeated signal lands victory mid-drive) ---
      Trigger path: combat.js's C.bossApi.report wrapper — the death cinematic's report lands
@@ -747,6 +759,12 @@ try {
     padLanded ? JSON.stringify(vdx) : 'no pad landing');
   ok('story-014: victory REPLAY → pad: edge pips drained (no stale combat pip state)', padLanded && vdx.pipCount === 8 && vdx.pipsOn === 0,
     padLanded ? JSON.stringify(vdx) : 'no pad landing');
+  // stage-6 W1 (hard build constraint 2): the pipper + lock bracket are combat's writes — the
+  // pad must never inherit them (clearCombat reset list, same class as the pip drain above).
+  // RED on the pre-W1 build: the elements do not exist (red by absence).
+  const w1Pad = padLanded ? await J(`({ pip: !!document.getElementById('pipper') && document.getElementById('pipper').hidden,
+    br: !!document.getElementById('lock-bracket') && document.getElementById('lock-bracket').hidden })`) : null;
+  ok('W1: pad drains the pipper + lock bracket (clearCombat reset list)', !!w1Pad && w1Pad.pip === true && w1Pad.br === true, JSON.stringify(w1Pad));
   {
     let landed2 = false, cs14 = null, entries2 = 0;
     if (padLanded) {
@@ -833,7 +851,9 @@ try {
      simulated at dt 1/30, 1/60, 1/120: mean-to-centroid 7.03 u over one rev from an aligned
      entry, flat build 7.73). The assert encodes the measured build (6.5-7.3 u), NOT the
      predicted number — recorded in the programmer report, never a quiet edit. */
-  await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat&pitchProbe=1' });
+  // stage-6 W1: ?lock=0 forces the aim lock OFF for this page (the probe override) — the
+  // pitched-bolt asserts below must see UNBIASED bolts (pre-W1 builds ignore the unknown flag).
+  await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat&pitchProbe=1&lock=0' });
   let pp = null;
   {
     const t0 = Date.now();
@@ -1107,7 +1127,7 @@ try {
           NULL (the drive hung in the 300-drop stage) — that hang is itself mutation
           evidence and drove commit 3's watchdogs (the second application reads by value).
      Full outputs: production/qa/evidence/story-018-charged-shot-pickups/. */
-  await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat&chargeProbe=1' });
+  await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat&chargeProbe=1&lock=0' }); // stage-6 W1: probe pages see unbiased bolts (?lock=0 — the probe override)
   let cp = null;
   {
     const t0 = Date.now();
@@ -1234,7 +1254,7 @@ try {
      assert records its red from the null probe; the clearCombat-wipe walk lands but reads
      undefined effects. Same red output file as the charge block.
      MUTATIONS: recorded in the charge block above (mutation 2 = the drop roll). */
-  await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat&powerupProbe=1' });
+  await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat&powerupProbe=1&lock=0' }); // stage-6 W1: probe pages see unbiased bolts (?lock=0)
   let pu = null;
   {
     const t0 = Date.now();
@@ -1440,7 +1460,7 @@ try {
      (the exact droneProbe red pattern). Full output: flow-red-story019.txt.
      MUTATIONS (branch, post-green; each: mutate → npm run build → full flow-check → restore
      → rebuild; verified applied by reading its red output): recorded per assert below. */
-  await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat&balanceProbe=1' });
+  await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat&balanceProbe=1&lock=0' }); // stage-6 W1: probe pages see unbiased bolts (?lock=0)
   let bp19 = null;
   {
     const t0 = Date.now();
@@ -1617,6 +1637,183 @@ try {
     if (!parityChecked) ok('telemetry zeroed on enterCombat (restart parity: fresh entry reads all zeros, waveReached 1)',
       false, bp19 ? 'victory phase missing after the boss stage' : 'no balanceProbe report (old build: red by absence)');
   }
+
+
+  /* --- stage-6 W1 aim overhaul (?fireProbe=1, next page over the SAME CDP session) ---
+     The FIRE-PATH BASELINE + the aim-lock behavior battery, in the card's required order.
+     The drive (src/probes-fire.js, one walk per file) SEEDS deterministic targets and captures
+     b.userData.dir of real fired bolts — it never spawns a bolt itself. The trigger is REAL CDP
+     pointer input: the drive raises window.__stage2.fireArmN, the harness performs
+     Input.dispatchMouseEvent mousePressed/mouseReleased (input.js onPointerDown → input.fire →
+     fireTick → spawnStreamShot → spawnBolt), closes the loop with a fireGoN flag, and the drive
+     captures from the bolt pool. Every pre-W1 probe bypassed spawnBolt — that was the blind
+     spot this page exists to close.
+     RED-FIRST (branch polish/stage6-experience): the drive + ALL asserts below ran against the
+     feature-less build (probe infrastructure only — NO aim-assist.js, no bias, no T, no
+     pipper/bracket, combatState without .lock/.lockTarget). GREEN BY DESIGN there (recorded in
+     the same transcript): the two fire-path baseline asserts + the report + the CONSOLE asserts
+     — real fired bolts already fly along forward() and kill, exactly the invariant the W1 bias
+     must not break, and the bias is a no-op at zero angle so both stay green post-feature.
+     Everything else records RED for absence/behavior: fs2.lockSeen false (no lock), biasDeg 0
+     (no convergence), lockAfterKill null (surface undefined), fs3 lockSeen false, fs4.lock null,
+     boss stage lockWasDefined false, pipper/bracket elements absent, pad drain false, and the
+     whole T battery (no KeyT handler, no __stage2.lock/lockRaw). Transcript:
+     production/qa/evidence/stage6-w1/flow-red-w1.txt.
+     THE FAN+BIAS SUM CLAMP (the card's "decide and DOCUMENT", restated here): the bias
+     rotation is capped at 6° (BIAS_MAX_DEG, weapons-side call), the SPREAD fan is ±6°
+     (SPREAD_ARC), and the STATED SUM MAX is 10° from nose-forward — the lock retain cone: both
+     the pre-bias dir (≤6° = fan) and the locked-target dir (≤10° = retain) lie in the
+     geodesically-convex 10° cap, and the biased dir lies ON the geodesic between them, so the
+     final dir can never exceed 10° off the nose (≤ the naive 6°+6°=12° ceiling). Measured
+     stage-scoped bands: the center-bolt stage reads exactly 6.0 (band [5.5,6.3]); the fresh-
+     acquire fan stage reads ≤6.3 for every bolt.
+     MUTATIONS (branch, post-green, each: mutate → npm run build → FULL flow-check → restore →
+     rebuild; verified applied by reading the red output):
+       (a) aim-assist.js bias clamp removed (Math.min(BIAS_MAX_RAD, ang) → ang) → RED
+           `bias cap` (biasDeg 10.32 > 6.3 — the unclamped bolt rotates the FULL angle onto the
+           retained 8.5°-parked target; the true nose sits at rocket-local +1.6, so the
+           bolt-relative target angle is 10.32°, not the 9.5° the +1.0 estimate gave) AND RED
+           `far fan bolt does NOT fully converge` (maxAngleToTarget 0.86 < 3 — the unclamped
+           rotation swallows the whole 10.86° fan-to-target gap: every captured dir reads the
+           target dir exactly). The DEAD-AHEAD baseline asserts stay green under (a) BY
+           CONSTRUCTION (zero angle ⇒ zero rotation — the clamp is not load-bearing there); the
+           generalized fire-path invariant that reds is this stage-2 cap assert. One
+           environmental OVERDRIVE-interval flake co-occurred (0.0778 > 0.075 at frameDt 0.0207
+           — the same headless timing-noise class the green run 1 recorded and green run 2
+           cleared; unrelated to the mutation, whose named asserts both red). Transcript:
+           flow-mutation-biasclamp.txt (229/3).
+       (b) aim-assist.js ACQUIRE_DEG 6 → 180 → RED `outside-cone target never locks` ALONE
+           (231/1: the 20° parked target acquires — locked true, lockEverTrue true, and the
+           fired bolt reads 6° = the capped bias toward the now-locked target, fully
+           consistent). Transcript: flow-mutation-cone180.txt.
+     Full outputs: production/qa/evidence/stage6-w1/. */
+  await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat&fireProbe=1' });
+  let fp = null;
+  {
+    const t0 = Date.now();
+    let arm1 = false, arm2 = false, arm3 = false, arm4 = false;
+    // the REAL trigger — CDP mouse input through input.js's own listener (the same chain a
+    // player's click hits); the drive only watches for the fireGoN handshake
+    const firePress = async (go) => {
+      await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: 300, y: 200, button: 'left', clickCount: 1 });
+      await sleep(500);
+      await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: 300, y: 200, button: 'left', clickCount: 1 });
+      await sleep(150);
+      await evl(`window.__stage2.${go} = true`);
+    };
+    for (;;) {
+      try {
+        if (!arm1 && await evl(`(window.__stage2 && window.__stage2.fireArm) === true`)) { arm1 = true; await firePress('fireGo1'); }
+        else if (arm1 && !arm2 && await evl(`(window.__stage2 && window.__stage2.fireArm2) === true`)) { arm2 = true; await firePress('fireGo2'); }
+        else if (arm2 && !arm3 && await evl(`(window.__stage2 && window.__stage2.fireArm3) === true`)) { arm3 = true; await firePress('fireGo3'); }
+        else if (arm3 && !arm4 && await evl(`(window.__stage2 && window.__stage2.fireArm4) === true`)) { arm4 = true; await firePress('fireGo4'); }
+        fp = await J(`(window.__stage2 && window.__stage2.fireProbe) || null`);
+      } catch { fp = null; }
+      if (fp) break;
+      if (Date.now() - t0 > 180000) break; // deadline — the asserts below record the red
+      await sleep(200);
+    }
+  }
+  const fpX = fp || {};
+  const fs1 = fpX.s1 || {}, fs2 = fpX.s2 || {}, fs3 = fpX.s3 || {}, fs4 = fpX.s4 || {}, fs5 = fpX.boss || {};
+  ok('fireProbe reports (stage-6 W1)', !!fp, JSON.stringify(fpX));
+  // FIRE-PATH BASELINE — the invariant the bias must not break (green-by-design on the pre-W1
+  // build; see the block comment). Reads b.userData.dir of REAL fired bolts via the drive.
+  ok('W1 fire-path baseline: real fired bolt flies along forward (b.userData.dir vs forward ≤1.1°)',
+    fs1.boltCaptured === true && typeof fs1.dirDeg === 'number' && fs1.dirDeg <= 1.1, `dirDeg=${fs1.dirDeg}`);
+  ok('W1 fire-path baseline: the real fired bolt kills the seeded dead-ahead target (real trigger → spawnBolt → boltsTick)',
+    fs1.killConfirmed === true, JSON.stringify(fs1));
+  ok('W1: lock acquires an in-cone target (dead-ahead seed, acquire cone ≤6°)', fs2.lockSeen === true, JSON.stringify(fs2));
+  ok('W1: hysteresis — the lock RETAINS a target parked at 8.5° (outside acquire 6°, inside retain ~10°)',
+    fs2.lockRetainedSeen === true, JSON.stringify(fs2));
+  ok('W1: bias cap — the fired bolt converges on the retained target (≥5.5° off the nose) and never exceeds 6.3° (the 6° bias max; the fan+bias sum is bounded by the 10° retain cone — see the block comment)',
+    typeof fs2.biasDeg === 'number' && fs2.biasDeg >= 5.5 && fs2.biasDeg <= 6.3, `biasDeg=${fs2.biasDeg}`);
+  ok('W1: dead-target drops the lock (the real bolt kills the retained target; lock reads false after)',
+    fs2.lockAfterKill === false, `lockAfterKill=${JSON.stringify(fs2.lockAfterKill)}`);
+  ok('W1: SPREAD fan + bias — the far fan bolt does NOT fully converge (the 6° bias clamp binds; unclamped it would land on the target)',
+    fs3.lockSeen === true && fs3.spreadSeen === true && typeof fs3.maxAngleToTarget === 'number' && fs3.maxAngleToTarget >= 3, JSON.stringify(fs3));
+  ok('W1: SPREAD fan + bias — every fired bolt stays ≤6.3° from the nose (stage-scoped band: fresh-acquire geometry)',
+    fs3.lockSeen === true && typeof fs3.maxAngleToForward === 'number' && fs3.maxAngleToForward <= 6.3, `maxF=${fs3.maxAngleToForward}`);
+  ok('W1: outside-cone target never locks (20° parked; lock false the whole window; fired bolt stays unbiased)',
+    fs4.locked === false && fs4.lockEverTrue === false && typeof fs4.boltAngleToForward === 'number' && fs4.boltAngleToForward <= 1.1, JSON.stringify(fs4));
+  ok('W1: the boss never locks (boss parked dead-ahead 26u — dead-center in the acquire cone — for the whole window)',
+    fs5.bossAliveSeen === true && fs5.bossInConeEver === true && fs5.bossLockSeen === false && fpX.lockWasDefined === true, JSON.stringify(fs5));
+
+  // pipper — element-budget law: pipper = bolt path. Renders ONLY while the reticle (pointer)
+  // diverges past the threshold; self-hides aligned. The post-drive field is empty for ~99 s
+  // (the drive's wave-gap pin), so "no lock" here is deterministic. Real pointer events.
+  await evl(`window.dispatchEvent(new PointerEvent('pointermove', {clientX: Math.round(window.innerWidth/2), clientY: Math.round(window.innerHeight/2), bubbles: true}))`);
+  await sleep(300);
+  const w1PipC = await J(`({ el: !!document.getElementById('pipper'),
+    hidden: document.getElementById('pipper') ? document.getElementById('pipper').hidden : null })`);
+  ok('W1: pipper self-hides when the reticle is aligned (center pointer)', w1PipC.el === true && w1PipC.hidden === true, JSON.stringify(w1PipC));
+  await evl(`window.dispatchEvent(new PointerEvent('pointermove', {clientX: Math.round(window.innerWidth*0.75), clientY: Math.round(window.innerHeight/2), bubbles: true}))`);
+  await sleep(300);
+  const w1PipO = await J(`({ hidden: document.getElementById('pipper') ? document.getElementById('pipper').hidden : null })`);
+  ok('W1: pipper renders while the reticle diverges past the threshold (the bolt-path marker appears)', w1PipO.hidden === false, JSON.stringify(w1PipO));
+  await evl(`window.dispatchEvent(new PointerEvent('pointermove', {clientX: Math.round(window.innerWidth/2), clientY: Math.round(window.innerHeight/2), bubbles: true}))`);
+  await sleep(300);
+  const w1PipR = await J(`({ hidden: document.getElementById('pipper') ? document.getElementById('pipper').hidden : null })`);
+  ok('W1: pipper self-hides on re-alignment (renders ONLY while diverging)', w1PipR.hidden === true, JSON.stringify(w1PipR));
+  // bracket — ONE element, the locked target only; hidden without a lock; honesty surface:
+  // combatState().lockTarget must be null exactly when nothing is locked
+  const w1Br = await J(`({ hidden: document.getElementById('lock-bracket') ? document.getElementById('lock-bracket').hidden : null,
+    lt: (window.__stage2 && __stage2.combatState) ? __stage2.combatState().lockTarget : 'none' })`);
+  ok('W1: bracket hidden without a lock (field empty; lockTarget null — the honesty surface agrees)', w1Br.hidden === true && w1Br.lt === null, JSON.stringify(w1Br));
+  ok('W1: bracket renders ON the locked target (dead-ahead stage-1 lock; bracketOnLock sampled in-page beside the lock)',
+    fs1.lockSeen === true && fs1.bracketOnLock === true, JSON.stringify(fs1));
+  ok('CONSOLE [] (fireProbe page)', errs.length === 0, errs.join(' | '));
+
+  /* --- stage-6 W1: T toggle + persistence (?debug=1&goto=combat pages over the SAME CDP
+     session — the story-020 battery shape, mirrored for the aim-lock choice) ---
+     The toggle is driven through the REAL key path: input.js's combat-branch KeyT →
+     aim-assist toggleLock() → writeLock (the store.js pair — the MUTED_KEY mirror). Persistence
+     rides REAL Page.navigate reloads over the same profile (localStorage genuinely persists —
+     the story-020 mechanism). Default ON (the audit's opt-out-able assist, ux-audit F1b);
+     corrupt seeds read OFF (the canonical-value clamp: only '1' is ON, so 'garbage'/'2'
+     degrade to manual aim — the conservative fallback; an UNWRITTEN key boots ON) and survive
+     boot byte-identical (restore reads, never rewrites).
+     RED-FIRST: on the feature-less build __stage2.lock/lockRaw are absent (recorded null) and
+     KeyT is a no-op — every assert below records RED (the story-020 red pattern). Same
+     transcript as the fireProbe block: flow-red-w1.txt. */
+  const w1Combat = async () => {
+    await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat' });
+    const t0 = Date.now();
+    for (;;) { try { if (await J(`(window.__stage2 && __stage2.phase) || 'boot'`) === 'combat') break; } catch {} if (Date.now() - t0 > 60000) break; await sleep(300); }
+  };
+  const lockState = () => J(`({ lock: (window.__stage2 && __stage2.lock !== undefined) ? __stage2.lock : null,
+    raw: (window.__stage2 && __stage2.lockRaw) ? __stage2.lockRaw() : null })`);
+  await w1Combat();
+  const lsA = await lockState();
+  ok('W1: lock boots ON by default (no stored key — the audit opt-out-able assist)', lsA.lock === true && lsA.raw === null, JSON.stringify(lsA));
+  await key('KeyT', 'keydown'); await key('KeyT', 'keyup'); await sleep(150);
+  const lsB = await lockState();
+  ok('W1: T toggles the lock OFF in-session (combat branch, the KeyM mirror)', lsB.lock === false, JSON.stringify(lsB));
+  ok("W1: T write-through at the store (raw stage2.lock = '0')", lsB.raw === '0', `raw=${JSON.stringify(lsB.raw)}`);
+  ok('CONSOLE [] (W1 toggle page)', errs.length === 0, errs.join(' | '));
+  await w1Combat();
+  const lsC = await lockState();
+  ok('W1: lock OFF survives a real reload (persisted, not session-only)', lsC.lock === false && lsC.raw === '0', JSON.stringify(lsC));
+  await key('KeyT', 'keydown'); await key('KeyT', 'keyup'); await sleep(150);
+  const lsD = await lockState();
+  ok('W1: T re-enables the lock ON in-session', lsD.lock === true, JSON.stringify(lsD));
+  ok("W1: T write-through back to '1'", lsD.raw === '1', `raw=${JSON.stringify(lsD.raw)}`);
+  await w1Combat();
+  const lsE = await lockState();
+  ok('W1: lock ON survives a real reload (persistence asserted BOTH ways)', lsE.lock === true && lsE.raw === '1', JSON.stringify(lsE));
+  // corrupt-read safety (§8.9 proven, not assumed — the story-020 shape): the harness seeds the
+  // raw key directly; the game has zero storage access outside store.js.
+  await evl(`localStorage.setItem('stage2.lock', 'garbage')`);
+  await w1Combat();
+  const lsF = await lockState();
+  ok("W1: corrupt 'garbage' boots OFF (canonical clamp — only '1' reads ON; corrupt degrades to manual aim)", lsF.lock === false, JSON.stringify(lsF));
+  ok('W1: corrupt seed survives boot byte-identical (restore reads, never rewrites)', lsF.raw === 'garbage', `raw=${JSON.stringify(lsF.raw)}`);
+  ok('CONSOLE [] (W1 corrupt page)', errs.length === 0, errs.join(' | '));
+  await evl(`localStorage.setItem('stage2.lock', '2')`);
+  await w1Combat();
+  const lsG = await lockState();
+  ok("W1: numeric garbage '2' boots OFF (the same canonical clamp)", lsG.lock === false, JSON.stringify(lsG));
+  await evl(`localStorage.removeItem('stage2.lock')`); // hygiene: later pages boot the default (nothing after this battery reads the lock)
 
 
   /* --- R-c commit 4: SPIN N-key regression probe (?debug=1&spin=1, page over the SAME CDP session) ---

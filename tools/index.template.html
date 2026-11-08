@@ -180,6 +180,20 @@ body.playing.paused, body.playing.paused *{cursor:auto !important;}
   -webkit-mask:radial-gradient(circle, transparent 0 54%, #000 58%);mask:radial-gradient(circle, transparent 0 54%, #000 58%);}
 #reticle.charge #charge-ring{opacity:.85;}
 #reticle.charge-full #charge-ring{opacity:1;filter:drop-shadow(0 0 10px rgba(255,200,90,.8));}
+/* stage-6 W1: gun pipper — the bolt-path marker. Analytic anchor: the nose-forward projection
+   is ≈ screen center by construction (combat.js chase-cam lookAt rides pos+forward·4 from
+   behind the nose — aim-assist.js header documents the decision and the rejected per-frame
+   projection's 1-frame matrixWorld staleness). Renders ONLY while the reticle (pointer)
+   diverges past the threshold; self-hides aligned. Cyan; no clip-path. */
+#pipper{position:absolute;left:50%;top:50%;width:10px;height:10px;transform:translate(-50%,-50%);
+  border:1px solid rgba(125,215,255,.95);border-radius:50%;
+  box-shadow:0 0 8px rgba(125,215,255,.55), inset 0 0 3px rgba(125,215,255,.4);}
+/* stage-6 W1: lock bracket — ONE element (single lock at a time), the locked target's
+   projected anchor (pip-block math, integer-px change-gated transform writes). Cyan — amber
+   is this game's elite/boss language (scope.md color rule). No clip-path. */
+#lock-bracket{position:absolute;left:0;top:0;width:34px;height:34px;margin:-17px 0 0 -17px;
+  border:2px solid rgba(125,215,255,.85);border-radius:4px;box-shadow:0 0 10px rgba(125,215,255,.4);
+  will-change:transform;}
 /* S4 combat: damage veil */
 #hitveil{position:fixed;inset:0;z-index:46;pointer-events:none;opacity:0;transition:opacity .14s ease;
   background:radial-gradient(ellipse at center, transparent 42%, rgba(255,42,26,.42) 100%);}
@@ -223,6 +237,11 @@ body.playing.paused, body.playing.paused *{cursor:auto !important;}
   <div id="hud-bars"></div>
   <div id="hud-score"></div>
   <div id="hud-chips"></div>
+  <!-- stage-6 W1: pipper (bolt path) + lock bracket (lock target) — element-budget law: one
+       meaning per element (reticle keeps steer/charge), no clip-path polygons (flow-check
+       counts #hud clip-path children = the 8 edge pips exactly). Writers: aim-assist.js. -->
+  <div id="pipper" hidden></div>
+  <div id="lock-bracket" hidden></div>
 </div>
 <div id="hitveil"></div>
 <!-- T1: pause card gains real pills (RESUME / SOUND) in the .pill grammar — input.js setPaused
@@ -312,6 +331,7 @@ body.playing.paused, body.playing.paused *{cursor:auto !important;}
       <span><b>SPACE / SHIFT</b> — BOOST</span>
       <span><b>P</b> — PAUSE</span>
       <span><b>M</b> — MUTE</span>
+      <span><b>T</b> — AIM LOCK ON/OFF</span>
     </div>
     <span class="h-tip">FLY THROUGH THE GLOWING DROPS</span>
   </div>

@@ -17,7 +17,8 @@ import { KINDS as EFFECT_KINDS } from './powerups.js';
 import { noiseBurst, loopStart, musicEvict, musicSetDuck, alarmTick, proximityTick } from './audio.js'; // story-009 audio + hit voices that stayed with combat (the fire-path/effect voices moved to weapons.js with their call sites)
 import { initWeapons, makeBolt, fireTick, boltsTick, effectsTick, applyEffect, T_CHARGE, BOLT_LIFE } from './weapons.js'; // review-fix split (story-018 review round): the fire path + projectile/effect side — verbatim moves; combat calls them at the same tickCombat positions and composes POWERUP_API around the imported applyEffect
 import { stageShip, combatFlow } from './launch.js';
-import { droneProbeTick, bossProbeTick, pitchProbeTick, dressingProbeTick, chargeProbeTick, powerupProbeTick, balanceProbeTick, resetProbes } from './probes.js'; // rider R-e: the probe drives + their state live in probes.js — combat calls them, never the reverse (dep-check: acyclic; story-019 adds balanceProbeTick through the same re-export wiring)
+import * as AIM from './aim-assist.js'; // stage-6 W1: the lock scan + spawn-bias + aim HUD owner — combat hands the LIVE C + forward closure ONCE (the initWeapons seam pattern); aim-assist imports enemies/drone directly and must NEVER import combat.js (dep-check rule)
+import { droneProbeTick, bossProbeTick, pitchProbeTick, dressingProbeTick, chargeProbeTick, powerupProbeTick, balanceProbeTick, fireProbeTick, resetProbes } from './probes.js'; // rider R-e: the probe drives + their state live in probes.js — combat calls them, never the reverse (dep-check: acyclic; story-019 adds balanceProbeTick through the same re-export wiring; stage-6 W1 adds fireProbeTick — the real-fire capture walk)
 import * as DRESSING from './arena-dressing.js'; // story-017: combat-only ambient field + shell visual (GDD §3.6)
 
 const ARENA_Y = 18; // story-016: re-anchored as the sphere CENTER's y — O = (0, ARENA_Y, 0) (the spawn point)
@@ -229,6 +230,11 @@ const probeEnv = { forward, noseWorld, clamp, ARENA_Y, BOLT_LIFE, TURN_RATE, HP_
 // R_HARD / SHIELD_MAX are const primitives — immutable, snapshot-safe by construction. Called
 // once at module scope: the references never change for the page's lifetime.
 initWeapons({ C, forward, noseWorld, ARENA_Y, R_HARD, SHIELD_MAX });
+// stage-6 W1: the aim-lock seam — the same live-reference contract as initWeapons above
+// (call-time reads of C.pos/C.camera/C.api; forward is the live closure). NOT probeEnv — that
+// is the probes-only seam; the aim state is game code, not probe plumbing. Called once at
+// module scope: the references never change for the page's lifetime.
+AIM.initAimAssist({ C, forward });
 
 /* ---------- input → steering (story-004: throttle + turn) ---------- */
 function steer(dt) {
@@ -381,7 +387,9 @@ function wavesTick(dt) {
 /* ---------- scripted kill probe (?scriptedKill=1) ----------
  * Mutation-tested 2026-11-02: seen RED before the fix (bolt dir negated → bolt flew
  * away from the drone; probe read kills 0 / score 150, no lastReport kill), GREEN after
- * (kills 1, score +100, particles 12). It fails loudly when bolts stop killing. */
+ * (kills 1, score +100, particles 12). It fails loudly when bolts stop killing.
+ * stage-6 W1 note: the probe bolt here spawns via C.bolts.spawn DIRECTLY — it bypasses
+ * spawnBolt, so the aim-lock spawn bias can never perturb this mutation-pinned probe. */
 function scriptedKillTick(dt) {
   if (!SCRIPTED_KILL || C.scriptDone) return;
   C.scriptT += dt;
@@ -484,6 +492,7 @@ export function tickCombat(dt, t) {
   const p = C.pose;
   if (!C.dead) C.time += dt; // story-014 combat clock — dt is already the scaled sdt (loop.js): the death slow-mo slows the world AND the clock, and the frozen clock reads 0:00-drift while dead
   steer(dt);
+  AIM.lockTick(); // stage-6 W1: the lock scan settles THIS tick before the fire path — spawnBolt's bias reads a lock that includes the heading steered this frame (no 1-tick staleness on the spawn)
   fireTick(dt);
   boltsTick(dt);
   ENEMIES.tickEnemies(dt, C.pos, { damagePlayer, explosion: (pos) => EFFECTS.explosion(pos) }); // story-019: the bolt/ram tags ride the enemies.js call sites (the file's only two damage values: 12 = gunner/boss-volley bolt, 25 = ram)
@@ -499,6 +508,7 @@ export function tickCombat(dt, t) {
   chargeProbeTick(dt, C, probeEnv); // story-018: deterministic charged-shot walk (?chargeProbe=1)
   powerupProbeTick(dt, C, probeEnv); // story-018: deterministic pickup/effect walk (?powerupProbe=1)
   balanceProbeTick(dt, C, probeEnv); // story-019: elite/table/telemetry walk (?balanceProbe=1) — the drive grows with the story's commits
+  fireProbeTick(dt, C, probeEnv); // stage-6 W1: real-fire bolt capture (?fireProbe=1) — seeds targets, captures b.userData.dir of REAL fired bolts (CDP press via the harness arm flags); never spawns a bolt itself
   DRESSING.tickDressing(dt, Math.hypot(C.pos.x, C.pos.y - ARENA_Y, C.pos.z)); // story-017: slow whole-group rotation + shell opacity from 3D proximity (the ring's driver grammar)
 
   // shield regen after a clean 3 s — story-018: while SHIELD is active the regen delay reads 0
@@ -612,6 +622,8 @@ export function tickCombat(dt, t) {
     for (; pi < C.pips.length; pi++) C.pips[pi].style.opacity = '0';
   }
 
+  AIM.hudTick(); // stage-6 W1: pipper + lock bracket — the change-gated writers live in aim-assist.js (camera + the lock state via the seam; the pip block's projection math above is the pattern)
+
   if (C.dead) {
     if (C.api.input.fire) C.deathT = DEATH_SLOWMO; // dying: a click lands the card now (gofix 2026-11-03)
     C.deathT += dt / Math.max(0.05, C.api.getTimeScale()); // real-time slow-mo clock
@@ -639,6 +651,7 @@ export function clearCombat() {
     C.ui.reticle.classList.remove('charge', 'charge-full');
     C.ui.reticle.style.removeProperty('--p');
   }
+  AIM.resetAimHud(); // stage-6 W1: the pipper + bracket are combat's writes — the pad never inherits them (same class as the reticle clear above; drains the lock too)
   C.lastChips = null; C.lastChargePct = -1; C.lastChargeFull = null; // force one rewrite on re-entry
   if (C.ui.tele) C.ui.tele.textContent = ''; // TD-014 (story-013): the SPD line is combat's write —
   // it must not ride the pad until cruise rewrites (phases.js resets its lastSpd gate on combat.enter)
@@ -685,6 +698,8 @@ export function combatState() {
     charging: C.charging, // story-018: past the threshold — stream suppressed, release fires the charged bolt
     effects: { SPREAD: +C.effects.SPREAD.toFixed(2), OVERDRIVE: +C.effects.OVERDRIVE.toFixed(2), SHIELD: +C.effects.SHIELD.toFixed(2) }, // story-018: seconds remaining per effect (the EXPOSED surface — GDD names it combatState().effects)
     fired: { stream: C.fired.stream, charged: C.fired.charged }, // story-018 probe surface (pre-telemetry; story-019 supersedes)
+    lock: AIM.enabled(), // stage-6 W1 honesty surface: the aim-lock toggle state (the pipper/bracket render state the harness can read; ?lock=0 reads OFF)
+    lockTarget: AIM.lockState(), // stage-6 W1 honesty surface: null or { kind, x, y, z } — the bracket's anchor; NEVER 'boss' (excluded by construction)
     telemetry: telemetryDump(), // story-019: the tuning surface (GDD §3.7) — probe reads only, zero player UI
     pos: C.pos.toArray().map((v) => +v.toFixed(2)), // probe surface — flow-check's keyboard-motion assert (story-003)
     dead: C.dead,

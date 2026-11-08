@@ -65,3 +65,32 @@ export function readMutedRaw() { // story-020 probe seam: the RAW stored value f
   if (!storageImpl) return null;
   try { return storageImpl.get(MUTED_KEY); } catch { return null; }
 }
+
+// stage-6 W1 (aim overhaul): the aim-lock choice rides the SAME surface and the SAME contracts
+// as the muted pair above — story-007 laziness (a pre-warm read never triggers the capability
+// probe), the §8.9 corrupt-reads-safe rule, and the stage-1 honest-warn rule. One deliberate
+// divergence from the mute pair, recorded: the lock DEFAULT is ON (the audit's opt-out-able
+// assist, ux-audit F1b), so the semantics are "unwritten key → ON; ANY stored value that is
+// not the canonical '1' → OFF" — the user's own '0', and corrupt seeds ('garbage', '2'),
+// degrade to manual aim, the conservative fallback (the muted pair reads ==='1' because its
+// default is false; this pair clamps around ON-with-only-'1'-canonical). Still self-contained:
+// store.js keeps importing nothing.
+export const LOCK_KEY = 'stage2.lock';
+export function readLock() {
+  if (!storageImpl) return true; // story-007: pre-warm read never triggers the probe — default ON
+  try {
+    const v = storageImpl.get(LOCK_KEY);
+    return v == null ? true : v === '1'; // ONLY the canonical '1' is ON — 'garbage'/'2'/'0' read OFF (§8.9)
+  } catch { return true; }
+}
+export function writeLock(l) {
+  try { getStorage().set(LOCK_KEY, l ? '1' : '0'); }
+  catch (e) { // stage-1 review (writeMuted precedent): a throw means the REAL backend refused — never pretend it was saved
+    console.warn('[stage2] aim-lock write failed — setting not persisted:', e && e.message);
+  }
+}
+export function readLockRaw() { // stage-6 W1 probe seam (readMutedRaw precedent): the RAW stored value —
+  // corrupt seeds visible to the harness (window.__stage2.lockRaw). Guarded like the pair.
+  if (!storageImpl) return null;
+  try { return storageImpl.get(LOCK_KEY); } catch { return null; }
+}

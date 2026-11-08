@@ -26,6 +26,7 @@ import * as EFFECTS from './effects.js';
 import * as POWERUPS from './powerups.js';
 import { EFFECT_T, KINDS as EFFECT_KINDS } from './powerups.js';
 import { beep, sweep, noiseBurst, chargeWhine, chargeRelease, pickupBlip, expireBlip } from './audio.js'; // story-018: named synth recipes (audio.js) — the fire path owns the crossing/release voices, the effect side owns the pickup/expire blips; powerups.js stays sound-free
+import * as AIM from './aim-assist.js'; // stage-6 W1: the spawn-bias source — stream bolts only (aim-assist imports enemies/drone/store, never combat.js — dep-check acyclic; the sum-clamp decision lives in its header)
 
 /* ---------- the seam (see the header) ---------- */
 let C = null; // combat.js's live state bag — set once by initWeapons, read at CALL TIME
@@ -87,6 +88,13 @@ function spawnBolt(dmg, charged, dir) {
   const b = C.bolts.spawn();
   noseWorld(b.position);
   if (dir) b.userData.dir.copy(dir); else forward(b.userData.dir);
+  // stage-6 W1: the aim-lock spawn bias — STREAM bolts only (the charged release at :147 stays
+  // the manual-aim reward, ux-audit F1). The bias is FINAL at spawn: boltsTick never rewrites
+  // dir after this, bolts stay ballistic (no homing). Runs BEFORE the lookAt so the mesh
+  // follows the biased dir. biasDir uses aim-assist's OWN scratch — never C.tmp (the clobber
+  // warning below); at zero lock angle it is a no-op, so the fire-path baseline invariant
+  // (bolts fly along forward) is untouched.
+  if (!charged) AIM.biasDir(b.userData.dir, b.position);
   b.userData.life = BOLT_LIFE;
   b.userData.dmg = dmg;
   b.userData.charged = charged;

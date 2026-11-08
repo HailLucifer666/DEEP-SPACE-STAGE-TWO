@@ -22,6 +22,7 @@ const ui = {
   count: $('count'), tele: $('tele'), warn: $('warn'),
   hsLine: $('hs-line'), btnLaunch: $('btn-launch'), btnSkip: $('btn-skip'),
   hudBars: $('hud-bars'), hudScore: $('hud-score'), reticle: $('reticle'), hudChips: $('hud-chips'), // story-018: the effect-chip line joins the ui map (combat owns the write)
+  pipper: $('pipper'), lockBr: $('lock-bracket'), // stage-6 W1: pipper = bolt path, bracket = lock target (element-budget law — one meaning each; change-gated writers in aim-assist.js)
   gameover: $('gameover'), goScore: $('go-score'), goHs: $('go-hs'), victory: $('victory'), vicScore: $('vic-score'),
   goReplay: $('go-replay'), goSkip: $('go-skip'), pause: $('pause'), vicTime: $('vic-time'), vicReplay: $('vic-replay'), // story-014 win card
   pauseResume: $('pause-resume'), pauseSound: $('pause-sound'), // T1: the pause card's pills (RESUME rides input.js's setPaused; SOUND mirrors btn-sound)
@@ -36,6 +37,7 @@ const PANEL_HTML = {
     '<p><b>W / S</b> — throttle &amp; brake &nbsp;·&nbsp; <b>A / D</b> — turn left / right</p>' + '<p><b>R / F</b> or <b>MOUSE ↕</b> — pitch</p>' + // story-015: the pitch line lives in BOTH text places (panel + hint bar)
     '<p><b>MOUSE</b> — steer &nbsp;·&nbsp; <b>LMB</b> — fire guns &nbsp;·&nbsp; <b>SPACE / SHIFT</b> — boost</p>' +
     '<p><b>HOLD LMB</b> — charge shot (release to fire)</p>' + // story-018: the obvious-controls pillar — the second stage is a discovered extension of the same trigger
+    '<p><b>T</b> — aim lock on/off (soft aim assist)</p>' + // stage-6 W1: the T control lands in BOTH text places (the forced rule — ux-audit F4); the hint bar carries the same line
     '<p><b>P / ESC</b> — pause &nbsp;·&nbsp; <b>M</b> — mute &nbsp;·&nbsp; <b>ENTER</b> — launch</p>' +
     '<p class="t-note">Drones ram. Shields regen after 3 clean seconds. The field flows faster while you boost. Downed enemies drop glowing pickups — fly through: SPREAD fan · OVERDRIVE rapid fire · SHIELD refill (8 s each, the HUD chips count down).</p>', // story-018: the pickups line
   CREDITS:
