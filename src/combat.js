@@ -14,7 +14,7 @@ import * as EFFECTS from './effects.js';
 import { makePool } from './pool.js';
 import * as POWERUPS from './powerups.js'; // story-018: drop roll + pickup pool + stats (entity side only — the EFFECT-timer code lives in weapons.js since the review-fix split; powerups never reads combat state, dep-check acyclic)
 import { KINDS as EFFECT_KINDS } from './powerups.js';
-import { noiseBurst, loopStart, musicEvict, musicSetDuck, alarmTick, proximityTick } from './audio.js'; // story-009 audio + hit voices that stayed with combat (the fire-path/effect voices moved to weapons.js with their call sites)
+import { noiseBurst, loopStart, musicEvict, musicSetDuck, alarmTick, proximityTick, setListener, sfxHit } from './audio.js'; // story-009 audio + hit voices that stayed with combat (the fire-path/effect voices moved to weapons.js with their call sites). stage-6 A1a: setListener feeds the ship position to the panner/attenuation math once per frame; sfxHit is the impact sample for the hurt site below
 import { initWeapons, makeBolt, fireTick, boltsTick, effectsTick, applyEffect, T_CHARGE, BOLT_LIFE } from './weapons.js'; // review-fix split (story-018 review round): the fire path + projectile/effect side — verbatim moves; combat calls them at the same tickCombat positions and composes POWERUP_API around the imported applyEffect
 import { stageShip, combatFlow } from './launch.js';
 import * as AIM from './aim-assist.js'; // stage-6 W1: the lock scan + spawn-bias + aim HUD owner — combat hands the LIVE C + forward closure ONCE (the initWeapons seam pattern); aim-assist imports enemies/drone directly and must NEVER import combat.js (dep-check rule)
@@ -357,7 +357,7 @@ function damagePlayer(n, source) { // story-019: optional source tag — the fou
   if (source && C.telemetry.damageTaken[source] !== undefined) C.telemetry.damageTaken[source] += n;
   EFFECTS.hitVeil(260);
   EFFECTS.shake(0.16);
-  noiseBurst({ dur: 0.3, vol: 0.5, f0: 260, f1: 90 });
+  sfxHit(); // stage-6 A1a: impact sample when decoded; the audit's binding impact recipe (noiseBurst 1800→300 + 200 Hz triangle) is the CONSOLE-SILENT fallback — hurt no longer shares the kill boom's timbre (audio-audit gap 9)
   if (C.hp <= 0) {
     C.dead = true;
     C.deathT = 0;
@@ -547,9 +547,13 @@ export function tickCombat(dt, t) {
   C.flow += ((C.boosting ? 1 : 0) - C.flow) * (1 - Math.exp(-4 * dt)); // smoothed boost rush
   combatFlow(dt, C.flow); // the field streams past the lane — asteroids, wrecks, planet, hole
 
-  // story-009 audio — exactly one duck / alarm / proximity call per frame, nothing else (spec §7)
+  // story-009 audio — exactly one duck / alarm / proximity call per frame, nothing else (spec §7).
+  // stage-6 A1a: + the listener feed — the ship position the panner/attenuation math reads
+  // (additive audio hook; the spatialized one-shots in weapons/enemies/boss pass their own
+  // source positions).
   C.proxScanT -= dt;
   if (!C.dead && C.proxScanT <= 0) { C.proxScanT = 0.15; C.nearest = scanNearest(); }
+  setListener(C.pos);
   musicSetDuck(C.flow);
   alarmTick(dt, C.hp, C.dead);
   proximityTick(dt, C.dead ? null : C.nearest);

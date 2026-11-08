@@ -25,7 +25,7 @@ import * as BOSS from './boss.js';
 import * as EFFECTS from './effects.js';
 import * as POWERUPS from './powerups.js';
 import { EFFECT_T, KINDS as EFFECT_KINDS } from './powerups.js';
-import { beep, sweep, noiseBurst, chargeWhine, chargeRelease, pickupBlip, expireBlip } from './audio.js'; // story-018: named synth recipes (audio.js) — the fire path owns the crossing/release voices, the effect side owns the pickup/expire blips; powerups.js stays sound-free
+import { beep, chargeWhine, chargeRelease, expireBlip, sfxLaser, sfxExplosion, sfxPickup } from './audio.js'; // story-018: named synth recipes (audio.js) — the fire path owns the crossing/release voices, the effect side owns the pickup/expire blips; powerups.js stays sound-free. stage-6 A1a: the laser/explosion/pickup one-liners play the CC0 sample when decoded with the shipped synth params as the CONSOLE-SILENT fallback (audio-audit wiring map)
 import * as AIM from './aim-assist.js'; // stage-6 W1: the spawn-bias source — stream bolts only (aim-assist imports enemies/drone/store, never combat.js — dep-check acyclic; the sum-clamp decision lives in its header)
 
 /* ---------- the seam (see the header) ---------- */
@@ -134,7 +134,7 @@ function spawnStreamShot() {
     C.fired.stream++;
     C.telemetry.shots.stream++;
   }
-  sweep({ f0: 1500, f1: 320, dur: 0.09, vol: 0.12, type: 'square' }); // shipped stream voice — one per SHOT (a fan is one shot)
+  sfxLaser(); // stage-6 A1a: laser sample when decoded; the shipped stream voice (one per SHOT — a fan is one shot) is the synth fallback
 }
 
 export function fireTick(dt) {
@@ -187,7 +187,7 @@ export function boltsTick(dt) {
         C.bolts.kill(b);
         C.telemetry.hits[b.userData.charged ? 'charged' : 'stream']++; // story-019: bolts die on hit — 1:1 max (probe-spawned unstamped bolts read stream)
         EFFECTS.explosion(d.position);
-        noiseBurst({ dur: 0.28, vol: 0.4, f0: 900, f1: 140 });
+        sfxExplosion(d.position); // stage-6 A1a: kill boom — sample ×2 round-robin, the shipped noiseBurst params as fallback
         if (ENEMIES.hitDrone(d, b.userData.dmg || 1)) { // story-018: the bolt carries its damage (stream 1, charged 6); probe-spawned unstamped bolts default to 1
           const pts = (d.userData.kind === 'gunner' ? SCORE_GUNNER : SCORE_DRONE) *
             (d.userData.elite ? ENEMIES.ELITE_SCORE_MULT : 1); // story-019: elites pay ×2 when SHOT DOWN (the ×2 never applies to a ram — the ram is the failure state); ELITE_SCORE_MULT rides the existing enemies.js import — no new edge
@@ -218,7 +218,7 @@ export function boltsTick(dt) {
         C.bolts.kill(b);
         C.telemetry.hits[b.userData.charged ? 'charged' : 'stream']++; // story-019: same 1:1 hit rule
         EFFECTS.explosion(o.position);
-        noiseBurst({ dur: 0.28, vol: 0.4, f0: 900, f1: 140 });
+        sfxExplosion(o.position); // stage-6 A1a: orb-kill boom — same sample family, spatialized from the orb
         if (DRONES.hitOrb(o, b.userData.dmg || 1)) { // story-018: bolt-carried damage (charged 6 one-shots the 2-HP orb — GDD §5, no special case)
           C.score += SCORE_ORB;
           C.kills++;
@@ -242,7 +242,7 @@ export function boltsTick(dt) {
         C.bolts.kill(b);
         C.telemetry.hits[b.userData.charged ? 'charged' : 'stream']++; // story-019: boss hits count too (the kill itself has no score/kills side-effects — story-014 owns the victory rewards)
         EFFECTS.explosion(b.position);
-        noiseBurst({ dur: 0.3, vol: zone === 2 ? 0.5 : 0.4, f0: zone === 2 ? 1200 : 800, f1: 140 });
+        sfxExplosion(b.position, { heavy: zone === 2 }); // stage-6 A1a: boss-hit boom — the heavy variant keeps the shipped node-hit params as fallback
         if (BOSS.hitBoss(b.userData.dmg || 1, zone === 2, C.bossApi)) EFFECTS.shake(0.12); // story-018: bolt-carried damage — hitBoss already takes the dmg param, boss.js stays zero-diff (weak point 6×3 = 18)
       }
     }
@@ -274,7 +274,7 @@ function dropAt(pos) {
 export function applyEffect(kind) {
   C.effects[kind] = EFFECT_T;
   if (kind === 'SHIELD') C.shield = SHIELD_MAX;
-  pickupBlip(); // the pickup confirm — powerups.js stays sound-free; the api.picked target plays it (architecture §7.2)
+  sfxPickup(); // stage-6 A1a: pickup sample when decoded; the shipped pickupBlip confirm stays as the fallback — powerups.js stays sound-free; the api.picked target plays it (architecture §7.2)
 }
 
 // story-018 effect timers — ticked on the combat dt (slow-mo slows effects like every

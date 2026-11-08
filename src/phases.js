@@ -9,7 +9,7 @@
 import * as LAUNCH from './launch.js';
 import * as TRANSITION from './transition.js';
 import * as COMBAT from './combat.js';
-import { musicTo } from './audio.js';
+import { musicTo, victoryJingle } from './audio.js'; // stage-6 A1a: + the victory cue (a one-shot synth voice — NOT music)
 import { readHighscore, writeHighscore } from './store.js';
 
 let ctx = null;
@@ -98,6 +98,11 @@ const PHASES = {
   victory: {
     enter() {
       musicTo('title'); // story-009: the same dawn crossfade as gameover — the title bed lands under the win card (new music is out of scope)
+      // stage-6 A1a (ORCHESTRATOR DECISION 2026-11-08 vs the story-014 freeze at this line):
+      // the freeze bars new MUSIC under the card — the bed stays the same dawn crossfade. The
+      // jingle below is a one-shot synth CUE riding that bed (≤ 0.22, the swell stays dominant),
+      // not a music change. enter() runs once per landing, so no double-fire.
+      victoryJingle();
       ctx.game.timeScale = 1; // the boss cinematic restored this already; parity with gameover — the card and any restart never inherit slow-mo
       const cs = COMBAT.combatState();
       const finalScore = cs.score;

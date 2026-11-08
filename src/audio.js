@@ -1,11 +1,26 @@
-// STAGE TWO — synthesis engine. Every sound is math; zero asset files.
+// STAGE TWO — synthesis engine. Every VOICE is math; the SFX one-shots are Kenney CC0 samples
+// (src/sfx-pack.js, stage-6 A1a) with math fallbacks — music stays procedural by design.
 // Contract: nothing throws on a missing/suspended context (guard §8.3); looping
 // nodes register in a set so phase exits can fade them (state-machine contract §10).
 // story-020: the mute choice persists through the guarded store — audio.js imports store.js
 // (store is self-contained, zero imports: audio→store is acyclic, dep-check verifies).
+// stage-6 A1a (spec: production/polish/audio-audit.md — every number there is binding):
+// sfx/music buses hang BETWEEN the voices and master (mute stays on master.gain —
+// setMuted/restoreMuted bodies are untouched, everything below inherits the mute); the
+// DynamicsCompressor is configured deliberately (−18 dB / 4:1 / 0.25 s) instead of the
+// accidental DEFAULTS limiter; every one-shot chain ends gain → StereoPannerNode → sfx bus
+// with pan = clamp(xRel/30, ±0.8) and attenuation 1.0 at ≤ 5 u → 0.2 floor at 45 u; a 24-voice
+// cap + per-event rate limits refuse (never queue) bursts; audio.sample() plays the CC0
+// samples lazily-decoded with ±5% pitch jitter and a CONSOLE-SILENT synth fallback whose
+// status is probe-visible (a failing sample must NEVER log — the harness gates every page on
+// zero console warnings).
 import { writeMuted } from './store.js';
+import { SFX_PACK } from './sfx-pack.js';
+import { createSequencer } from './music-seq.js';
 let AC = null;
 let master = null;
+let sfxBus = null; // stage-6 A1a: one-shot voices → StereoPanner → here → master
+let musicBus = null; // stage-6 A1a: the music bags' out-gains → here → master (crossfades/duck own the bags)
 let muted = false;
 const runningLoops = new Set();
 
@@ -19,8 +34,14 @@ function ensure() {
     AC = new (window.AudioContext || window.webkitAudioContext)();
     master = AC.createGain();
     const comp = AC.createDynamicsCompressor();
+    // stage-6 A1a: configured deliberately — threshold −18 dB, ratio 4:1, release 0.25 s
+    // (knee/attack stay at defaults 30/3 ms). Replaces the shipped DEFAULTS-configured
+    // −24 dB / 12:1 limiter that pumped on stacked bursts (audio-audit gap 6).
+    comp.threshold.value = -18; comp.ratio.value = 4; comp.release.value = 0.25;
     master.connect(comp);
     comp.connect(AC.destination);
+    sfxBus = AC.createGain(); sfxBus.gain.value = 1; sfxBus.connect(master);
+    musicBus = AC.createGain(); musicBus.gain.value = 1; musicBus.connect(master);
     master.gain.value = muted ? 0 : 0.9;
   } catch (e) {
     console.warn('[stage2] WebAudio unavailable — running silent:', e && e.message);
@@ -75,6 +96,67 @@ export function audioResume() {
 
 const clamp01 = (v) => Math.max(0, Math.min(1, Number(v) || 0)); // §8.9 NaN hygiene
 
+/* ---------- stage-6 A1a: voice cap, spatialization, buses, rate limits ---------- */
+
+const VOICE_CAP = 24; // simultaneous one-shot voices; at cap the NEW trigger is refused (return
+// null — newest-dropped keeps ongoing feedback like the alarm ticking). Loops/bags are not capped.
+let voiceCount = 0;
+let voicePeak = 0; // probe surface — the recorded peak must sit exactly at the cap under a burst
+function voiceBegin() {
+  if (voiceCount >= VOICE_CAP) return false;
+  voiceCount++;
+  if (voiceCount > voicePeak) voicePeak = voiceCount;
+  return true;
+}
+function voiceRelease() { voiceCount--; } // decrements on the source's onended (audio-audit §3)
+
+const LISTENER = { x: 0, y: 0, z: 0, set: false }; // the ship's live position — fed once per frame
+export function setListener(p) { // additive audio hook (combat.js's audio block) — never gameplay logic
+  if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y) || !Number.isFinite(p.z)) return;
+  LISTENER.x = p.x; LISTENER.y = p.y; LISTENER.z = p.z; LISTENER.set = true;
+}
+export function listenerPos() { return LISTENER.set ? { x: LISTENER.x, y: LISTENER.y, z: LISTENER.z } : null; }
+
+// pan = clamp(xRel / 30, −0.8, 0.8) where xRel is the source x minus the ship x (world units);
+// attenuation gain = 1.0 at d ≤ 5 u, linear down to a 0.2 floor at 45 u — far events never
+// vanish. Returns null for dead-center full-level voices (no source position / no listener):
+// UI and master voices stay centered (audio-audit §3).
+function spatial(pos) {
+  if (!pos || !LISTENER.set) return null;
+  const xRel = pos.x - LISTENER.x, dy = pos.y - LISTENER.y, dz = pos.z - LISTENER.z;
+  const d = Math.sqrt(xRel * xRel + dy * dy + dz * dz);
+  return { pan: Math.max(-0.8, Math.min(0.8, xRel / 30)), atten: d <= 5 ? 1 : Math.max(0.2, 1 - (d - 5) * 0.02) };
+}
+
+// every one-shot chain ends gain → StereoPannerNode → sfx bus. The probe ring keeps the last
+// few voices' node types + spatial result — the ?audioProbe assertions read them (chain dump,
+// near/far attenuation), kind-tagged so live combat can never contaminate a probe measurement.
+const VOICE_RING = [];
+function voiceOut(g, sp, peak, kind) {
+  const p = AC.createStereoPanner();
+  p.pan.value = sp ? sp.pan : 0;
+  g.connect(p); p.connect(sfxBus);
+  VOICE_RING.push({ kind, chain: [g.constructor.name, p.constructor.name], pan: sp ? sp.pan : 0, atten: sp ? sp.atten : 1, gain: peak, t: AC.currentTime });
+  if (VOICE_RING.length > 8) VOICE_RING.shift();
+  return p;
+}
+export function lastVoice(kind) { // the most recent voice (optionally of one kind) — probe surface
+  for (let i = VOICE_RING.length - 1; i >= 0; i--) if (!kind || VOICE_RING[i].kind === kind) return VOICE_RING[i];
+  return null;
+}
+export function voiceStats() { return { count: voiceCount, peak: voicePeak, cap: VOICE_CAP }; }
+
+const rateLast = {}; // per-event rate limits — an ATTEMPT stamps the window (burst suppression,
+// not per-shooter silence; audio-audit §3): explosion 50 ms, hit 40 ms, enemy-fire 50 ms
+// SHARED across gunners + boss volley, UI 30 ms. Player laser/alarm/proximity keep their
+// existing drivers (fire rate; frame-gated accumulators).
+function rateOk(key, ms) {
+  const now = performance.now();
+  if (rateLast[key] != null && now - rateLast[key] < ms) return false;
+  rateLast[key] = now;
+  return true;
+}
+
 let _noise = null;
 function noiseBuffer(c) {
   if (_noise) return _noise;
@@ -92,8 +174,11 @@ function noiseBuffer(c) {
 }
 
 // one-shot filtered noise burst — ignition, thuds, booms
-export function noiseBurst({ dur = 0.6, vol = 0.5, f0 = 400, f1 = 900, type = 'lowpass', q = 1, delay = 0 } = {}) {
+export function noiseBurst({ dur = 0.6, vol = 0.5, f0 = 400, f1 = 900, type = 'lowpass', q = 1, delay = 0, pos = null } = {}) {
   const c = getC(); if (!c || muted) return null;
+  if (!voiceBegin()) return null; // voice cap — refuse, never queue
+  const sp = spatial(pos);
+  const peak = clamp01(vol) * (sp ? sp.atten : 1);
   const s = c.createBufferSource(); s.buffer = noiseBuffer(c);
   const f = c.createBiquadFilter(); f.type = type; f.Q.value = q;
   const g = c.createGain();
@@ -101,39 +186,48 @@ export function noiseBurst({ dur = 0.6, vol = 0.5, f0 = 400, f1 = 900, type = 'l
   f.frequency.setValueAtTime(Math.max(20, f0), t);
   f.frequency.linearRampToValueAtTime(Math.max(20, f1), t + dur);
   g.gain.setValueAtTime(0.0001, t);
-  g.gain.linearRampToValueAtTime(clamp01(vol), t + Math.min(0.08, dur * 0.2));
+  g.gain.linearRampToValueAtTime(peak, t + Math.min(0.08, dur * 0.2));
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  s.connect(f); f.connect(g); g.connect(master);
+  s.connect(f); f.connect(g); voiceOut(g, sp, peak, 'noise');
+  s.onended = voiceRelease;
   s.start(t); s.stop(t + dur + 0.05);
   return { s, g };
 }
 
 // short tone with decay envelope — countdown beeps, UI ticks
-export function beep({ freq = 880, dur = 0.11, vol = 0.28, type = 'sine', delay = 0 } = {}) {
+export function beep({ freq = 880, dur = 0.11, vol = 0.28, type = 'sine', delay = 0, pos = null } = {}) {
   const c = getC(); if (!c || muted) return null;
+  if (!voiceBegin()) return null;
+  const sp = spatial(pos);
+  const peak = clamp01(vol) * (sp ? sp.atten : 1);
   const o = c.createOscillator(); const g = c.createGain();
   o.type = type; o.frequency.value = Math.max(20, freq);
-  o.connect(g); g.connect(master);
+  o.connect(g); voiceOut(g, sp, peak, 'beep');
   const t = c.currentTime + clamp01(delay);
   g.gain.setValueAtTime(0.0001, t);
-  g.gain.linearRampToValueAtTime(clamp01(vol), t + 0.006);
+  g.gain.linearRampToValueAtTime(peak, t + 0.006);
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.onended = voiceRelease;
   o.start(t); o.stop(t + dur + 0.05);
   return o;
 }
 
 // pitch sweep osc — laser/swoosh/etc. Returns osc for further ramps.
-export function sweep({ f0 = 880, f1 = 220, dur = 0.18, vol = 0.3, type = 'square', delay = 0 } = {}) {
+export function sweep({ f0 = 880, f1 = 220, dur = 0.18, vol = 0.3, type = 'square', delay = 0, pos = null } = {}) {
   const c = getC(); if (!c || muted) return null;
+  if (!voiceBegin()) return null;
+  const sp = spatial(pos);
+  const peak = clamp01(vol) * (sp ? sp.atten : 1);
   const o = c.createOscillator(); const g = c.createGain();
   o.type = type;
   const t = c.currentTime + clamp01(delay);
   o.frequency.setValueAtTime(Math.max(20, f0), t);
   o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
   g.gain.setValueAtTime(0.0001, t);
-  g.gain.linearRampToValueAtTime(clamp01(vol), t + Math.min(0.02, dur * 0.2));
+  g.gain.linearRampToValueAtTime(peak, t + Math.min(0.02, dur * 0.2));
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  o.connect(g); g.connect(master);
+  o.connect(g); voiceOut(g, sp, peak, 'sweep');
+  o.onended = voiceRelease;
   o.start(t); o.stop(t + dur + 0.05);
   return o;
 }
@@ -145,7 +239,8 @@ export function loopStart({ freq = 90, type = 'lowpass', q = 1.4, vol = 0.4, pla
   s.playbackRate.value = Math.max(0.05, playback);
   const f = c.createBiquadFilter(); f.type = type; f.frequency.value = Math.max(20, freq); f.Q.value = q;
   const g = c.createGain(); g.gain.value = clamp01(vol);
-  s.connect(f); f.connect(g); g.connect(master);
+  const p = c.createStereoPanner(); // loops ride the same bus shape (centered — loops carry no source position)
+  s.connect(f); f.connect(g); g.connect(p); p.connect(sfxBus);
   s.start(c.currentTime, Math.random() * 1.5);
   const bag = {
     s, f, g,
@@ -176,6 +271,9 @@ export function loopsStopAll(fadeSec = 0.25) {
 // sites use musicEvict (spares music:true bags) — engine loops die on phase exits; the music is
 // stopped ONLY by musicTo crossfades / its own stop(). Never schedules before unlock or while
 // muted — deferred into musicWanted, flushed on audioUnlock / setMuted(false).
+// stage-6 A1b: each bag now carries the sparse sequencer (src/music-seq.js) riding the bag
+// out-gain — crossfades and musicSetDuck own the plucks and hats exactly as they own the pads,
+// and bag.stop() retires the scheduler timer together with the nodes.
 
 const musicBags = { title: null, combat: null }; // max one bag per name (spec §1)
 let musicTarget = 'none'; // probe surface: current music target 'title' | 'combat' | 'none'
@@ -212,7 +310,7 @@ function makeMusicBag(c, kind) { // private: persistent oscs + per-layer gains +
   const out = c.createGain(); out.gain.value = 0; // bag out-gain — setVol multiplier, entry from silence
   const filter = c.createBiquadFilter();
   filter.type = 'lowpass'; filter.frequency.value = pad.filter.base; filter.Q.value = pad.filter.q;
-  filter.connect(out); out.connect(master);
+  filter.connect(out); out.connect(musicBus); // stage-6 A1a: the bus hangs between the bags and master
   const nodes = []; // every started oscillator — stop() retires them together
   const flfo = c.createOscillator(); flfo.type = 'sine'; flfo.frequency.value = pad.filter.lfoHz;
   const fDepth = c.createGain(); fDepth.gain.value = pad.filter.lfoDepth;
@@ -239,8 +337,30 @@ function makeMusicBag(c, kind) { // private: persistent oscs + per-layer gains +
     air.music = true;
     try { air.g.disconnect(); air.g.connect(out); } catch { /* re-route is best-effort — loopStart's own path still works */ }
   }
+  // stage-6 A1b: the sparse sequencer rides the bag out-gain. The TD-015 (?musicFault=1)
+  // injection lives IN THIS BUILD PATH — moved from the old pad-build position (audio-audit §3
+  // A1a "load-bearing"): still name === 'combat', still once via the latch, still INSIDE
+  // crossfadeTo's try (this whole function is its call site). A throw here self-cleans the
+  // partial bag (silent out-gain, nodes stopped, air bag retired) and RETHROWS into
+  // crossfadeTo's catch — whose contract below stays VERBATIM.
+  let seq = null;
+  try {
+    if (MUSIC_FAULT && kind === 'combat' && !musicFaultFired) {
+      musicFaultFired = true;
+      throw new Error('probe: forced music bag failure');
+    }
+    seq = createSequencer(c, out, kind, noiseBuffer(c), () => muted); // born with the bag — never pre-unlock
+  } catch (err) {
+    try {
+      out.gain.setTargetAtTime(0.0001, c.currentTime, 0.02);
+      for (const n of nodes) { try { n.stop(); } catch { /* already stopped — harmless */ } }
+      if (air) air.stop(0.05);
+    } catch { /* nothing left to clean — harmless */ }
+    throw err;
+  }
   const bag = {
     alive: true, music: true, kind,
+    seq, // the A1b motion layer — seqStats() reads its note counter
     setVol(v, tau = 0.15) { // 0..1 multiplier on the bag out-gain — the loopStart bag contract
       if (!this.alive || c.state === 'closed') return;
       out.gain.setTargetAtTime(clamp01(v), c.currentTime, Math.max(0.01, tau));
@@ -254,6 +374,7 @@ function makeMusicBag(c, kind) { // private: persistent oscs + per-layer gains +
         for (const n of nodes) { try { n.stop(end); } catch { /* already stopped — harmless */ } }
       } catch { /* already stopped — harmless */ }
       if (air) air.stop(fadeSec);
+      if (seq) seq.stop(); // A1b: the scheduler timer retires with the nodes
       runningLoops.delete(this);
     },
   };
@@ -268,14 +389,11 @@ function crossfadeTo(name, c) { // OVERLAPPING crossfade — both beds run toget
   // already stopped" only holds for a makeMusicBag failure — a throw BEFORE the stop (the
   // fault probe, a setVol failure) leaves the dying bed sounding with a lost handle, so the
   // catch stops it best-effort (dyingBag hoisted for that; this catch must never throw).
-  // ?musicFault=1 throws once inside the combat-bed build — the flow-check probe asserts
-  // the warn, the 'none' state, and that the phase still lands.
+  // ?musicFault=1 throws once inside the combat bed's SEQUENCER build (stage-6 A1b moved it
+  // there from the old pad-build position — the probe must exercise the new build shape);
+  // the flow-check probe asserts the warn, the 'none' state, and that the phase still lands.
   let dyingBag = null;
   try {
-    if (MUSIC_FAULT && name === 'combat' && !musicFaultFired) {
-      musicFaultFired = true;
-      throw new Error('probe: forced music bag failure');
-    }
     const other = name === 'title' ? 'combat' : 'title';
     const dying = musicBags[other];
     dyingBag = dying; // review (finding 4): visible to the catch — a pre-stop throw must not strand a sounding bed
@@ -335,6 +453,16 @@ export function musicEvict(fadeSec = 0.25) { // loopsStopAll that spares music b
   }
 }
 
+export function seqStats() { // stage-6 A1b probe surface — the sequencers' note counters
+  let notes = 0, running = 0;
+  const kinds = [];
+  for (const k of ['title', 'combat']) {
+    const b = musicBags[k];
+    if (b && b.alive && b.seq) { running++; kinds.push(k); notes += b.seq.notes(); }
+  }
+  return { notes, running, kinds };
+}
+
 let alarmOn = false; // latched trigger: hp < 25 on, hp ≥ 35 re-arms off (hysteresis — no chatter)
 let alarmT = 0;
 export function alarmTick(dt, hp, dead) { // frame-gated accumulator — never setTimeout (spec §4)
@@ -366,6 +494,7 @@ export function loopsCount() { return runningLoops.size; }
 export function vacuumDrop({ dur = 1.6, vol = 0.5 } = {}) {
   noiseBurst({ dur: dur * 0.55, vol, f0: 2400, f1: 140, type: 'lowpass', q: 0.8 });
   const c = getC(); if (!c || muted) return;
+  if (!voiceBegin()) return; // voice cap — the burst half already fired; the drop half refuses politely
   const o = c.createOscillator(); const g = c.createGain();
   o.type = 'sine';
   const t = c.currentTime;
@@ -373,8 +502,155 @@ export function vacuumDrop({ dur = 1.6, vol = 0.5 } = {}) {
   o.frequency.exponentialRampToValueAtTime(30, t + dur);
   g.gain.setValueAtTime(clamp01(vol * 0.5), t);
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  o.connect(g); g.connect(master);
+  o.connect(g); voiceOut(g, null, clamp01(vol * 0.5), 'vacuum');
+  o.onended = voiceRelease;
   o.start(t); o.stop(t + dur + 0.05);
+}
+
+/* ---------- stage-6 A1a: the sample path — LAZY decode, ±5% pitch jitter, round-robin,
+   CONSOLE-SILENT synth fallback with probe-visible status (audio-audit §3). Decode happens on
+   FIRST USE per sample (never at module eval, never in the boot window); the decode PROMISE is
+   memoized so concurrent first-plays share one decode. A failed/stalled decode plays the
+   binding synth recipe and sets the probe-visible status — a failing sample must NEVER log. ---------- */
+const SFX_FAULT = new URLSearchParams(location.search).get('sfxFault') === '1'; // ?sfxFault=1 probe switch
+const sampleState = {}; // name → { status: 'idle'|'decoding'|'decoded'|'fallback', caches }
+
+function recomputeStatus(st) {
+  if (st.caches.every((x) => x.ok)) st.status = 'decoded';
+  else if (st.caches.some((x) => x.failed)) st.status = 'fallback';
+  else st.status = 'decoding';
+}
+function dataUrlBytes(url) { // data:audio/ogg;base64,… → Uint8Array — a SYNCHRONOUS base64 decode
+  // (atob) of a 7-48 KB payload: microseconds. fetch(data:) would work but drags the Response
+  // machinery onto whatever frame happens to be the sample's FIRST USE — for the laser that is
+  // a mid-combat fire frame, and the harness's OVERDRIVE interval band measures exactly such
+  // frames. Same lazy contract (first use, memoized promise), less first-use main-thread cost.
+  const b64 = url.slice(url.indexOf(',') + 1);
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+async function decodeOne(c, url) {
+  if (SFX_FAULT) throw new Error('probe: forced sfx decode failure'); // console-silent by contract
+  const bytes = dataUrlBytes(url);
+  const size = bytes.byteLength; // captured BEFORE decodeAudioData — it DETACHES the buffer
+  const buf = await c.decodeAudioData(bytes.buffer); // data URLs decode offline — file:// safe
+  return { buf, bytes: size };
+}
+function ensureDecoded(name, c) {
+  const st = sampleState[name];
+  for (const cache of st.caches) {
+    if (cache.promise) continue;
+    cache.promise = decodeOne(c, cache.url).then((r) => {
+      cache.buf = r.buf; cache.bytes = r.bytes; cache.ok = true;
+      recomputeStatus(st);
+    }, () => {
+      cache.failed = true; // the status IS the evidence — never a console line
+      recomputeStatus(st);
+    });
+    cache.promise.catch(() => {}); // never an unhandled rejection (the harness gates on zero console noise)
+  }
+  recomputeStatus(st);
+}
+function playBuf(c, buf, pos, vol, name) { // one sample voice — cap-subject like every one-shot
+  if (!voiceBegin()) return true; // at cap refuse — the fallback must not dodge the cap either
+  const src = c.createBufferSource();
+  src.buffer = buf;
+  src.playbackRate.value = 1 + (Math.random() * 0.1 - 0.05); // ±5% pitch jitter per play (plan-of-record)
+  const g = c.createGain();
+  g.gain.value = clamp01(vol);
+  src.connect(g);
+  const sp = spatial(pos);
+  voiceOut(g, sp, clamp01(vol) * (sp ? sp.atten : 1), 'sample:' + name); // kind-tagged — the probe reads by kind, live combat can never contaminate a measurement
+  src.onended = voiceRelease;
+  try { src.start(); } catch { voiceRelease(); }
+  return true;
+}
+export function sample(name, { pos = null, vol = 1, fallback = null } = {}) { // audio.sample(name, opts) — the spec's surface
+  const c = getC();
+  if (!c || muted) return null;
+  const def = SFX_PACK[name];
+  if (!def) return null;
+  if (!sampleState[name]) {
+    sampleState[name] = { status: 'idle', caches: def.urls.map((url) => ({ url, promise: null, buf: null, bytes: 0, ok: false, failed: false })) };
+  }
+  ensureDecoded(name, c); // lazy: first use kicks the decode, out of the boot window
+  const st = sampleState[name];
+  if (st.status === 'decoded') {
+    const cache = st.caches[def.rr % st.caches.length]; // round-robin over same-family variants
+    def.rr++;
+    if (cache && cache.buf && playBuf(c, cache.buf, pos, vol, name)) return 'sample';
+  }
+  if (fallback) fallback(); // CONSOLE-SILENT synth fallback — the binding recipe from the call site
+  return 'fallback';
+}
+export function sampleStatus() { // probe surface — the sample-path truth (NOT audioLive(), the false-green class)
+  const out = {};
+  for (const name of Object.keys(SFX_PACK)) {
+    const st = sampleState[name];
+    out[name] = st
+      ? { status: st.status, files: st.caches.map((x) => ({ bytes: x.bytes, ok: x.ok })) }
+      : { status: 'idle', files: [] };
+  }
+  return out;
+}
+
+/* ---------- stage-6 A1a: named voices — sample when decoded, the audio-audit §3 wiring map's
+   binding synth recipe as the CONSOLE-SILENT fallback. Call sites stay additive one-liners. ---------- */
+export function sfxLaser() { // the player's stream shot — one per SHOT (a fan is one shot); the shipped sweep params live on as the fallback
+  sample('laser', { fallback: () => sweep({ f0: 1500, f1: 320, dur: 0.09, vol: 0.12, type: 'square' }) });
+}
+export function sfxExplosion(pos, opts = {}) { // kills + boss hits — 50 ms shared rate limit
+  if (!rateOk('explosion', 50)) return;
+  sample('explosion', { pos, fallback: () => noiseBurst(opts.heavy // the boss-node variant keeps its heavier shipped params
+    ? { dur: 0.3, vol: 0.5, f0: 1200, f1: 140 }
+    : { dur: 0.28, vol: 0.4, f0: 900, f1: 140 }) });
+}
+export function sfxHit() { // player hurt (all four damagePlayer sources) — 40 ms rate limit
+  if (!rateOk('hit', 40)) return;
+  sample('hit', { fallback: () => { // the audit's binding impact recipe
+    noiseBurst({ dur: 0.18, vol: 0.3, f0: 1800, f1: 300 });
+    beep({ freq: 200, dur: 0.12, vol: 0.15, type: 'triangle' });
+  } });
+}
+export function sfxPickup() { // powerup collect — the shipped pickupBlip stays as the fallback (verbatim)
+  sample('pickup', { fallback: pickupBlip });
+}
+export function sfxEnemyFire(pos) { // gunner bolts + the boss volley — ONE enemy-fire timbre, 50 ms SHARED limit
+  if (!rateOk('efire', 50)) return;
+  sample('efire', { pos, fallback: () => sweep({ f0: 520, f1: 140, dur: 0.14, vol: 0.12, type: 'square' }) });
+}
+export function sfxUiClick(commit = false) { // every button — title, pause pills, panels, end cards; 30 ms rate limit
+  if (!rateOk('ui', 30)) return;
+  sample('ui', { fallback: () => { // the audit's binding UI recipe; the LAUNCH commit adds the two-tone
+    beep({ freq: 1200, dur: 0.04, vol: 0.1, type: 'square' });
+    if (commit) beep({ freq: 1800, dur: 0.06, vol: 0.1, type: 'square', delay: 0.05 });
+  } });
+}
+export function bossStinger(pos) { // the boss's arrival — fires ONLY on the natural spawn path (spawnForProbe stays silent — probe determinism); ≈ 1.0 s total, the 55 Hz sub ties it to the combat bed's root
+  sweep({ f0: 90, f1: 320, dur: 0.9, vol: 0.22, type: 'sawtooth', pos });
+  beep({ freq: 55, dur: 0.7, vol: 0.3, type: 'sine', pos });
+  noiseBurst({ dur: 0.8, vol: 0.45, f0: 200, f1: 2400, type: 'bandpass', q: 2, pos });
+}
+export function victoryJingle() { // the win is MARKED — a CUE, not music (orchestrator call vs the story-014 freeze); A-minor rise, quiet by design (≤ 0.22): the title bed's dawn swell stays dominant
+  beep({ freq: 440, dur: 0.18, vol: 0.18, type: 'triangle' });
+  beep({ freq: 523.25, dur: 0.18, vol: 0.18, type: 'triangle', delay: 0.12 });
+  beep({ freq: 659.25, dur: 0.22, vol: 0.2, type: 'triangle', delay: 0.24 });
+  beep({ freq: 880, dur: 0.5, vol: 0.22, type: 'triangle', delay: 0.36 });
+  noiseBurst({ dur: 0.5, vol: 0.1, f0: 2000, f1: 5000, type: 'bandpass', q: 1, delay: 0.36 }); // sparkle
+}
+
+/* ---------- stage-6 A1a: UI click voice — module-internal delegation (main.js wiring
+   untouched, the composition root stays clear). Every button clicks: title, pause pills,
+   panel opens/close, end cards. A context-less or muted click is an honest no-op (the
+   primitives gate), so the first-ever click is silent until audioUnlock — muting itself
+   clicks-then-silences, which the audit records as correct honest behavior. ---------- */
+if (typeof document !== 'undefined' && document.addEventListener) {
+  document.addEventListener('click', (e) => {
+    const t = e.target && e.target.closest ? e.target.closest('button') : null;
+    if (t) sfxUiClick(t.id === 'btn-launch'); // the LAUNCH commit two-tone marks the one button that changes phase
+  }, true);
 }
 
 /* ---------- story-018: charged shot + pickup cues (GDD §3.2; the audio-bag pattern — every

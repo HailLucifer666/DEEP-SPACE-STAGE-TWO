@@ -28,7 +28,7 @@
 // eligible()/alive() at the wave gate and drains via clearBoss (§8.6).
 import { THREE } from 'stage-two-lib';
 import { fireEBolt } from './enemies.js';
-import { beep, noiseBurst, sweep } from './audio.js';
+import { beep, noiseBurst, bossStinger, sfxEnemyFire } from './audio.js'; // stage-6 A1a: + the arrival stinger and the shared enemy-fire timbre (additive one-liners; sweep retired with its call site — the volley joins the gunners' voice)
 
 /* ---------- tuning knobs (design: story-013 boss-fight) ---------- */
 export const BOSS_WAVE = 5;               // the boss spawns instead of wave BOSS_WAVE + 1
@@ -132,6 +132,7 @@ export function spawnBoss(playerPos) { // natural spawn: 34 u out on a random be
   const a = Math.random() * Math.PI * 2;
   B.boss.position.set(playerPos.x + Math.cos(a) * 34, playerPos.y, playerPos.z + Math.sin(a) * 34);
   resetRun();
+  bossStinger(B.boss.position); // stage-6 A1a: the arrival stinger (additive audio hook — the fight's phase change announces itself; spawnForProbe stays SILENT for probe determinism)
   return B.boss;
 }
 
@@ -163,7 +164,7 @@ function fireVolleyRound(playerPos) {
   dir.z += (Math.random() - 0.5) * VOLLEY_SPREAD;
   dir.normalize();
   fireEBolt(B.boss.position, dir);
-  sweep({ f0: 700, f1: 240, dur: 0.12, vol: 0.1, type: 'sawtooth' });
+  sfxEnemyFire(B.boss.position); // stage-6 A1a: ONE enemy-fire timbre across gunners + the boss volley (both ride the same bolt pool — one voice is the point); sample ×2 round-robin or the binding sweep fallback, 50 ms shared limit
 }
 
 function launchDash(playerPos) {

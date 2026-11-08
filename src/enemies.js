@@ -15,6 +15,7 @@
 // new (restartProbe's relative entity baseline re-primes on its first run).
 import { THREE } from 'stage-two-lib';
 import { makePool } from './pool.js';
+import { sfxEnemyFire } from './audio.js'; // stage-6 A1a: the gunner bolt-fire voice (additive audio hook, audio-audit gap 2 — the incoming-fire cue teaches dodge timing; audio.js imports only store.js + sfx-pack.js — acyclic, dep-check verifies)
 
 const RAIDER_POOL = 24;
 const E_BOLT_POOL = 24;
@@ -300,6 +301,7 @@ export function tickEnemies(dt, playerPos, api) {
         b.userData.dir.normalize();
         b.userData.life = E_BOLT_LIFE;
         b.lookAt(b.position.clone().add(b.userData.dir));
+        sfxEnemyFire(d.position); // stage-6 A1a: the bolt announces itself — sample (enemy variant ×2 round-robin) or the binding sweep fallback; 50 ms SHARED limit with the boss volley (one timbre)
       }
     } else { // rammer: seek + perpendicular sine wobble, dies on impact
       const w = Math.sin(u.t * 3 + u.phase) * E.wobble;

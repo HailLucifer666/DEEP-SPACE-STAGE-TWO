@@ -44,7 +44,8 @@ const PANEL_HTML = {
   CREDITS:
     '<p><b>MODELS</b> — hero ship + stage-one rocket made in <b>Vi3W</b> (app.vi3w.in)</p>' +
     '<p><b>FONTS</b> — Orbitron, Rajdhani (SIL OFL 1.1, Google Fonts)</p>' +
-    '<p><b>SFX / MUSIC</b> — procedural synth; Kenney CC0 pack pending handoff</p>' +
+    '<p><b>SFX</b> — Kenney Sci-Fi Sounds (CC0 1.0) + procedural synth fallbacks</p>' +
+    '<p><b>MUSIC</b> — procedural synth (pads + sequenced layer)</p>' +
     '<p class="t-note">Full license log: CREDITS.md in the repo.</p>',
 };
 function openPanel(name) {

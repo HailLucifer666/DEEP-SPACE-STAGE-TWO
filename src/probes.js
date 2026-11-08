@@ -20,6 +20,7 @@ import { resetChargeProbe } from './probes-charge.js'; // review-fix split: the 
 import { resetPowerupProbe } from './probes-powerup.js'; // review-fix split: same, for the powerup walk
 import { resetBalanceProbe } from './probes-balance.js'; // story-019: the balance walk's state bag + window hygiene live with the drive (the story-018 split precedent)
 import { resetFireProbe } from './probes-fire.js'; // stage-6 W1: the fire-path walk's state bag + window hygiene live with the drive (the story-018 split precedent)
+import './probes-audio.js'; // stage-6 A1: the self-driving audio probe (?audioProbe=1 / ?sfxFault=1) — no tick, no reset: it waits for the unlock gesture and exercises audio.js's public surface directly (imports audio.js, NEVER combat.js)
 
 // story-018 walks (review-fix split): combat.js imports the ticks from HERE (the R-e wiring,
 // unchanged) — these re-exports keep that import line byte-stable.

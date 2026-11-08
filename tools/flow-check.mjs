@@ -2324,6 +2324,91 @@ try {
   const d20g = await muteState20();
   ok("story-020: numeric garbage '2' boots unmuted (the 0-1 clamp — mutation B's discriminator)", d20g.m === false, JSON.stringify(d20g));
 
+  /* --- stage-6 A1 (?audioProbe=1, then ?sfxFault=1): samples + buses + sequencer probe pages ---
+     RED-FIRST 2026-11-08 (branch polish/stage6-experience, product untouched — only this harness
+     differs): on the pre-A1 build the probe surface is absent and no sample is wired — every new
+     assert records RED for absence (the sanctioned red class). Transcript:
+     production/qa/evidence/stage6-a1/flow-red-a1.txt.
+     audioProbe asserts (audio-audit.md §4 verification contract): every wired sample reads
+     status 'decoded' with byte evidence (> 4096 per file, > 65536 total); a scripted 30-voice
+     burst holds the voice cap (recorded peak = 24); the probe voice chain carries a
+     StereoPannerNode; the same cue at far range records LESS gain than near; muting gates new
+     voices; the sequencer note counter advances monotonically, stalls while muted, resumes in
+     phase after unmute. sfxFault: every forced decode failure lands on the synth fallback PER
+     CUE with ZERO console noise, and the phase still lands (boot → title → combat). */
+  const a1Unlock = async () => {
+    await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'z', code: 'KeyZ', windowsVirtualKeyCode: 90 });
+    await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'z', code: 'KeyZ', windowsVirtualKeyCode: 90 });
+  };
+  const a1WaitDone = async () => {
+    const t1 = Date.now();
+    let r = null;
+    for (;;) {
+      try {
+        r = await J(`(window.__stage2 && __stage2.audioProbe) || null`);
+        if (r && r.done) break;
+      } catch { r = null; }
+      if (Date.now() - t1 > 45000) break;
+      await sleep(300);
+    }
+    return r;
+  };
+  await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat&audioProbe=1' });
+  {
+    const t0 = Date.now();
+    for (;;) {
+      try { if (await J(`(window.__stage2 && __stage2.phase) || 'boot'`) === 'combat') break; } catch {}
+      if (Date.now() - t0 > 60000) break;
+      await sleep(300);
+    }
+    await a1Unlock();
+  }
+  const apx = (await a1WaitDone()) || {};
+  ok('A1 probe: drive completed (probe surface present, honest mode, no drive error)',
+    apx.done === true && apx.err == null && apx.mode === 'audioProbe', JSON.stringify(apx).slice(0, 400));
+  const apSamples = apx.samples || {};
+  const smpNames = Object.keys(apSamples);
+  ok('A1 probe: every wired sample decoded with byte evidence (> 4096 per file, > 65536 total)',
+    smpNames.length === 6 && smpNames.every((n) => apSamples[n].status === 'decoded' &&
+      apSamples[n].files.length > 0 && apSamples[n].files.every((f) => f.bytes > 4096)) &&
+      smpNames.reduce((a, n) => a + apSamples[n].files.reduce((x, f) => x + f.bytes, 0), 0) > 65536,
+    JSON.stringify(apSamples));
+  ok('A1 probe: voice cap holds under a 30-voice burst (recorded peak = cap 24)',
+    apx.cap === 24 && apx.capPeak === 24, JSON.stringify({ cap: apx.cap, capPeak: apx.capPeak }));
+  ok('A1 probe: the probe voice chain carries a StereoPannerNode (gain → panner → bus)',
+    Array.isArray(apx.chain) && apx.chain.some((t) => /stereopanner/i.test(t)), JSON.stringify(apx.chain || null));
+  ok('A1 probe: distance attenuation (same cue far records LESS gain than near; near is full level)',
+    !!apx.near && !!apx.far && apx.near.atten >= 0.99 && apx.far.atten < apx.near.atten,
+    JSON.stringify({ near: apx.near, far: apx.far }));
+  ok('A1 probe: mute gates new voices (voice count unchanged while muted)',
+    !!apx.mute && apx.mute.unchanged === true, JSON.stringify(apx.mute || null));
+  ok('A1 probe: sequencer note counter advances monotonically (reads ≥ 1 s apart, strictly greater)',
+    !!apx.seq && apx.seq.b > apx.seq.a, JSON.stringify(apx.seq || null));
+  ok('A1 probe: sequencer stalls while muted and resumes in phase after unmute',
+    !!apx.seq && apx.seq.mutedB === apx.seq.b && apx.seq.resumed > apx.seq.mutedB, JSON.stringify(apx.seq || null));
+  ok('CONSOLE [] (audioProbe page)', errs.length === 0, errs.join(' | '));
+
+  await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat&sfxFault=1' });
+  {
+    const t0 = Date.now();
+    for (;;) {
+      try { if (await J(`(window.__stage2 && __stage2.phase) || 'boot'`) === 'combat') break; } catch {}
+      if (Date.now() - t0 > 60000) break;
+      await sleep(300);
+    }
+    await a1Unlock();
+  }
+  const sfx = (await a1WaitDone()) || {};
+  ok('A1 fault: drive completed on the fault page (honest mode, no drive error)',
+    sfx.done === true && sfx.err == null && sfx.mode === 'sfxFault', JSON.stringify(sfx).slice(0, 300));
+  const sfSamples = sfx.samples || {};
+  ok('A1 fault: synth fallback fired PER CUE (every wired sample reads fallback, none decoded)',
+    Object.keys(sfSamples).length === 6 && Object.keys(sfSamples).every((n) => sfSamples[n].status === 'fallback'),
+    JSON.stringify(sfSamples));
+  ok('A1 fault: the phase still lands (combat entered under the forced decode failures)',
+    (await evl(`(window.__stage2 && __stage2.phase) || 'boot'`)) === 'combat');
+  ok('CONSOLE [] (sfxFault page)', errs.length === 0, errs.join(' | '));
+
   /* --- T1 RECORD-0 suppression (observer page; one-time Page.addScriptToEvaluateOnNewDocument
      capability, registered here for THIS page only — the harness's page setup grows once,
      contained). A nonzero record is seeded RAW, the page is navigated, and an init-script
