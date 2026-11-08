@@ -62,4 +62,11 @@ frame rate. Nothing widened, nothing altered, all reds recorded
 (`build/flow-master-merge-run1.txt`, `-run3.txt`; run 2 not captured to file). The
 close tag is held until one green `flow-check` on master with the machine idle.
 
+**Run 4 (same day, ~1 h later, CPU load 25%): `FLOW-CHECK PASS — 255 passed, 0 failed`
+on master** (`build/flow-master-merge-run4.txt`, `CONSOLE []` on every page) — the
+stall classification confirmed: the machine calmed, the band passed, nothing changed
+in between. Master-run population for the day: 254/1 ×3 (stall) then 255/0 ×1 (calm),
+on a tree that also read 255/0 ×3 on the branch. The close tag
+`good-2026-11-09-stage6` is applied to the records commit.
+
 The gates reduce risk; they do not prove the absence of bugs.

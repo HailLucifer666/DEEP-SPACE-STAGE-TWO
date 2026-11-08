@@ -82,7 +82,11 @@ byte-identical tree read **255/0 three times earlier the same day** at nominal f
 rate (A1 ×2 + the close battery). Measured population for the class today: 5 reds /
 ~14 full runs, all with elevated frameDt. Per policy: nothing widened, nothing altered,
 every red recorded. UNBLOCK: one `flow-check` green run on master with the machine idle
-(other browsers/apps closed) → tag `good-2026-11-09-stage6`. The experiential verdicts
+(other browsers/apps closed) → tag `good-2026-11-09-stage6`. **EXECUTED same day:
+run 4 with CPU load at 25% read `FLOW-CHECK PASS — 255 passed, 0 failed` on master
+(`build/flow-master-merge-run4.txt`) — the stall classification confirmed (load
+cleared, band passed, nothing changed in between); the close tag is applied to this
+commit.** The experiential verdicts
 (pipper/lock/HUD/music feel) remain OWED — one playtest covers the stage-3/4/5/6 owed
 verdicts. Push, repo publication, TD-007 and TD-008 remain HOLD (unchanged stage-5
 checkpoint defaults; nothing left the machine).
