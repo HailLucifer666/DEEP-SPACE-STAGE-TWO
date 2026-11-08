@@ -6,6 +6,7 @@
 // Every listener only records, never interprets.
 import { audioUnlock, audioSuspend, audioResume, setMuted, isMuted } from './audio.js';
 import { refreshSoundButton } from './hud.js'; // rider D (2026-11-07): the M path refreshes the button label like the click path — hud.js imports only store.js + audio.js, so this edge is acyclic (dep-check proves it)
+import { toggleLock } from './aim-assist.js'; // stage-6 W1: T in combat toggles the aim lock — the mute pattern (the branch calls the owner directly; aim-assist imports only leaves, dep-check acyclic)
 import * as COMBAT from './combat.js';
 import * as TRANSITION from './transition.js';
 import { nextNose, nextTop } from './ship-fix.js';
@@ -21,6 +22,12 @@ export let paused = false;
 function setPaused(p) {
   if (ctx.probs.phase !== 'combat') return;
   paused = p;
+  // T1 (stage 6, polish-audit CRITICAL): pause does NOT change phase, so body.playing — and
+  // its cursor:none — stays on while the pause card is up. The card now carries real pills,
+  // so the OS cursor must return for exactly the pause window: body.paused wins the
+  // !important cascade over body.playing * (higher specificity), and it clears on resume /
+  // any phase change (phases.js setPhase removes it defensively).
+  document.body.classList.toggle('paused', p);
   if (p) COMBAT.pauseCancelCharge(); // story-018 review fix: a pause WIPES the charge accumulator —
   // a release DURING the pause (the window pointerup still flips input.fire while tickCombat is
   // halted) must never fire the charged bolt on resume. Direction-flipped equivalent of the
@@ -45,6 +52,7 @@ function onKeydown(e) {
     if (e.code === 'Space') { e.preventDefault(); input.boost = true; } // Space = boost (rebind 2026-11-03); fire is LMB-only
     if (e.code === 'KeyP' || e.code === 'Escape') { e.preventDefault(); setPaused(!paused); }
     if (e.code === 'KeyM') { setMuted(!isMuted()); refreshSoundButton(); } // rider D (2026-11-07, story-020 spec-review ruling): the KeyM path now refreshes the label IN-SESSION — pre-riders only the btn-sound click path (main.js) and the boot warm block did, so a muted session read "[ SOUND: ON ]" until reload
+    if (e.code === 'KeyT') toggleLock(); // stage-6 W1: aim-lock toggle — write-through to the store (default ON; ?lock=0 forces OFF for probe pages, where this is a no-op). KeyT is otherwise bound only in the closed spin-viewer branch above — no conflict.
     return;
   }
   if (ctx.probs.phase === 'transition') { e.preventDefault(); TRANSITION.transitionSkip(); return; }
@@ -79,6 +87,13 @@ export function onTitleAction(kind) {
   audioUnlock(); // first gesture hands the context to the world (§8.3)
   if (kind === 'launch') setPhase('pad');
   else setPhase('combat'); // SKIP TO COMBAT is a real path since S4
+}
+
+// T1: the pause card's RESUME pill — the onTitleAction pattern (an exported action main.js
+// wires; setPaused stays module-internal so the pause state keeps ONE owner). setPaused's own
+// combat guard makes this a no-op outside combat, so a stale click can never land anywhere.
+export function onPauseAction(kind) {
+  if (kind === 'resume') setPaused(false);
 }
 
 /* ---------- listener attachment (story-011) ---------- */

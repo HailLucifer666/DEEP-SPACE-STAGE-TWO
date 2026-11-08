@@ -41,6 +41,7 @@ const BL = {
   marks: null, rammerKill: null, chargedKill: null, firedChargedMark: 0,
   x2Marks: null, x2Target: null,
   boss: null, preScore: 0, preReports: 0, highscore: null,
+  banner: null, // stage-6 H1: the natural-increment wave-banner observation (stage 8.5)
 };
 
 export function resetBalanceProbe() { // probes.js resetProbes delegates (the story-018 split's call order — last)
@@ -53,6 +54,7 @@ export function resetBalanceProbe() { // probes.js resetProbes delegates (the st
     marks: null, rammerKill: null, chargedKill: null, firedChargedMark: 0,
     x2Marks: null, x2Target: null,
     boss: null, preScore: 0, preReports: 0, highscore: null,
+    banner: null, // stage-6 H1
   });
   delete window.__stage2.balanceProbe; // a fresh combat must never inherit the previous walk's report
 }
@@ -88,6 +90,7 @@ function latchBalance(C) { // the report latch — shared by the completion path
     wave3: BL.wave3, rate: BL.rate, table: BL.table,
     telemetry: { rammerKill: BL.rammerKill, chargedKill: BL.chargedKill },
     boss: BL.boss, highscore: BL.highscore,
+    banner: BL.banner, // stage-6 H1: the natural-increment wave-banner observation
   };
   window.__stage2.balanceProbe = probe;
   window.__stage2.balanceProbeLive = false;
@@ -97,7 +100,11 @@ function latchBalance(C) { // the report latch — shared by the completion path
 export function balanceProbeTick(dt, C, env) {
   if (!BALANCE_PROBE || BL.done) return;
   BL.t += dt;
-  cpPin(C, true); // wave pinned 1 with a 99 s gap — wavesTick can never fire under the drive (probes run last in tickCombat)
+  // stage-6 H1: stage 8.5 runs ONE NATURAL wave increment (the banner re-arm observation) —
+  // the pin must yield for exactly that stage (restored at its end). Every other stage keeps
+  // the wave pinned 1 with a 99 s gap — wavesTick can never fire under the drive (probes run
+  // last in tickCombat).
+  if (BL.stage !== 8.5) cpPin(C, true);
   window.__stage2.balanceProbeLive = true;
 
   switch (BL.stage) {
@@ -249,9 +256,32 @@ export function balanceProbeTick(dt, C, env) {
           draws: BL.streamSample.map((v) => +v.toFixed(4)),
         },
       };
-      BL.stage = 9; // on to the waves 1-5 composition table
+      BL.stage = 8.5; // stage-6 H1: the natural-increment banner stage runs before the table walk
+      BL.mark = BL.t; C.waveGapT = 0; // the pin's 99 s gap must not survive into the unpinned stage
       return;
     }
+    case 8.5: { // stage-6 H1: ONE NATURAL wave increment — the field is clear (every rate spawn
+      // was killed same-tick), so wavesTick counts its 1.6 s gap, grants the wave-clear bonus,
+      // and increments to wave 2; the banner writer re-arms at that increment point (the entry
+      // banner rode wave 1, so the sample requires wave ≥ 2). The bonus is absorbed by the
+      // delta-based score/telemetry asserts (every mark is captured after this stage). The
+      // increment's wave-2 spawns are drained same-tick at the stage end and the pin semantics
+      // are restored, so the table walk below runs exactly as before.
+      const el = document.getElementById('wave-banner');
+      if (C.bannerT > 0 && C.wave >= 2) {
+        BL.banner = BL.banner || { seen: false, wave: 0, bannerT: 0, elSeen: false, elVisible: false, hiddenAfter: false };
+        BL.banner.seen = true;
+        BL.banner.wave = C.wave;
+        BL.banner.bannerT = +C.bannerT.toFixed(2);
+        if (el) { BL.banner.elSeen = true; if (el.hidden === false) BL.banner.elVisible = true; }
+      }
+      if (BL.t >= BL.mark + 4.5) { // the ~2 s window has long closed (increment ≈ 1.6 s + window 2 s)
+        if (BL.banner) BL.banner.hiddenAfter = el ? el.hidden === true : false;
+        cpFieldClear(C); // drain the increment's wave-2 spawns (queued before any stagger fired)
+        cpPin(C, true); // pin semantics restored for the table walk
+        BL.stage = 9;
+      }
+      return; }
     case 9: // the table walk, wave tw: start through the REAL spawn path and observe the kinds
       if (BL.tw > 6) { BL.table = { rows: BL.rows, waveCounts: BL.waveCounts, w6: BL.w6 }; BL.stage = 14; return; }
       cpFieldClear(C);

@@ -1,0 +1,7 @@
+PASS pause-freeze {"t1":2.6997999999999998,"t2":2.6997999999999998,"pausedFlag":true,"pauseHidden":false}
+PASS pause-audio {"audioBefore":true,"audioPaused":false}
+PASS resume {"t2":2.6997999999999998,"t3":3.433099999999998,"audioResumed":true}
+PASS mute {"muted1":true,"muted2":false}
+PASS holdfire {"boltsAfterHold":4}
+PASS honest {"bad":[]}
+CONSOLE []

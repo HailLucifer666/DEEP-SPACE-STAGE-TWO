@@ -12,9 +12,10 @@ import * as ENEMIES from './enemies.js'; // rider B (2026-11-07): lastRollProbe 
 import { audioUnlock, isAudioLive, setMuted, isMuted, restoreMuted,
   musicState, loopsCount, alarmActive } from './audio.js';
 import { loadAssets, assetReport } from './assets.js';
-import { getStorage, readHighscore, readMuted, readMutedRaw } from './store.js';
+import { getStorage, readHighscore, readMuted, readMutedRaw, readLock, readLockRaw } from './store.js';
+import { restoreLock, enabled as lockEnabled } from './aim-assist.js'; // stage-6 W1: the aim-lock choice restores beside the mute restore (same warm block — READ, never write; the muted/mutedRaw getter mirrors below)
 import { setPhase, initPhases } from './phases.js';
-import { input, paused, attachInput, onTitleAction, initInput } from './input.js';
+import { input, paused, attachInput, onTitleAction, onPauseAction, initInput } from './input.js';
 import { loop, fps, dprCtl, initLoop, composerIsDead } from './loop.js';
 import { ui, openPanel, closePanel, refreshSoundButton, refreshRecordLine, onResetClick, disarmReset, OVERLAY_ELMS, initHud } from './hud.js';
 import { loadRocket, loadPropRocket, makeFallbackRocket, setupSpinViewer, applySpinFix, activeFix, rocketShape, spinRig, initRocket } from './rocket.js';
@@ -110,6 +111,11 @@ function wireUi() { // (c) UI wiring
   ui.btnCredits?.addEventListener('click', () => openPanel('CREDITS'));
   ui.btnReset?.addEventListener('click', onResetClick);
   ui.btnSound?.addEventListener('click', () => { setMuted(!isMuted()); refreshSoundButton(); });
+  // T1: the pause card's pills. RESUME rides input.js's setPaused(false) — the same path P/ESC
+  // take; SOUND mirrors the btn-sound click line above, and refreshSoundButton now syncs BOTH
+  // pills (rider-D rule: every toggle path refreshes the label in-session).
+  ui.pauseResume?.addEventListener('click', (e) => { e.currentTarget.blur(); onPauseAction('resume'); });
+  ui.pauseSound?.addEventListener('click', (e) => { e.currentTarget.blur(); setMuted(!isMuted()); refreshSoundButton(); });
   ui.panelClose?.addEventListener('click', closePanel);
   ui.goReplay?.addEventListener('click', () => setPhase('pad')); ui.vicReplay?.addEventListener('click', () => setPhase('pad')); // story-014: both cards' REPLAY — same pad landing
   ui.goSkip?.addEventListener('click', () => setPhase('combat'));
@@ -153,7 +159,7 @@ function boot() {
     // precedes the first gesture, and ensure() reads `muted` when the context is first built, so
     // a persisted-muted boot comes up silent at the master gain; if a gesture during load beat
     // it, restoreMuted's context branch applies the gain to the live context.
-    window.setTimeout(() => { mark('storeStart'); getStorage(); mark('storeEnd'); refreshRecordLine(); restoreMuted(readMuted()); refreshSoundButton(); }, 0);
+    window.setTimeout(() => { mark('storeStart'); getStorage(); mark('storeEnd'); refreshRecordLine(); restoreMuted(readMuted()); restoreLock(readLock()); refreshSoundButton(); }, 0); // stage-6 W1: restoreLock rides the same warm block — READS the stored value, never writes (byte-identical survival)
     if (SPIN) setupSpinViewer(); // after title.enter — it re-hides the overlay (closed viewer)
     if (GOTO === 'launch') window.setTimeout(() => setPhase('pad'), 200);
     if (GOTO === 'transition') window.setTimeout(() => setPhase('transition'), 200);
@@ -219,6 +225,8 @@ window.__stage2 = {
   get paused() { return paused; },
   get muted() { return isMuted(); },
   mutedRaw: () => readMutedRaw(), // story-020: the RAW stage2.muted value — corrupt seeds visible to the harness (store.js guarded read)
+  get lock() { return lockEnabled(); }, // stage-6 W1: the live aim-lock flag (the muted getter's mirror; ?lock=0 reads OFF)
+  lockRaw: () => readLockRaw(), // stage-6 W1: the RAW stage2.lock value — corrupt seeds visible to the harness (the mutedRaw mirror)
   get lastRoll() { return ENEMIES.lastRollProbe(); }, // rider B (2026-11-07): the elite-roll diagnostic surface for the harness — null when ?balanceProbe=1 is off (the record is gated in enemies.js), the last spawn's roll when on (the mutedRaw precedent)
   bootMs: () => Math.round(performance.now() - PERF_T0),
   // SHIP1: numbers-only orientation check (patch C). plumeAnchorY lists the y of every

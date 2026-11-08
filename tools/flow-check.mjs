@@ -89,6 +89,14 @@ try {
 
   await poll(`({p: window.__stage2 && __stage2.phase})`, (v) => v.p === 'title', 140000, 400);
   ok('boot → title', await evl(`!document.getElementById('title').hidden`) === true);
+  // T1 (stage 6): inline SVG favicon in the template head — a data URL (no external file, no
+  // network fetch on file://), and the head must stay console-silent about it (this page's
+  // terminal CONSOLE [] assert is the witness). RED-FIRST 2026-11-08 (branch polish/stage6-
+  // experience, product untouched — only this harness differs): the pre-T1 head has no
+  // <link rel="icon"> — RED for absence. Transcript: production/qa/evidence/stage6-t1/flow-red-t1.txt.
+  ok('T1: favicon link present in the head (inline SVG data URL)',
+    await evl(`(/^data:image\\/svg\\+xml/.test((document.querySelector('link[rel="icon"]') || {}).href || ''))`) === true,
+    await evl(`JSON.stringify((document.querySelector('link[rel="icon"]') || {}).href || null)`));
 
   /* --- SKIRMISH path --- */
   await evl(`document.getElementById('btn-skip').click()`);
@@ -111,6 +119,119 @@ try {
   ok('wave 1 spawns zero drones (story-012)', cs12.drones === 0, `drones=${cs12.drones}`);
   ok('wave 1 raider count unchanged (4)', cs12.enemies === 4, `enemies=${cs12.enemies}`);
   ok('boss slot null before spawn (story-013 keep-passing)', cs12.boss === null, `boss=${JSON.stringify(cs12.boss)}`);
+
+  /* --- stage-6 H1 (HUD rebuild): labeled meters + the wave banner at combat entry ---
+     RED-FIRST 2026-11-08 (branch polish/stage6-experience, product untouched — only this
+     harness + the probe drives differ): #hud-bars carried the story-004 text-stack markup
+     (no .meter rows) and #wave-banner did not exist — every assert below records RED for
+     absence (the sanctioned red class). Transcript: production/qa/evidence/stage6-h1/
+     flow-red-h1.txt. The meters are a presentation-only restyle of the SAME change-gated
+     writer values (honesty law: label + track + fill, no new values — the fill IS the value
+     the text wrote). The banner is the #combat-online reveal grammar re-instanced at the top
+     strip (input-events-none via #hud; never covers the reticle center — audit F3 budget). */
+  const h1Entry = await J(`({
+    meters: (() => { const bars = document.getElementById('hud-bars'); if (!bars) return null;
+      const rows = [...bars.querySelectorAll('.meter')];
+      return { n: rows.length,
+        labels: rows.map((r) => (r.querySelector('.ml') || {}).textContent || ''),
+        fills: rows.map((r) => { const i = r.querySelector('.mtrack i'); return i ? i.style.width : null; }) };
+    })(),
+    cs: __stage2.combatState(),
+    banner: (() => { const el = document.getElementById('wave-banner');
+      return el ? { hidden: el.hidden, text: el.textContent } : null; })(),
+  })`);
+  const h1m = h1Entry.meters || { n: 0, labels: [], fills: [] }, h1b = h1Entry.banner;
+  ok('H1: labeled HULL/SHIELD/BOOST meter rows at combat entry — label + track + fill, fills equal the combatState values (honesty: same values the text stack wrote)',
+    h1m.n === 3 && h1m.labels[0] === 'HULL 100' && h1m.labels[1] === 'SHIELD 50' && h1m.labels[2] === 'BOOST 100%' &&
+    h1m.fills[0] === '100%' && h1m.fills[1] === '100%' && h1m.fills[2] === '100%' &&
+    h1Entry.cs.hp === 100 && h1Entry.cs.shield === 50,
+    JSON.stringify({ meters: h1m, cs: { hp: h1Entry.cs.hp, shield: h1Entry.cs.shield, boost: h1Entry.cs.boost } }));
+  ok('H1: wave banner shows at the entry wave start (WAVE 1 — the #combat-online reveal grammar re-instance)',
+    !!h1b && h1b.hidden === false && h1b.text === 'WAVE 1', JSON.stringify(h1b));
+  let bannerHid = false;
+  {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await J(`(() => { const el = document.getElementById('wave-banner'); return el ? { hidden: el.hidden } : null; })()`);
+      if (v && v.hidden === true) { bannerHid = true; break; }
+      if (Date.now() - t0 > 5000) break;
+      await sleep(200);
+    }
+  }
+  ok('H1: wave banner auto-hides within the ~2 s window (transient — not a permanent second score line)', bannerHid === true, `hid=${bannerHid}`);
+
+  /* --- T1 pause card (stage 6): real keys + real element clicks, run while the fight is fresh ---
+     The pause card ships two pills (RESUME / SOUND) with the cursor precondition from the
+     polish audit (ux-audit F3 CRITICAL): pause does NOT change phase, and body.playing carries
+     cursor:none — so setPaused must toggle a body class that restores the OS cursor for the
+     card, and clear it on resume. The SOUND pill mirrors the session mute state and must
+     live-refresh on BOTH toggle paths (the M key and the click — the rider-D rule the title
+     pill already obeys). RESUME must unpause through input.js's setPaused(false) — the same
+     code path P/ESC take. RED-FIRST 2026-11-08 (branch polish/stage6-experience, product
+     untouched — only this harness differs): on the pre-T1 build the pause card is text-only —
+     #pause-resume/#pause-sound are absent, body never gains .paused (computed cursor stays
+     'none' — the audit-CRITICAL defect, buttons present but unseeable), and no in-card label
+     can exist. Every assert below records RED for that absence reason; the runs are kept
+     alive past each red with the KeyP fallback so every red gets recorded.
+     Transcript: production/qa/evidence/stage6-t1/flow-red-t1.txt. */
+  await key('KeyP', 'keydown'); await key('KeyP', 'keyup'); // REAL pause path (input.js setPaused)
+  await poll(`({p: !document.getElementById('pause').hidden})`, (v) => v.p, 5000);
+  const pzT1 = await J(`({
+    paused: window.__stage2.paused,
+    bodyPaused: document.body.classList.contains('paused'),
+    bodyCursor: getComputedStyle(document.body).cursor,
+    resume: (document.getElementById('pause-resume') || {}).textContent || null,
+    sound: (document.getElementById('pause-sound') || {}).textContent || null,
+    resumeCursor: document.getElementById('pause-resume') ? getComputedStyle(document.getElementById('pause-resume')).cursor : null,
+    muted: window.__stage2.muted,
+  })`);
+  ok('T1 pause: card up with RESUME + SOUND pills (existing .pill grammar)',
+    !!pzT1.resume && !!pzT1.sound && pzT1.resume.includes('RESUME') && pzT1.sound.startsWith('[ SOUND:'), JSON.stringify(pzT1));
+  ok('T1 pause: body.paused restores the OS cursor (audit-CRITICAL — cursor:none must not own the card)',
+    pzT1.bodyPaused === true && pzT1.bodyCursor === 'auto' && pzT1.resumeCursor === 'auto', JSON.stringify(pzT1));
+  ok('T1 pause: SOUND pill label mirrors the session mute state (rider-D grammar, in-card)',
+    pzT1.sound === `[ SOUND: ${pzT1.muted ? 'OFF' : 'ON'} ]`, JSON.stringify({ sound: pzT1.sound, muted: pzT1.muted }));
+  await evl(`(document.getElementById('pause-resume') || { click(){} }).click()`); // the click path main.js wires
+  await sleep(400);
+  const rzT1a = await J(`({ p: window.__stage2.paused, h: document.getElementById('pause').hidden })`);
+  if (rzT1a.p) { // red-run fallback: the pre-T1 build has no button — restore with the key path so the run lives on
+    await key('KeyP', 'keydown'); await key('KeyP', 'keyup'); await sleep(300);
+  }
+  ok('T1 pause: RESUME click unpauses (same setPaused(false) path as P/ESC)',
+    rzT1a.p === false && rzT1a.h === true, JSON.stringify(rzT1a));
+  await key('KeyP', 'keydown'); await key('KeyP', 'keyup'); // pause again for the sound-pill battery
+  await poll(`({p: !document.getElementById('pause').hidden})`, (v) => v.p, 5000);
+  await evl(`(document.getElementById('pause-sound') || { click(){} }).click()`);
+  await sleep(200);
+  const s1T1 = await J(`({ m: window.__stage2.muted,
+    pauseLabel: (document.getElementById('pause-sound') || {}).textContent || null,
+    titleLabel: (document.getElementById('btn-sound') || {}).textContent || null })`);
+  ok('T1 pause: SOUND click mutes in-session and live-syncs BOTH pills (pause + title)',
+    s1T1.m === true && s1T1.pauseLabel === '[ SOUND: OFF ]' && s1T1.titleLabel === '[ SOUND: OFF ]', JSON.stringify(s1T1));
+  await evl(`(document.getElementById('pause-sound') || { click(){} }).click()`);
+  await sleep(200);
+  const s2T1 = await J(`({ m: window.__stage2.muted,
+    pauseLabel: (document.getElementById('pause-sound') || {}).textContent || null,
+    titleLabel: (document.getElementById('btn-sound') || {}).textContent || null })`);
+  ok('T1 pause: SOUND click unmutes (toggle both ways, labels re-sync)',
+    s2T1.m === false && s2T1.pauseLabel === '[ SOUND: ON ]' && s2T1.titleLabel === '[ SOUND: ON ]', JSON.stringify(s2T1));
+  await key('KeyM', 'keydown'); await key('KeyM', 'keyup'); await sleep(150); // the M path while paused — the label must follow (rider-D mirror)
+  const s3T1 = await J(`({ m: window.__stage2.muted,
+    pauseLabel: (document.getElementById('pause-sound') || {}).textContent || null })`);
+  ok('T1 pause: M while paused live-refreshes the pause SOUND label (rider-D mirror, no click)',
+    s3T1.m === true && s3T1.pauseLabel === '[ SOUND: OFF ]', JSON.stringify(s3T1));
+  await key('KeyM', 'keydown'); await key('KeyM', 'keyup'); await sleep(150); // restore unmuted — the story-020 pages later in this run read the persisted raw key
+  await evl(`(document.getElementById('pause-resume') || { click(){} }).click()`);
+  await sleep(300);
+  let rzT1b = await J(`({ p: window.__stage2.paused, h: document.getElementById('pause').hidden,
+    bp: document.body.classList.contains('paused'), c: getComputedStyle(document.body).cursor })`);
+  if (rzT1b.p) { // red-run fallback (pre-T1 build: no button)
+    await key('KeyP', 'keydown'); await key('KeyP', 'keyup'); await sleep(300);
+    rzT1b = await J(`({ p: window.__stage2.paused, h: document.getElementById('pause').hidden,
+      bp: document.body.classList.contains('paused'), c: getComputedStyle(document.body).cursor })`);
+  }
+  ok('T1 pause: RESUME closes the card, clears body.paused, cursor re-hides into play',
+    rzT1b.p === false && rzT1b.h === true && rzT1b.bp === false && rzT1b.c === 'none', JSON.stringify(rzT1b));
 
   /* --- WASD + boundary probes (story-004 throttle+turn / story-005 soft boundary) ---
      Mutation evidence 2026-11-03: this full probe set ran against the story-002 build
@@ -463,6 +584,7 @@ try {
   await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat&bossProbe=1' });
   let bp = null;
   let hudBossSeen = false;
+  let w1BossSamples = 0, w1BossKindLock = false; // stage-6 W1 rider (sampled below)
   {
     const t0 = Date.now();
     for (;;) {
@@ -470,9 +592,22 @@ try {
       // execution context dies — raw reads throw and would kill the run before the asserts
       try {
         const csx = await J(`(window.__stage2 && __stage2.combatState) ? __stage2.combatState() : null`);
-        if (csx && csx.boss) { // sample the HUD line while the boss lives — independent of the probe's own record
-          const hud = await evl(`document.getElementById('hud-bars').textContent`);
-          if (hud.includes('BOSS')) hudBossSeen = true;
+        if (csx && csx.boss) { // sample the boss BAR element while the boss lives — independent of the probe's own record
+          // stage-6 H1 SANCTIONED REWRITE (2026-11-08, stage-5 precedent one-shot-work/stage-5/
+          // GATE.md:18-22): this sampling read the #hud-bars TEXT for 'BOSS' (the story-013
+          // text-line presentation of boss HP). H1 removes the text line from the writer's
+          // string — the dedicated #boss-bar element owns boss HP now (polish-plan H1-1/2) —
+          // so the sample reads the element's unhidden + labeled state instead. Exact coverage
+          // preserved: the same alive-window visibility witness, surface moved text → element.
+          const bb = await J(`(() => { const el = document.getElementById('boss-bar');
+            return el ? { hidden: el.hidden, labeled: (el.textContent || '').includes('BOSS') } : null; })()`);
+          if (bb && bb.hidden === false && bb.labeled) hudBossSeen = true;
+          // stage-6 W1 rider: the lock surface, sampled live while the boss lives (it sweeps its
+          // orbit through every azimuth — including the nose cone). The bracket must never
+          // anchor the boss: raiders locking is legitimate and ignored; only a boss-kind target
+          // reds. The DETERMINISTIC exclusion proof is the fireProbe walk's boss stage; this is
+          // the in-the-wild second witness. Pre-W1 build: csx.lockTarget undefined → samples stay 0.
+          if (csx.lockTarget !== undefined) { w1BossSamples++; if (csx.lockTarget && csx.lockTarget.kind === 'boss') w1BossKindLock = true; }
         }
         bp = await J(`(window.__stage2 && window.__stage2.bossProbe) || null`);
       } catch { bp = null; }
@@ -536,10 +671,47 @@ try {
   ok('boss death slow-mo engaged', bpX.deathSlowmo === true, `slowmo=${bpX.deathSlowmo}`);
   ok('bossDefeated reported via api.report', bpX.bossDefeated && bpX.bossDefeated.slowmo === true,
     JSON.stringify(bpX.bossDefeated || null)); // the drive observed the death report (lastReport is single-slot; the probe carries what it saw)
-  ok('BOSS HP line shows in #hud-bars while alive', bpX.hudLine === true || hudBossSeen, `probe=${bpX.hudLine} sampled=${hudBossSeen}`);
-  ok('BOSS HP line gone from #hud-bars after death', !((await evl(`document.getElementById('hud-bars').textContent`)).includes('BOSS')));
+  /* --- stage-6 H1 SANCTIONED ASSERT REWRITES (stage-5 precedent one-shot-work/stage-5/
+     GATE.md:18-22) — REWRITTEN 2026-11-08, branch polish/stage6-experience.
+     The two story-013 BOSS-line asserts read the #hud-bars TEXT LINE ('BOSS ▍▍▍ 62%'). H1
+     moves boss HP to a dedicated #boss-bar element fed from BOSS.state() {hp,maxHp}
+     (polish-plan H1-1/H1-2): the text line is removed from the writer's string, so the text
+     asserts would keep pinning a removed presentation. Exact-coverage mapping:
+       'BOSS HP line shows in #hud-bars while alive' → 'H1: BOSS HP bar element shows while
+         alive' — the drive's BP.hud field AND this harness's independent sampling were
+         rewritten to the same alive-window witness on the new surface (element unhidden +
+         labeled). Coverage identical, surface text → element.
+       'BOSS HP line gone from #hud-bars after death' → 'H1: BOSS HP bar element gone after
+         death' — same post-death absence, read as the element's hidden state (the writer
+         hides it the moment BOSS.state() drains; clearCombat drains it again).
+     PRESERVED contract: the "never render BOSS 0% while dying" rule (boss.js:389's comment)
+     is now ASSERTED — the drive samples the dying window and the bar must be absent (below).
+     BYTE-INTACT: 'combatState().boss drains to null after death' (next assert) untouched;
+     the W1 lock-sampling assert after it untouched.
+     RED-FIRST 2026-11-08: on the pre-H1 build #boss-bar does not exist — every rewritten
+     assert reads null/undefined → RED (element absence, the sanctioned red). Transcript:
+     production/qa/evidence/stage6-h1/flow-red-h1.txt. */
+  ok('H1: BOSS HP bar element shows while alive (unhidden + labeled; rewrites the story-013 BOSS text-line assert — sanctioned, see the block above)',
+    bpX.hudLine === true || hudBossSeen, `probe=${bpX.hudLine} sampled=${hudBossSeen}`);
+  ok('H1: BOSS HP bar element gone after death (hidden — rewrites the gone-from-#hud-bars assert; sanctioned, see the block above)',
+    (await evl(`(document.getElementById('boss-bar') || { hidden: null }).hidden`)) === true);
+  ok('H1: boss bar fill tracks hp (the 5%-stepped rounded fraction of BOSS.state() hp/maxHp, change-gated — the charge-meter pattern; the drive sampled the fill against its scripted hp state)',
+    typeof bpX.barPct === 'number' && bpX.maxAtBar > 0 &&
+    bpX.barPct === Math.round((bpX.hpAtBar / bpX.maxAtBar) * 20) * 5,
+    `pct=${bpX.barPct} hp=${bpX.hpAtBar}/${bpX.maxAtBar}`);
+  ok('H1: the bar never renders BOSS 0% while dying (mirror of boss.js barLine:389 — absent through the whole death cinematic; the drive sampled the dying window)',
+    bpX.dyingSamples > 0 && bpX.barElSeen === true && bpX.dyingBarVisible !== true,
+    `samples=${bpX.dyingSamples} elSeen=${bpX.barElSeen} visibleDuringDying=${bpX.dyingBarVisible}`);
+  ok('H1: kill-only hit markers — the 6 real non-kill hits (weak+body ratio bolts) never mark, and the marker element exists',
+    bpX.markSamples > 0 && bpX.markElSeen === true && bpX.markOnHit !== true,
+    `samples=${bpX.markSamples} elSeen=${bpX.markElSeen} markedOnHit=${bpX.markOnHit}`);
   ok('combatState().boss drains to null after death', await evl(`__stage2.combatState().boss`) === null,
     JSON.stringify(await J(`__stage2.combatState().boss`)));
+  // stage-6 W1 rider: the lock never brackets the boss while it lives (sampled above through the
+  // boss's whole orbit sweep — the boss crosses the nose cone, where a lockable boss would be
+  // acquired). RED on the pre-W1 build (lock surface absent → samples 0 — red by absence).
+  ok('W1: lock never brackets the boss (bossProbe live sampling across the orbit sweep; lock surface exposed)',
+    w1BossSamples > 0 && w1BossKindLock === false, `samples=${w1BossSamples} bossKindLock=${w1BossKindLock}`);
 
   /* --- story-014 victory card (same page: the bossDefeated signal lands victory mid-drive) ---
      Trigger path: combat.js's C.bossApi.report wrapper — the death cinematic's report lands
@@ -666,6 +838,26 @@ try {
     padLanded ? JSON.stringify(vdx) : 'no pad landing');
   ok('story-014: victory REPLAY → pad: edge pips drained (no stale combat pip state)', padLanded && vdx.pipCount === 8 && vdx.pipsOn === 0,
     padLanded ? JSON.stringify(vdx) : 'no pad landing');
+  // stage-6 W1 (hard build constraint 2): the pipper + lock bracket are combat's writes — the
+  // pad must never inherit them (clearCombat reset list, same class as the pip drain above).
+  // RED on the pre-W1 build: the elements do not exist (red by absence).
+  const w1Pad = padLanded ? await J(`({ pip: !!document.getElementById('pipper') && document.getElementById('pipper').hidden,
+    br: !!document.getElementById('lock-bracket') && document.getElementById('lock-bracket').hidden })`) : null;
+  ok('W1: pad drains the pipper + lock bracket (clearCombat reset list)', !!w1Pad && w1Pad.pip === true && w1Pad.br === true, JSON.stringify(w1Pad));
+  // stage-6 H1 (hard build constraint 2): the boss bar + wave banner + hit marker are ALSO
+  // combat's writes — the pad never inherits them (clearCombat reset list extended beside the
+  // W1 drain above, which stays byte-intact). RED on the pre-H1 build: the elements do not
+  // exist (red by absence). bannerVisible false pins the honesty surface too.
+  const h1Pad = padLanded ? await J(`({
+    bb: (document.getElementById('boss-bar') || { hidden: null }).hidden,
+    wb: (document.getElementById('wave-banner') || { hidden: null }).hidden,
+    wbText: (document.getElementById('wave-banner') || { textContent: '' }).textContent,
+    hm: (document.getElementById('hit-mark') || { hidden: null }).hidden,
+    bannerVisible: (window.__stage2 && __stage2.combatState) ? __stage2.combatState().bannerVisible : 'none',
+  })`) : null;
+  ok('H1: pad drains the boss bar + wave banner + hit marker (clearCombat reset list extended; bannerVisible false)',
+    !!h1Pad && h1Pad.bb === true && h1Pad.wb === true && h1Pad.wbText === '' && h1Pad.hm === true && h1Pad.bannerVisible === false,
+    JSON.stringify(h1Pad));
   {
     let landed2 = false, cs14 = null, entries2 = 0;
     if (padLanded) {
@@ -752,7 +944,9 @@ try {
      simulated at dt 1/30, 1/60, 1/120: mean-to-centroid 7.03 u over one rev from an aligned
      entry, flat build 7.73). The assert encodes the measured build (6.5-7.3 u), NOT the
      predicted number — recorded in the programmer report, never a quiet edit. */
-  await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat&pitchProbe=1' });
+  // stage-6 W1: ?lock=0 forces the aim lock OFF for this page (the probe override) — the
+  // pitched-bolt asserts below must see UNBIASED bolts (pre-W1 builds ignore the unknown flag).
+  await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat&pitchProbe=1&lock=0' });
   let pp = null;
   {
     const t0 = Date.now();
@@ -1026,7 +1220,7 @@ try {
           NULL (the drive hung in the 300-drop stage) — that hang is itself mutation
           evidence and drove commit 3's watchdogs (the second application reads by value).
      Full outputs: production/qa/evidence/story-018-charged-shot-pickups/. */
-  await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat&chargeProbe=1' });
+  await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat&chargeProbe=1&lock=0' }); // stage-6 W1: probe pages see unbiased bolts (?lock=0 — the probe override)
   let cp = null;
   {
     const t0 = Date.now();
@@ -1153,7 +1347,7 @@ try {
      assert records its red from the null probe; the clearCombat-wipe walk lands but reads
      undefined effects. Same red output file as the charge block.
      MUTATIONS: recorded in the charge block above (mutation 2 = the drop roll). */
-  await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat&powerupProbe=1' });
+  await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat&powerupProbe=1&lock=0' }); // stage-6 W1: probe pages see unbiased bolts (?lock=0)
   let pu = null;
   {
     const t0 = Date.now();
@@ -1359,7 +1553,7 @@ try {
      (the exact droneProbe red pattern). Full output: flow-red-story019.txt.
      MUTATIONS (branch, post-green; each: mutate → npm run build → full flow-check → restore
      → rebuild; verified applied by reading its red output): recorded per assert below. */
-  await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat&balanceProbe=1' });
+  await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat&balanceProbe=1&lock=0' }); // stage-6 W1: probe pages see unbiased bolts (?lock=0)
   let bp19 = null;
   {
     const t0 = Date.now();
@@ -1490,6 +1684,16 @@ try {
   // the victory-path assert: highscore === 1000 exactly after victory.enter's writeHighscore.
   ok('highscore ledger at balanceProbe time still carries the boss award (>= 1000; the exact persist→read-back is pinned on the victory path)',
     b19.highscore !== undefined && b19.highscore >= 1000, `highscore=${b19.highscore} finalScore=${bs.finalScore}`);
+  // stage-6 H1: the wave banner re-arms at the NATURAL wave increment. The drive ran one
+  // unpinned clear-field cycle (stage 8.5 — the only wavesTick advance in the whole battery;
+  // every other drive pins the wave at 1): the field clears, wavesTick counts its 1.6 s gap
+  // and increments to wave 2, and the banner writer re-arms at that increment point. The
+  // wave-clear bonus that rides the same event is absorbed by the delta-based score/telemetry
+  // asserts above (every mark is captured after this stage). RED on the pre-H1 build: no
+  // banner state, no element (red by absence).
+  ok('H1: wave banner re-arms on the natural wave increment (WAVE 2 — the drive observed the banner up at wave ≥ 2; element present + visible; hidden after the ~2 s window)',
+    b19.banner && b19.banner.seen === true && b19.banner.wave === 2 && b19.banner.elSeen === true &&
+    b19.banner.elVisible === true && b19.banner.hiddenAfter === true, JSON.stringify(b19.banner || null));
   ok('CONSOLE [] (balanceProbe page)', errs.length === 0, errs.join(' | '));
   {
     // telemetry restart parity (the zeroing mutation's red): the boss stage landed victory —
@@ -1536,6 +1740,199 @@ try {
     if (!parityChecked) ok('telemetry zeroed on enterCombat (restart parity: fresh entry reads all zeros, waveReached 1)',
       false, bp19 ? 'victory phase missing after the boss stage' : 'no balanceProbe report (old build: red by absence)');
   }
+
+
+  /* --- stage-6 W1 aim overhaul (?fireProbe=1, next page over the SAME CDP session) ---
+     The FIRE-PATH BASELINE + the aim-lock behavior battery, in the card's required order.
+     The drive (src/probes-fire.js, one walk per file) SEEDS deterministic targets and captures
+     b.userData.dir of real fired bolts — it never spawns a bolt itself. The trigger is REAL CDP
+     pointer input: the drive raises window.__stage2.fireArmN, the harness performs
+     Input.dispatchMouseEvent mousePressed/mouseReleased (input.js onPointerDown → input.fire →
+     fireTick → spawnStreamShot → spawnBolt), closes the loop with a fireGoN flag, and the drive
+     captures from the bolt pool. Every pre-W1 probe bypassed spawnBolt — that was the blind
+     spot this page exists to close.
+     RED-FIRST (branch polish/stage6-experience): the drive + ALL asserts below ran against the
+     feature-less build (probe infrastructure only — NO aim-assist.js, no bias, no T, no
+     pipper/bracket, combatState without .lock/.lockTarget). GREEN BY DESIGN there (recorded in
+     the same transcript): the two fire-path baseline asserts + the report + the CONSOLE asserts
+     — real fired bolts already fly along forward() and kill, exactly the invariant the W1 bias
+     must not break, and the bias is a no-op at zero angle so both stay green post-feature.
+     Everything else records RED for absence/behavior: fs2.lockSeen false (no lock), biasDeg 0
+     (no convergence), lockAfterKill null (surface undefined), fs3 lockSeen false, fs4.lock null,
+     boss stage lockWasDefined false, pipper/bracket elements absent, pad drain false, and the
+     whole T battery (no KeyT handler, no __stage2.lock/lockRaw). Transcript:
+     production/qa/evidence/stage6-w1/flow-red-w1.txt.
+     THE FAN+BIAS SUM CLAMP (the card's "decide and DOCUMENT", restated here): the bias
+     rotation is capped at 6° (BIAS_MAX_DEG, weapons-side call), the SPREAD fan is ±6°
+     (SPREAD_ARC), and the STATED SUM MAX is 10° from nose-forward — the lock retain cone: both
+     the pre-bias dir (≤6° = fan) and the locked-target dir (≤10° = retain) lie in the
+     geodesically-convex 10° cap, and the biased dir lies ON the geodesic between them, so the
+     final dir can never exceed 10° off the nose (≤ the naive 6°+6°=12° ceiling). Measured
+     stage-scoped bands: the center-bolt stage reads exactly 6.0 (band [5.5,6.3]); the fresh-
+     acquire fan stage reads ≤6.3 for every bolt.
+     MUTATIONS (branch, post-green, each: mutate → npm run build → FULL flow-check → restore →
+     rebuild; verified applied by reading the red output):
+       (a) aim-assist.js bias clamp removed (Math.min(BIAS_MAX_RAD, ang) → ang) → RED
+           `bias cap` (biasDeg 10.32 > 6.3 — the unclamped bolt rotates the FULL angle onto the
+           retained 8.5°-parked target; the true nose sits at rocket-local +1.6, so the
+           bolt-relative target angle is 10.32°, not the 9.5° the +1.0 estimate gave) AND RED
+           `far fan bolt does NOT fully converge` (maxAngleToTarget 0.86 < 3 — the unclamped
+           rotation swallows the whole 10.86° fan-to-target gap: every captured dir reads the
+           target dir exactly). The DEAD-AHEAD baseline asserts stay green under (a) BY
+           CONSTRUCTION (zero angle ⇒ zero rotation — the clamp is not load-bearing there); the
+           generalized fire-path invariant that reds is this stage-2 cap assert. One
+           environmental OVERDRIVE-interval flake co-occurred (0.0778 > 0.075 at frameDt 0.0207
+           — the same headless timing-noise class the green run 1 recorded and green run 2
+           cleared; unrelated to the mutation, whose named asserts both red). Transcript:
+           flow-mutation-biasclamp.txt (229/3).
+       (b) aim-assist.js ACQUIRE_DEG 6 → 180 → RED `outside-cone target never locks` ALONE
+           (231/1: the 20° parked target acquires — locked true, lockEverTrue true, and the
+           fired bolt reads 6° = the capped bias toward the now-locked target, fully
+           consistent). Transcript: flow-mutation-cone180.txt.
+     Full outputs: production/qa/evidence/stage6-w1/. */
+  await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat&fireProbe=1' });
+  let fp = null;
+  {
+    const t0 = Date.now();
+    let arm1 = false, arm2 = false, arm3 = false, arm4 = false;
+    // the REAL trigger — CDP mouse input through input.js's own listener (the same chain a
+    // player's click hits); the drive only watches for the fireGoN handshake
+    const firePress = async (go) => {
+      await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: 300, y: 200, button: 'left', clickCount: 1 });
+      await sleep(500);
+      await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: 300, y: 200, button: 'left', clickCount: 1 });
+      await sleep(150);
+      await evl(`window.__stage2.${go} = true`);
+    };
+    for (;;) {
+      try {
+        if (!arm1 && await evl(`(window.__stage2 && window.__stage2.fireArm) === true`)) { arm1 = true; await firePress('fireGo1'); }
+        else if (arm1 && !arm2 && await evl(`(window.__stage2 && window.__stage2.fireArm2) === true`)) { arm2 = true; await firePress('fireGo2'); }
+        else if (arm2 && !arm3 && await evl(`(window.__stage2 && window.__stage2.fireArm3) === true`)) { arm3 = true; await firePress('fireGo3'); }
+        else if (arm3 && !arm4 && await evl(`(window.__stage2 && window.__stage2.fireArm4) === true`)) { arm4 = true; await firePress('fireGo4'); }
+        fp = await J(`(window.__stage2 && window.__stage2.fireProbe) || null`);
+      } catch { fp = null; }
+      if (fp) break;
+      if (Date.now() - t0 > 180000) break; // deadline — the asserts below record the red
+      await sleep(200);
+    }
+  }
+  const fpX = fp || {};
+  const fs1 = fpX.s1 || {}, fs2 = fpX.s2 || {}, fs3 = fpX.s3 || {}, fs4 = fpX.s4 || {}, fs5 = fpX.boss || {};
+  ok('fireProbe reports (stage-6 W1)', !!fp, JSON.stringify(fpX));
+  // FIRE-PATH BASELINE — the invariant the bias must not break (green-by-design on the pre-W1
+  // build; see the block comment). Reads b.userData.dir of REAL fired bolts via the drive.
+  ok('W1 fire-path baseline: real fired bolt flies along forward (b.userData.dir vs forward ≤1.1°)',
+    fs1.boltCaptured === true && typeof fs1.dirDeg === 'number' && fs1.dirDeg <= 1.1, `dirDeg=${fs1.dirDeg}`);
+  ok('W1 fire-path baseline: the real fired bolt kills the seeded dead-ahead target (real trigger → spawnBolt → boltsTick)',
+    fs1.killConfirmed === true, JSON.stringify(fs1));
+  // stage-6 H1: the kill-only hit marker — the registered kill (this stage's real bolt kill,
+  // the C.kills++ path) shows the marker; the element must exist (red-by-absence on the
+  // pre-H1 build). The kill-ONLY law's negative half — non-kill hits never mark — is the
+  // bossProbe page's 6-real-hit evidence.
+  ok('H1: hit marker shows on the registered kill (stage-1 real-bolt kill; element present, seen visible ~150 ms)',
+    fs1.markElSeen === true && fs1.killConfirmed === true && fs1.killMarkSeen === true, JSON.stringify(fs1));
+  ok('W1: lock acquires an in-cone target (dead-ahead seed, acquire cone ≤6°)', fs2.lockSeen === true, JSON.stringify(fs2));
+  ok('W1: hysteresis — the lock RETAINS a target parked at 8.5° (outside acquire 6°, inside retain ~10°)',
+    fs2.lockRetainedSeen === true, JSON.stringify(fs2));
+  ok('W1: bias cap — the fired bolt converges on the retained target (≥5.5° off the nose) and never exceeds 6.3° (the 6° bias max; the fan+bias sum is bounded by the 10° retain cone — see the block comment)',
+    typeof fs2.biasDeg === 'number' && fs2.biasDeg >= 5.5 && fs2.biasDeg <= 6.3, `biasDeg=${fs2.biasDeg}`);
+  ok('W1: dead-target drops the lock (the real bolt kills the retained target; lock reads false after)',
+    fs2.lockAfterKill === false, `lockAfterKill=${JSON.stringify(fs2.lockAfterKill)}`);
+  ok('W1: SPREAD fan + bias — the far fan bolt does NOT fully converge (the 6° bias clamp binds; unclamped it would land on the target)',
+    fs3.lockSeen === true && fs3.spreadSeen === true && typeof fs3.maxAngleToTarget === 'number' && fs3.maxAngleToTarget >= 3, JSON.stringify(fs3));
+  ok('W1: SPREAD fan + bias — every fired bolt stays ≤6.3° from the nose (stage-scoped band: fresh-acquire geometry)',
+    fs3.lockSeen === true && typeof fs3.maxAngleToForward === 'number' && fs3.maxAngleToForward <= 6.3, `maxF=${fs3.maxAngleToForward}`);
+  ok('W1: outside-cone target never locks (20° parked; lock false the whole window; fired bolt stays unbiased)',
+    fs4.locked === false && fs4.lockEverTrue === false && typeof fs4.boltAngleToForward === 'number' && fs4.boltAngleToForward <= 1.1, JSON.stringify(fs4));
+  ok('W1: the boss never locks (boss parked dead-ahead 26u — dead-center in the acquire cone — for the whole window)',
+    fs5.bossAliveSeen === true && fs5.bossInConeEver === true && fs5.bossLockSeen === false && fpX.lockWasDefined === true, JSON.stringify(fs5));
+
+  // pipper — element-budget law: pipper = bolt path. Renders ONLY while the reticle (pointer)
+  // diverges past the threshold; self-hides aligned. The post-drive field is empty for ~99 s
+  // (the drive's wave-gap pin), so "no lock" here is deterministic. Real pointer events.
+  await evl(`window.dispatchEvent(new PointerEvent('pointermove', {clientX: Math.round(window.innerWidth/2), clientY: Math.round(window.innerHeight/2), bubbles: true}))`);
+  await sleep(300);
+  const w1PipC = await J(`({ el: !!document.getElementById('pipper'),
+    hidden: document.getElementById('pipper') ? document.getElementById('pipper').hidden : null })`);
+  ok('W1: pipper self-hides when the reticle is aligned (center pointer)', w1PipC.el === true && w1PipC.hidden === true, JSON.stringify(w1PipC));
+  await evl(`window.dispatchEvent(new PointerEvent('pointermove', {clientX: Math.round(window.innerWidth*0.75), clientY: Math.round(window.innerHeight/2), bubbles: true}))`);
+  await sleep(300);
+  const w1PipO = await J(`({ hidden: document.getElementById('pipper') ? document.getElementById('pipper').hidden : null })`);
+  ok('W1: pipper renders while the reticle diverges past the threshold (the bolt-path marker appears)', w1PipO.hidden === false, JSON.stringify(w1PipO));
+  // stage-6 H1 pipper honesty rider (W1's chair flag): the pipper's visibility gate rides
+  // pointer-divergence — the same input-state class as the pre-law reticle — so combatState()
+  // now exposes the WRITER'S OWN stored state ({ visible, divergenceDeg }) and the harness can
+  // read the pipper's render state the same way .lock/.lockTarget read the bracket (honesty
+  // law). RED on the pre-H1 build (surface absent → red by absence).
+  const h1Pip = await J(`({ cs: (window.__stage2 && __stage2.combatState) ? __stage2.combatState().pipper : 'none',
+    elHidden: (document.getElementById('pipper') || { hidden: null }).hidden })`);
+  ok('H1: pipper honesty surface — combatState().pipper {visible, divergenceDeg} agrees with the element while diverged',
+    h1Pip.cs && h1Pip.cs !== 'none' && h1Pip.cs.visible === true && h1Pip.elHidden === false &&
+    typeof h1Pip.cs.divergenceDeg === 'number' && h1Pip.cs.divergenceDeg > 2, JSON.stringify(h1Pip));
+  await evl(`window.dispatchEvent(new PointerEvent('pointermove', {clientX: Math.round(window.innerWidth/2), clientY: Math.round(window.innerHeight/2), bubbles: true}))`);
+  await sleep(300);
+  const w1PipR = await J(`({ hidden: document.getElementById('pipper') ? document.getElementById('pipper').hidden : null })`);
+  ok('W1: pipper self-hides on re-alignment (renders ONLY while diverging)', w1PipR.hidden === true, JSON.stringify(w1PipR));
+  // bracket — ONE element, the locked target only; hidden without a lock; honesty surface:
+  // combatState().lockTarget must be null exactly when nothing is locked
+  const w1Br = await J(`({ hidden: document.getElementById('lock-bracket') ? document.getElementById('lock-bracket').hidden : null,
+    lt: (window.__stage2 && __stage2.combatState) ? __stage2.combatState().lockTarget : 'none' })`);
+  ok('W1: bracket hidden without a lock (field empty; lockTarget null — the honesty surface agrees)', w1Br.hidden === true && w1Br.lt === null, JSON.stringify(w1Br));
+  ok('W1: bracket renders ON the locked target (dead-ahead stage-1 lock; bracketOnLock sampled in-page beside the lock)',
+    fs1.lockSeen === true && fs1.bracketOnLock === true, JSON.stringify(fs1));
+  ok('CONSOLE [] (fireProbe page)', errs.length === 0, errs.join(' | '));
+
+  /* --- stage-6 W1: T toggle + persistence (?debug=1&goto=combat pages over the SAME CDP
+     session — the story-020 battery shape, mirrored for the aim-lock choice) ---
+     The toggle is driven through the REAL key path: input.js's combat-branch KeyT →
+     aim-assist toggleLock() → writeLock (the store.js pair — the MUTED_KEY mirror). Persistence
+     rides REAL Page.navigate reloads over the same profile (localStorage genuinely persists —
+     the story-020 mechanism). Default ON (the audit's opt-out-able assist, ux-audit F1b);
+     corrupt seeds read OFF (the canonical-value clamp: only '1' is ON, so 'garbage'/'2'
+     degrade to manual aim — the conservative fallback; an UNWRITTEN key boots ON) and survive
+     boot byte-identical (restore reads, never rewrites).
+     RED-FIRST: on the feature-less build __stage2.lock/lockRaw are absent (recorded null) and
+     KeyT is a no-op — every assert below records RED (the story-020 red pattern). Same
+     transcript as the fireProbe block: flow-red-w1.txt. */
+  const w1Combat = async () => {
+    await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat' });
+    const t0 = Date.now();
+    for (;;) { try { if (await J(`(window.__stage2 && __stage2.phase) || 'boot'`) === 'combat') break; } catch {} if (Date.now() - t0 > 60000) break; await sleep(300); }
+  };
+  const lockState = () => J(`({ lock: (window.__stage2 && __stage2.lock !== undefined) ? __stage2.lock : null,
+    raw: (window.__stage2 && __stage2.lockRaw) ? __stage2.lockRaw() : null })`);
+  await w1Combat();
+  const lsA = await lockState();
+  ok('W1: lock boots ON by default (no stored key — the audit opt-out-able assist)', lsA.lock === true && lsA.raw === null, JSON.stringify(lsA));
+  await key('KeyT', 'keydown'); await key('KeyT', 'keyup'); await sleep(150);
+  const lsB = await lockState();
+  ok('W1: T toggles the lock OFF in-session (combat branch, the KeyM mirror)', lsB.lock === false, JSON.stringify(lsB));
+  ok("W1: T write-through at the store (raw stage2.lock = '0')", lsB.raw === '0', `raw=${JSON.stringify(lsB.raw)}`);
+  ok('CONSOLE [] (W1 toggle page)', errs.length === 0, errs.join(' | '));
+  await w1Combat();
+  const lsC = await lockState();
+  ok('W1: lock OFF survives a real reload (persisted, not session-only)', lsC.lock === false && lsC.raw === '0', JSON.stringify(lsC));
+  await key('KeyT', 'keydown'); await key('KeyT', 'keyup'); await sleep(150);
+  const lsD = await lockState();
+  ok('W1: T re-enables the lock ON in-session', lsD.lock === true, JSON.stringify(lsD));
+  ok("W1: T write-through back to '1'", lsD.raw === '1', `raw=${JSON.stringify(lsD.raw)}`);
+  await w1Combat();
+  const lsE = await lockState();
+  ok('W1: lock ON survives a real reload (persistence asserted BOTH ways)', lsE.lock === true && lsE.raw === '1', JSON.stringify(lsE));
+  // corrupt-read safety (§8.9 proven, not assumed — the story-020 shape): the harness seeds the
+  // raw key directly; the game has zero storage access outside store.js.
+  await evl(`localStorage.setItem('stage2.lock', 'garbage')`);
+  await w1Combat();
+  const lsF = await lockState();
+  ok("W1: corrupt 'garbage' boots OFF (canonical clamp — only '1' reads ON; corrupt degrades to manual aim)", lsF.lock === false, JSON.stringify(lsF));
+  ok('W1: corrupt seed survives boot byte-identical (restore reads, never rewrites)', lsF.raw === 'garbage', `raw=${JSON.stringify(lsF.raw)}`);
+  ok('CONSOLE [] (W1 corrupt page)', errs.length === 0, errs.join(' | '));
+  await evl(`localStorage.setItem('stage2.lock', '2')`);
+  await w1Combat();
+  const lsG = await lockState();
+  ok("W1: numeric garbage '2' boots OFF (the same canonical clamp)", lsG.lock === false, JSON.stringify(lsG));
+  await evl(`localStorage.removeItem('stage2.lock')`); // hygiene: later pages boot the default (nothing after this battery reads the lock)
 
 
   /* --- R-c commit 4: SPIN N-key regression probe (?debug=1&spin=1, page over the SAME CDP session) ---
@@ -1926,6 +2323,145 @@ try {
   }
   const d20g = await muteState20();
   ok("story-020: numeric garbage '2' boots unmuted (the 0-1 clamp — mutation B's discriminator)", d20g.m === false, JSON.stringify(d20g));
+
+  /* --- stage-6 A1 (?audioProbe=1, then ?sfxFault=1): samples + buses + sequencer probe pages ---
+     RED-FIRST 2026-11-08 (branch polish/stage6-experience, product untouched — only this harness
+     differs): on the pre-A1 build the probe surface is absent and no sample is wired — every new
+     assert records RED for absence (the sanctioned red class). Transcript:
+     production/qa/evidence/stage6-a1/flow-red-a1.txt.
+     audioProbe asserts (audio-audit.md §4 verification contract): every wired sample reads
+     status 'decoded' with byte evidence (> 4096 per file, > 65536 total); a scripted 30-voice
+     burst holds the voice cap (recorded peak = 24); the probe voice chain carries a
+     StereoPannerNode; the same cue at far range records LESS gain than near; muting gates new
+     voices; the sequencer note counter advances monotonically, stalls while muted, resumes in
+     phase after unmute. sfxFault: every forced decode failure lands on the synth fallback PER
+     CUE with ZERO console noise, and the phase still lands (boot → title → combat). */
+  const a1Unlock = async () => {
+    await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'z', code: 'KeyZ', windowsVirtualKeyCode: 90 });
+    await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'z', code: 'KeyZ', windowsVirtualKeyCode: 90 });
+  };
+  const a1WaitDone = async () => {
+    const t1 = Date.now();
+    let r = null;
+    for (;;) {
+      try {
+        r = await J(`(window.__stage2 && __stage2.audioProbe) || null`);
+        if (r && r.done) break;
+      } catch { r = null; }
+      if (Date.now() - t1 > 45000) break;
+      await sleep(300);
+    }
+    return r;
+  };
+  await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat&audioProbe=1' });
+  {
+    const t0 = Date.now();
+    for (;;) {
+      try { if (await J(`(window.__stage2 && __stage2.phase) || 'boot'`) === 'combat') break; } catch {}
+      if (Date.now() - t0 > 60000) break;
+      await sleep(300);
+    }
+    await a1Unlock();
+  }
+  const apx = (await a1WaitDone()) || {};
+  ok('A1 probe: drive completed (probe surface present, honest mode, no drive error)',
+    apx.done === true && apx.err == null && apx.mode === 'audioProbe', JSON.stringify(apx).slice(0, 400));
+  const apSamples = apx.samples || {};
+  const smpNames = Object.keys(apSamples);
+  ok('A1 probe: every wired sample decoded with byte evidence (> 4096 per file, > 65536 total)',
+    smpNames.length === 6 && smpNames.every((n) => apSamples[n].status === 'decoded' &&
+      apSamples[n].files.length > 0 && apSamples[n].files.every((f) => f.bytes > 4096)) &&
+      smpNames.reduce((a, n) => a + apSamples[n].files.reduce((x, f) => x + f.bytes, 0), 0) > 65536,
+    JSON.stringify(apSamples));
+  ok('A1 probe: voice cap holds under a 30-voice burst (recorded peak = cap 24)',
+    apx.cap === 24 && apx.capPeak === 24, JSON.stringify({ cap: apx.cap, capPeak: apx.capPeak }));
+  ok('A1 probe: the probe voice chain carries a StereoPannerNode (gain → panner → bus)',
+    Array.isArray(apx.chain) && apx.chain.some((t) => /stereopanner/i.test(t)), JSON.stringify(apx.chain || null));
+  ok('A1 probe: distance attenuation (same cue far records LESS gain than near; near is full level)',
+    !!apx.near && !!apx.far && apx.near.atten >= 0.99 && apx.far.atten < apx.near.atten,
+    JSON.stringify({ near: apx.near, far: apx.far }));
+  ok('A1 probe: mute gates new voices (voice count unchanged while muted)',
+    !!apx.mute && apx.mute.unchanged === true, JSON.stringify(apx.mute || null));
+  ok('A1 probe: sequencer note counter advances monotonically (reads ≥ 1 s apart, strictly greater)',
+    !!apx.seq && apx.seq.b > apx.seq.a, JSON.stringify(apx.seq || null));
+  ok('A1 probe: sequencer stalls while muted and resumes in phase after unmute',
+    !!apx.seq && apx.seq.mutedB === apx.seq.b && apx.seq.resumed > apx.seq.mutedB, JSON.stringify(apx.seq || null));
+  ok('CONSOLE [] (audioProbe page)', errs.length === 0, errs.join(' | '));
+
+  await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat&sfxFault=1' });
+  {
+    const t0 = Date.now();
+    for (;;) {
+      try { if (await J(`(window.__stage2 && __stage2.phase) || 'boot'`) === 'combat') break; } catch {}
+      if (Date.now() - t0 > 60000) break;
+      await sleep(300);
+    }
+    await a1Unlock();
+  }
+  const sfx = (await a1WaitDone()) || {};
+  ok('A1 fault: drive completed on the fault page (honest mode, no drive error)',
+    sfx.done === true && sfx.err == null && sfx.mode === 'sfxFault', JSON.stringify(sfx).slice(0, 300));
+  const sfSamples = sfx.samples || {};
+  ok('A1 fault: synth fallback fired PER CUE (every wired sample reads fallback, none decoded)',
+    Object.keys(sfSamples).length === 6 && Object.keys(sfSamples).every((n) => sfSamples[n].status === 'fallback'),
+    JSON.stringify(sfSamples));
+  ok('A1 fault: the phase still lands (combat entered under the forced decode failures)',
+    (await evl(`(window.__stage2 && __stage2.phase) || 'boot'`)) === 'combat');
+  ok('CONSOLE [] (sfxFault page)', errs.length === 0, errs.join(' | '));
+
+  /* --- T1 RECORD-0 suppression (observer page; one-time Page.addScriptToEvaluateOnNewDocument
+     capability, registered here for THIS page only — the harness's page setup grows once,
+     contained). A nonzero record is seeded RAW, the page is navigated, and an init-script
+     observer records EVERY #t-rec/#hs-line paint from first parse to the read. visual-audit
+     F2-6: the story-007 lazy store returns 0 pre-warm by design ("title renders 0, warm-up
+     re-renders the real value"), so the title's first paint shows a false RECORD 0 on any
+     warm profile. The fix holds a placeholder until the warm callback — the KEEP-PASSING
+     contract ("F2-6 changes the initial paint, not this contract") is that the warm callback
+     still re-renders the real value, asserted here explicitly.
+     RED-FIRST 2026-11-08 (branch polish/stage6-experience, product untouched): on the pre-T1
+     build title.enter's refreshRecordLine paints 'RECORD 0' with the store still cold — the
+     observer sees it and the never-0 assert records RED; the warm re-render assert is GREEN
+     on the old build BY DESIGN (keep-passing). Transcript:
+     production/qa/evidence/stage6-t1/flow-red-t1.txt. */
+  await evl(`localStorage.setItem('stage2.highscore', '4242')`); // raw seed — a nonzero record must never be painted over by a 0
+  await send('Page.addScriptToEvaluateOnNewDocument', { source: `
+    window.__t1rec = { rec: [], hs: [], err: null };
+    try {
+      const push = (arr, v) => { if (arr[arr.length - 1] !== v) arr.push(v); };
+      const snap = () => {
+        const r = document.getElementById('t-rec'), h = document.getElementById('hs-line');
+        if (r) push(window.__t1rec.rec, r.textContent);
+        if (h) push(window.__t1rec.hs, h.textContent);
+      };
+      new MutationObserver(snap).observe(document, { subtree: true, childList: true, characterData: true });
+    } catch (e) { window.__t1rec.err = String((e && e.message) || e); }
+  ` });
+  await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat' });
+  {
+    const t0 = Date.now();
+    for (;;) {
+      try { if (await J(`(window.__stage2 && __stage2.phase) || 'boot'`) === 'combat') break; } catch {}
+      if (Date.now() - t0 > 60000) break;
+      await sleep(300);
+    }
+  }
+  let recT1 = null;
+  {
+    const t0 = Date.now();
+    for (;;) {
+      try { recT1 = await J(`window.__t1rec || null`); } catch { recT1 = null; }
+      if (recT1 && recT1.err == null && recT1.rec.length >= 2) break; // placeholder paint + warm re-render must both have fired
+      if (Date.now() - t0 > 30000) break;
+      await sleep(200);
+    }
+  }
+  const recX = recT1 || { rec: [], hs: [], err: 'observer absent' };
+  ok('T1 record: observer captured every paint; pre-warm paint is the placeholder — RECORD 0 never paints over a nonzero record',
+    recX.err == null && recX.rec.length >= 2 && recX.rec[0] === 'RECORD —' && recX.rec.every((v) => v !== 'RECORD 0') &&
+    recX.hs.length >= 2 && recX.hs[0] === 'HIGH SCORE —' && recX.hs.every((v) => v !== 'HIGH SCORE — 0'),
+    JSON.stringify(recX));
+  ok('T1 record: warm callback re-renders the real seeded value (KEEP-PASSING contract intact)',
+    recX.rec.includes('RECORD 4242') && recX.hs.includes('HIGH SCORE — 4242'), JSON.stringify(recX));
 
   ok('CONSOLE []', errs.length === 0, errs.join(' | '));
 } catch (e) {

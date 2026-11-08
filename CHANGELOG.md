@@ -9,6 +9,57 @@ good-2026-11-07-b/-c/-d (stage 5)).
 
 ## [Unreleased]
 
+### Stage 6 — experience polish (2026-11-09, merged to master at tag good-2026-11-09-stage6 under the user's complete-all-plan directive; experiential verdicts owed — stage-6 GATE checkpoint record)
+The owner's four experience complaints, audited by a three-member council (8 CRITICAL
+plan findings folded in) and fixed as five red-first story cards. flow-check 190 →
+**255**; build 4.41 → 4.70 MB (9 CC0 samples); boot faster (221–1086 ms observed).
+Docs: `production/polish/` (audits + polish-plan), `design/gdd/stage-6-experience.md`
+(supersession record), `one-shot-work/stage-6/GATE.md`, smoke
+`production/qa/smoke-2026-11-09-stage6.md`.
+- **T1 title/UX pro pass** — inline SVG favicon (was: none); dev chip reworded
+  player-appropriate; controls hint → two-column block; pause card gains
+  [ RESUME ]/[ SOUND ] pills **with the cursor-restore precondition** (pause never
+  changed phase, so `cursor:none` made any button invisible — mutation-proved);
+  death/victory cards (the most-seen screens) styled; RECORD-0 flash suppressed
+  until the store warms (observer assert via a one-time
+  `Page.addScriptToEvaluateOnNewDocument` capability).
+- **W1 aim overhaul** — the root cause was structural: the reticle rides the pointer
+  while bolts fly along the nose (~screen center); sight and bullets agreed only
+  dead-center. Fix: (a) a **gun pipper** that renders only while it diverges from the
+  reticle and self-hides when the nose catches up; (b) **auto-lock** — T toggle,
+  default ON, persisted on the reserved store surface: ≤6° spawn bias toward the
+  locked target for stream bolts only (charged shot stays the manual-aim reward; no
+  homing; lead stays manual), hysteresis acquire 6°/hold 10°, behind-camera never
+  locks, **boss excluded by design** (a 6° cone at boss range lands inside the ~2°
+  weak-point zone — it would automate the ×3 skill the fight exists to test),
+  fan+bias sum capped at the 10° retain cone (unreachable-proof, documented).
+  Keystone: a **fire-path baseline assert** drives a REAL fired bolt through
+  `spawnBolt` — the first such chain; every prior probe bypassed that function, so a
+  defective bias used to be structurally invisible to the battery. dep-check gains
+  the `aim-assist ↚ combat` import-direction rule.
+- **H1 HUD rebuild** — dedicated boss HP **bar** (fed from `BOSS.state()`; the text
+  line left `#hud-bars` via SANCTIONED assert rewrites with dated provenance:
+  flow-check boss-line asserts, the harness sampling, `probes.js` BP.hud); labeled
+  HULL/SHIELD/BOOST meters (same values, same change-gate); "WAVE n" banner on the
+  `#combat-online` grammar; kill-only ~150 ms hit markers (6 real non-kill hits
+  proven not to mark); the honesty surface `combatState().pipper`; drain extensions
+  verified on pad re-entry. No clip-path anywhere new (protects the pip-drained
+  counter). Boss.js untouched — the "never render BOSS 0% while dying" contract is
+  now asserted.
+- **A1 audio overhaul** — 9 Kenney Sci-Fi Sounds (CC0, 201 KB raw) inlined as
+  data URLs with LAZY decode (zero audio work before the title mark); the CREDITS.md
+  handoff executed minus its music loop (dropped by the recorded size decision);
+  sfx/music buses, per-voice StereoPanner + distance attenuation (1.0 → 0.2 floor at
+  45 u), voice cap 24 + per-event rate limits, the defaults-configured limiter
+  replaced by a deliberately configured compressor (−18 dB / 4:1 / 0.25 s);
+  console-silent synth fallback with probe-visible status; the silent moments got
+  voices (boss-spawn stinger, victory jingle — recorded as an orchestrator call vs
+  the story-014 freeze, UI clicks, gunner fire); music: pads kept, a sparse
+  A-minor-pentatonic pluck-arp + hats-only layer added via lookahead scheduling
+  riding the existing leak-net contract; TD-015's fault injection moved into the
+  sequencer build path (stays non-vacuous). New probe surfaces `?audioProbe=1` /
+  `?sfxFault=1`.
+
 ### Stage 5 — ship prep (2026-11-07, tags good-2026-11-07-b…good-2026-11-07-c)
 - **story-020 settings persistence** — the mute choice survives a reload through the
   existing guarded store: `writeMuted`/`readMuted` mirror the highscore pair (lazy

@@ -35,6 +35,12 @@ if (graph['store.js']?.length) failures.push(`store.js must import nothing (has:
 // rule: nothing imports main.js (main is the composition ROOT)
 for (const [f, deps] of Object.entries(graph)) if (deps.includes('main.js')) failures.push(`${f} imports main.js — forbidden`);
 
+// rule (stage-6 W1): aim-assist is a combat-consumer leaf — combat.js/weapons.js/input.js/main.js
+// import IT; it must never import combat.js (its combat state arrives through the initAimAssist
+// seam; the reverse edge is both the cycle class and a layering break — the aim-assist.js header
+// documents the contract)
+if ((graph['aim-assist.js'] || []).includes('combat.js')) failures.push('aim-assist.js imports combat.js — forbidden (W1 import direction: combat/weapons own the seam)');
+
 // rule: TD-003 — main.js ≤ 500 physical lines (same metric as the ledger's "791-line main.js")
 const mainText = fs.readFileSync(path.join(SRC, 'main.js'), 'utf8');
 const mainLines = mainText.split('\n').length - (mainText.endsWith('\n') ? 1 : 0);
