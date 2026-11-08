@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="dark">
+<!-- T1: inline SVG favicon — the reticle corner brackets + amber bolt dot. A data URL (no
+     external file, no network fetch on file://); < > # and spaces are percent-encoded so the
+     URL stays strictly valid and console-silent. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E%3Crect%20width='32'%20height='32'%20rx='7'%20fill='%230b1220'/%3E%3Cpath%20d='M6,12V6H12'%20stroke='%237dd7ff'%20stroke-width='3'%20fill='none'/%3E%3Cpath%20d='M20,6H26V12'%20stroke='%237dd7ff'%20stroke-width='3'%20fill='none'/%3E%3Cpath%20d='M26,20V26H20'%20stroke='%237dd7ff'%20stroke-width='3'%20fill='none'/%3E%3Cpath%20d='M12,26H6V20'%20stroke='%237dd7ff'%20stroke-width='3'%20fill='none'/%3E%3Ccircle%20cx='16'%20cy='16'%20r='3.5'%20fill='%23ff9d54'/%3E%3C/svg%3E">
 <title>STAGE TWO</title>
 <style>
 :root{
@@ -18,6 +22,11 @@ body{
 #scene-canvas{position:fixed;inset:0;width:100%;height:100%;display:block;}
 /* play phases hide the OS cursor — #reticle becomes the cursor (main.js toggles .playing) */
 body.playing, body.playing *{cursor:none !important;}
+/* T1 (audit CRITICAL): pause does NOT change phase, so body.playing stays on while the pause
+   card is up — and the card now has real buttons. input.js setPaused toggles body.paused:
+   while paused the OS cursor returns (higher specificity wins the !important tie), and it
+   re-hides the moment the class clears (resume, or any phase change — phases.js setPhase). */
+body.playing.paused, body.playing.paused *{cursor:auto !important;}
 #vignette{position:fixed;inset:0;z-index:20;pointer-events:none;
   background:radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,.38) 100%);}
 .overlay{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;}
@@ -88,7 +97,14 @@ body.playing, body.playing *{cursor:none !important;}
 .pill.warm{border-color:rgba(255,157,84,.5);}
 .pill.warm:hover{border-color:var(--warm);box-shadow:0 0 24px rgba(255,157,84,.28);}
 .hs{margin-top:24px;letter-spacing:.2em;font-size:12px;color:var(--dim);}
-.hints{margin-top:8px;font-size:11px;color:#66798a;letter-spacing:.12em;}
+/* T1: the controls hint — a tidy two-column key/action grid (was one dense all-caps run-on,
+   unreadable at title distance). Same .hints class, same all-caps grammar, same bindings;
+   the pickups tip spans both columns as a full-width line. */
+.hints{margin-top:16px;display:grid;grid-template-columns:auto auto;column-gap:46px;row-gap:5px;
+  font-size:11px;color:#66798a;letter-spacing:.12em;text-align:left;}
+.hints > div{display:grid;row-gap:5px;}
+.hints b{color:#9fb4c7;font-weight:700;}
+.hints .h-tip{grid-column:1 / -1;text-align:center;margin-top:4px;}
 
 #debug{position:fixed;top:12px;left:12px;z-index:75;padding:10px 12px;background:rgba(4,8,12,.62);
   border:1px solid rgba(125,215,255,.22);border-radius:8px;font:11px/1.55 ui-monospace,Consolas,monospace;
@@ -171,13 +187,24 @@ body.playing, body.playing *{cursor:none !important;}
 /* S4 combat: pause + gameover + victory cards (story-014: the win card reuses the gameover
    card discipline — same classes/backdrop/typography — with the accent shifted to the win
    cyan (var(--accent)); the death card keeps its gold) */
+/* T1: the three cards share one centered panel chrome (the title .t-panel grammar) —
+   presentation only, every id/class the harness reads is untouched. The stat rows become
+   boxed readouts; the death card's SHIP LOST takes the game's hot amber (the same language
+   as the elite/boss tint), the win card keeps its cyan. */
 #pause,#gameover,#victory{z-index:48;background:rgba(5,9,14,.72);backdrop-filter:blur(3px);}
+.card{padding:28px 48px 32px;background:rgba(6,10,16,.92);border:1px solid rgba(125,215,255,.35);
+  border-radius:12px;box-shadow:0 0 54px rgba(10,30,50,.8);max-width:min(600px,88vw);}
 #pause h2,#gameover h2,#victory h2{margin:0 0 10px;letter-spacing:.3em;font-size:34px;}
 #pause p,#gameover .go-score,#gameover .go-hs,#victory .vic-score,#victory .vic-time{color:var(--dim);letter-spacing:.2em;font-size:13px;margin:6px 0;}
-#gameover .go-score{color:#ffd88f;}
+#gameover .go-score,#gameover .go-hs,#victory .vic-score,#victory .vic-time{
+  padding:8px 18px;border:1px solid rgba(125,215,255,.16);border-radius:6px;background:rgba(10,16,24,.5);
+  font-size:15px;letter-spacing:.24em;}
+#gameover h2{color:var(--warm);text-shadow:0 0 26px rgba(255,157,84,.45);}
+#gameover .go-score{color:#ffd88f;border-color:rgba(255,157,84,.3);}
 #victory h2{color:var(--accent);text-shadow:0 0 26px rgba(125,215,255,.5);}
 #victory .vic-score{color:#bfe9ff;}
 #gameover .row,#victory .row{margin-top:22px;}
+#pause .row{margin-top:18px;}
 
 /* downloaded fonts — the woff2 files register via the FontFace API (src/assets.js);
    these rules only route the families. System stack reads until the faces land. */
@@ -198,22 +225,39 @@ body.playing, body.playing *{cursor:none !important;}
   <div id="hud-chips"></div>
 </div>
 <div id="hitveil"></div>
-<div id="pause" class="overlay" hidden><h2>PAUSED</h2><p>P / ESC to resume · M mute</p></div>
+<!-- T1: pause card gains real pills (RESUME / SOUND) in the .pill grammar — input.js setPaused
+     owns the RESUME path (same one as P/ESC); the SOUND pill label mirrors the session mute
+     state and live-refreshes on both toggle paths (the rider-D rule). The card wrapper is the
+     shared panel chrome (pause / death / victory). -->
+<div id="pause" class="overlay" hidden>
+  <div class="card">
+    <h2>PAUSED</h2>
+    <p>P / ESC to resume · M mute</p>
+    <div class="row">
+      <button id="pause-resume" class="pill warm" type="button">[ RESUME ]</button>
+      <button id="pause-sound" class="pill" type="button">[ SOUND: ON ]</button>
+    </div>
+  </div>
+</div>
 <div id="gameover" class="overlay" hidden>
-  <h2>SHIP LOST</h2>
-  <div id="go-score" class="go-score">SCORE — 0</div>
-  <div id="go-hs" class="go-hs">HIGH SCORE — 0</div>
-  <div class="row">
-    <button id="go-replay" class="pill warm" type="button">[ REPLAY LAUNCH ]</button>
-    <button id="go-skip" class="pill" type="button">[ SKIP TO COMBAT ]</button>
+  <div class="card">
+    <h2>SHIP LOST</h2>
+    <div id="go-score" class="go-score">SCORE — 0</div>
+    <div id="go-hs" class="go-hs">HIGH SCORE — 0</div>
+    <div class="row">
+      <button id="go-replay" class="pill warm" type="button">[ REPLAY LAUNCH ]</button>
+      <button id="go-skip" class="pill" type="button">[ SKIP TO COMBAT ]</button>
+    </div>
   </div>
 </div>
 <div id="victory" class="overlay" hidden>
-  <h2>VICTORY</h2>
-  <div id="vic-score" class="vic-score">SCORE — 0</div>
-  <div id="vic-time" class="vic-time">TIME — 0:00</div>
-  <div class="row">
-    <button id="vic-replay" class="pill warm" type="button">[ REPLAY LAUNCH ]</button>
+  <div class="card">
+    <h2>VICTORY</h2>
+    <div id="vic-score" class="vic-score">SCORE — 0</div>
+    <div id="vic-time" class="vic-time">TIME — 0:00</div>
+    <div class="row">
+      <button id="vic-replay" class="pill warm" type="button">[ REPLAY LAUNCH ]</button>
+    </div>
   </div>
 </div>
 <div id="flash" hidden></div>
@@ -238,7 +282,7 @@ body.playing, body.playing *{cursor:none !important;}
 <div id="title" class="overlay" hidden>
   <div class="t-corner tl"></div><div class="t-corner tr"></div>
   <div class="t-corner bl"></div><div class="t-corner br"></div>
-  <div class="t-top"><span class="t-mark">STAGE TWO // SECTOR DEFENSE</span><span class="t-ver">BUILD S4 · VI3W POWERED</span></div>
+  <div class="t-top"><span class="t-mark">STAGE TWO // SECTOR DEFENSE</span><span class="t-ver">PROTOCOL II · FLIGHT READY</span></div>
   <div class="t-scan"></div>
   <h1 class="brand">STAGE TWO</h1>
   <div class="tagline">stage one falls away — stage two fights</div>
@@ -252,13 +296,30 @@ body.playing, body.playing *{cursor:none !important;}
     <button id="btn-sound" class="pill mini" type="button">[ SOUND: ON ]</button>
     <button id="btn-credits" class="pill mini" type="button">[ CREDITS ]</button>
   </div>
-  <div id="hs-line" class="hs">HIGH SCORE — 0</div>
-  <div class="hints">W/S THROTTLE · A/D TURN · R/F or MOUSE ↕ — PITCH · MOUSE STEER · LMB FIRE (HOLD = CHARGE SHOT) · SPACE/SHIFT BOOST · P PAUSE · M MUTE · FLY THROUGH THE GLOWING DROPS</div>
+  <!-- T1: the record lines hold a placeholder until the storage warm callback re-renders the
+       real value (store.js readHighscore returns 0 pre-warm BY DESIGN — painting it would be
+       a false RECORD 0 on any warm profile; visual-audit F2-6). -->
+  <div id="hs-line" class="hs">HIGH SCORE —</div>
+  <div class="hints">
+    <div>
+      <span><b>W / S</b> — THROTTLE</span>
+      <span><b>A / D</b> — TURN</span>
+      <span><b>R / F</b> or <b>MOUSE ↕</b> — PITCH</span>
+      <span><b>MOUSE</b> — STEER</span>
+    </div>
+    <div>
+      <span><b>LMB</b> — FIRE · HOLD = CHARGE SHOT</span>
+      <span><b>SPACE / SHIFT</b> — BOOST</span>
+      <span><b>P</b> — PAUSE</span>
+      <span><b>M</b> — MUTE</span>
+    </div>
+    <span class="h-tip">FLY THROUGH THE GLOWING DROPS</span>
+  </div>
   <div id="panel" class="t-panel" hidden>
     <div class="t-panel-head"><span id="panel-title">CONTROLS</span><button id="panel-close" class="pill mini" type="button">[ X ]</button></div>
     <div id="panel-body" class="t-panel-body"></div>
   </div>
-  <div class="t-bottom"><span>MADE WITH VI3W MODELS — app.vi3w.in</span><span id="t-rec">RECORD 0</span></div>
+  <div class="t-bottom"><span>MADE WITH VI3W MODELS — app.vi3w.in</span><span id="t-rec">RECORD —</span></div>
 </div>
 
 <pre id="debug" hidden></pre>

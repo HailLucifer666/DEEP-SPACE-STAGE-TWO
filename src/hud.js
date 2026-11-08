@@ -4,10 +4,12 @@
 // through the ONE ctx object (initHud) — it never imports main.js, phases.js, input.js or loop.js.
 // Module body performs ZERO storage calls: readHighscore() only runs inside refreshRecordLine /
 // onResetClick — the story-007 laziness contract holds (the pre-warm read returns 0; the warm
-// call site stays in main.js boot()). The $ helper is re-declared here because the ui map needs
+// call site stays in main.js boot()). T1: refreshRecordLine additionally gates the pre-warm
+// paint behind storageWarm() — the initial paint is a placeholder, never a false 0
+// (visual-audit F2-6; the warm re-render contract is untouched). The $ helper is re-declared here because the ui map needs
 // it at eval time; main.js keeps its own one-line copy for boot() ($('scene-canvas')) — neither
 // module imports the other.
-import { readHighscore, writeHighscore } from './store.js';
+import { readHighscore, writeHighscore, storageWarm } from './store.js';
 import { isMuted, setMuted } from './audio.js';
 
 let probs = null; // boot/probe state — a const object whose identity never changes; set once via initHud
@@ -22,6 +24,7 @@ const ui = {
   hudBars: $('hud-bars'), hudScore: $('hud-score'), reticle: $('reticle'), hudChips: $('hud-chips'), // story-018: the effect-chip line joins the ui map (combat owns the write)
   gameover: $('gameover'), goScore: $('go-score'), goHs: $('go-hs'), victory: $('victory'), vicScore: $('vic-score'),
   goReplay: $('go-replay'), goSkip: $('go-skip'), pause: $('pause'), vicTime: $('vic-time'), vicReplay: $('vic-replay'), // story-014 win card
+  pauseResume: $('pause-resume'), pauseSound: $('pause-sound'), // T1: the pause card's pills (RESUME rides input.js's setPaused; SOUND mirrors btn-sound)
   btnControls: $('btn-controls'), btnReset: $('btn-reset'), btnSound: $('btn-sound'),
   btnCredits: $('btn-credits'), panel: $('panel'), panelTitle: $('panel-title'),
   panelBody: $('panel-body'), panelClose: $('panel-close'), tRec: $('t-rec'),
@@ -49,11 +52,19 @@ function openPanel(name) {
 }
 function closePanel() { if (ui.panel) ui.panel.hidden = true; }
 function refreshSoundButton() {
-  if (ui.btnSound) ui.btnSound.textContent = `[ SOUND: ${isMuted() ? 'OFF' : 'ON'} ]`;
+  const label = `[ SOUND: ${isMuted() ? 'OFF' : 'ON'} ]`; // T1: one label, BOTH pills — the pause-card SOUND pill must live-refresh on every toggle path (rider-D rule)
+  if (ui.btnSound) ui.btnSound.textContent = label;
+  if (ui.pauseSound) ui.pauseSound.textContent = label;
 }
 function refreshRecordLine() {
-  if (ui.hsLine) ui.hsLine.textContent = `HIGH SCORE — ${readHighscore()}`;
-  if (ui.tRec) ui.tRec.textContent = `RECORD ${readHighscore()}`;
+  // T1 (visual-audit F2-6): the store is lazy (story-007) and readHighscore() returns 0 pre-warm
+  // BY DESIGN — painting it shows a false RECORD 0 on any warm profile. A cold store holds the
+  // em-dash placeholder until the warm callback (main.js boot) re-renders the real value; the
+  // KEEP-PASSING contract (the warm re-render) is untouched, and a warm zero record still
+  // reads 0 honestly (e.g. after [ RESET RECORD ]).
+  const v = storageWarm() ? String(readHighscore()) : null;
+  if (ui.hsLine) ui.hsLine.textContent = v === null ? 'HIGH SCORE —' : `HIGH SCORE — ${v}`;
+  if (ui.tRec) ui.tRec.textContent = v === null ? 'RECORD —' : `RECORD ${v}`;
 }
 let resetArmT = 0;
 function onResetClick() { // arm-then-confirm — the saved record is never destroyed by one stray click

@@ -20,6 +20,12 @@ export function getStorage() {
   return storageImpl;
 }
 export const HIGHSCORE_KEY = 'stage2.highscore';
+export function storageWarm() { // T1 (visual-audit F2-6): "not warm yet" must be distinguishable
+  // from "record is 0" — a cold store holds the record line's placeholder (hud.js
+  // refreshRecordLine) instead of painting the false pre-warm 0. Self-contained like the rest
+  // of this module; the readHighscore pre-warm guard is the precedent.
+  return storageImpl !== null;
+}
 export function readHighscore() {
   if (!storageImpl) return 0; // story-007: pre-warm read never triggers the probe — title renders 0, warm-up re-renders the real value
   try {

@@ -21,6 +21,12 @@ export let paused = false;
 function setPaused(p) {
   if (ctx.probs.phase !== 'combat') return;
   paused = p;
+  // T1 (stage 6, polish-audit CRITICAL): pause does NOT change phase, so body.playing — and
+  // its cursor:none — stays on while the pause card is up. The card now carries real pills,
+  // so the OS cursor must return for exactly the pause window: body.paused wins the
+  // !important cascade over body.playing * (higher specificity), and it clears on resume /
+  // any phase change (phases.js setPhase removes it defensively).
+  document.body.classList.toggle('paused', p);
   if (p) COMBAT.pauseCancelCharge(); // story-018 review fix: a pause WIPES the charge accumulator —
   // a release DURING the pause (the window pointerup still flips input.fire while tickCombat is
   // halted) must never fire the charged bolt on resume. Direction-flipped equivalent of the
@@ -79,6 +85,13 @@ export function onTitleAction(kind) {
   audioUnlock(); // first gesture hands the context to the world (§8.3)
   if (kind === 'launch') setPhase('pad');
   else setPhase('combat'); // SKIP TO COMBAT is a real path since S4
+}
+
+// T1: the pause card's RESUME pill — the onTitleAction pattern (an exported action main.js
+// wires; setPaused stays module-internal so the pause state keeps ONE owner). setPaused's own
+// combat guard makes this a no-op outside combat, so a stale click can never land anywhere.
+export function onPauseAction(kind) {
+  if (kind === 'resume') setPaused(false);
 }
 
 /* ---------- listener attachment (story-011) ---------- */

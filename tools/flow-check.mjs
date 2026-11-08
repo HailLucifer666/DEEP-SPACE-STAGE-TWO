@@ -89,6 +89,14 @@ try {
 
   await poll(`({p: window.__stage2 && __stage2.phase})`, (v) => v.p === 'title', 140000, 400);
   ok('boot → title', await evl(`!document.getElementById('title').hidden`) === true);
+  // T1 (stage 6): inline SVG favicon in the template head — a data URL (no external file, no
+  // network fetch on file://), and the head must stay console-silent about it (this page's
+  // terminal CONSOLE [] assert is the witness). RED-FIRST 2026-11-08 (branch polish/stage6-
+  // experience, product untouched — only this harness differs): the pre-T1 head has no
+  // <link rel="icon"> — RED for absence. Transcript: production/qa/evidence/stage6-t1/flow-red-t1.txt.
+  ok('T1: favicon link present in the head (inline SVG data URL)',
+    await evl(`(/^data:image\\/svg\\+xml/.test((document.querySelector('link[rel="icon"]') || {}).href || ''))`) === true,
+    await evl(`JSON.stringify((document.querySelector('link[rel="icon"]') || {}).href || null)`));
 
   /* --- SKIRMISH path --- */
   await evl(`document.getElementById('btn-skip').click()`);
@@ -111,6 +119,79 @@ try {
   ok('wave 1 spawns zero drones (story-012)', cs12.drones === 0, `drones=${cs12.drones}`);
   ok('wave 1 raider count unchanged (4)', cs12.enemies === 4, `enemies=${cs12.enemies}`);
   ok('boss slot null before spawn (story-013 keep-passing)', cs12.boss === null, `boss=${JSON.stringify(cs12.boss)}`);
+
+  /* --- T1 pause card (stage 6): real keys + real element clicks, run while the fight is fresh ---
+     The pause card ships two pills (RESUME / SOUND) with the cursor precondition from the
+     polish audit (ux-audit F3 CRITICAL): pause does NOT change phase, and body.playing carries
+     cursor:none — so setPaused must toggle a body class that restores the OS cursor for the
+     card, and clear it on resume. The SOUND pill mirrors the session mute state and must
+     live-refresh on BOTH toggle paths (the M key and the click — the rider-D rule the title
+     pill already obeys). RESUME must unpause through input.js's setPaused(false) — the same
+     code path P/ESC take. RED-FIRST 2026-11-08 (branch polish/stage6-experience, product
+     untouched — only this harness differs): on the pre-T1 build the pause card is text-only —
+     #pause-resume/#pause-sound are absent, body never gains .paused (computed cursor stays
+     'none' — the audit-CRITICAL defect, buttons present but unseeable), and no in-card label
+     can exist. Every assert below records RED for that absence reason; the runs are kept
+     alive past each red with the KeyP fallback so every red gets recorded.
+     Transcript: production/qa/evidence/stage6-t1/flow-red-t1.txt. */
+  await key('KeyP', 'keydown'); await key('KeyP', 'keyup'); // REAL pause path (input.js setPaused)
+  await poll(`({p: !document.getElementById('pause').hidden})`, (v) => v.p, 5000);
+  const pzT1 = await J(`({
+    paused: window.__stage2.paused,
+    bodyPaused: document.body.classList.contains('paused'),
+    bodyCursor: getComputedStyle(document.body).cursor,
+    resume: (document.getElementById('pause-resume') || {}).textContent || null,
+    sound: (document.getElementById('pause-sound') || {}).textContent || null,
+    resumeCursor: document.getElementById('pause-resume') ? getComputedStyle(document.getElementById('pause-resume')).cursor : null,
+    muted: window.__stage2.muted,
+  })`);
+  ok('T1 pause: card up with RESUME + SOUND pills (existing .pill grammar)',
+    !!pzT1.resume && !!pzT1.sound && pzT1.resume.includes('RESUME') && pzT1.sound.startsWith('[ SOUND:'), JSON.stringify(pzT1));
+  ok('T1 pause: body.paused restores the OS cursor (audit-CRITICAL — cursor:none must not own the card)',
+    pzT1.bodyPaused === true && pzT1.bodyCursor === 'auto' && pzT1.resumeCursor === 'auto', JSON.stringify(pzT1));
+  ok('T1 pause: SOUND pill label mirrors the session mute state (rider-D grammar, in-card)',
+    pzT1.sound === `[ SOUND: ${pzT1.muted ? 'OFF' : 'ON'} ]`, JSON.stringify({ sound: pzT1.sound, muted: pzT1.muted }));
+  await evl(`(document.getElementById('pause-resume') || { click(){} }).click()`); // the click path main.js wires
+  await sleep(400);
+  const rzT1a = await J(`({ p: window.__stage2.paused, h: document.getElementById('pause').hidden })`);
+  if (rzT1a.p) { // red-run fallback: the pre-T1 build has no button — restore with the key path so the run lives on
+    await key('KeyP', 'keydown'); await key('KeyP', 'keyup'); await sleep(300);
+  }
+  ok('T1 pause: RESUME click unpauses (same setPaused(false) path as P/ESC)',
+    rzT1a.p === false && rzT1a.h === true, JSON.stringify(rzT1a));
+  await key('KeyP', 'keydown'); await key('KeyP', 'keyup'); // pause again for the sound-pill battery
+  await poll(`({p: !document.getElementById('pause').hidden})`, (v) => v.p, 5000);
+  await evl(`(document.getElementById('pause-sound') || { click(){} }).click()`);
+  await sleep(200);
+  const s1T1 = await J(`({ m: window.__stage2.muted,
+    pauseLabel: (document.getElementById('pause-sound') || {}).textContent || null,
+    titleLabel: (document.getElementById('btn-sound') || {}).textContent || null })`);
+  ok('T1 pause: SOUND click mutes in-session and live-syncs BOTH pills (pause + title)',
+    s1T1.m === true && s1T1.pauseLabel === '[ SOUND: OFF ]' && s1T1.titleLabel === '[ SOUND: OFF ]', JSON.stringify(s1T1));
+  await evl(`(document.getElementById('pause-sound') || { click(){} }).click()`);
+  await sleep(200);
+  const s2T1 = await J(`({ m: window.__stage2.muted,
+    pauseLabel: (document.getElementById('pause-sound') || {}).textContent || null,
+    titleLabel: (document.getElementById('btn-sound') || {}).textContent || null })`);
+  ok('T1 pause: SOUND click unmutes (toggle both ways, labels re-sync)',
+    s2T1.m === false && s2T1.pauseLabel === '[ SOUND: ON ]' && s2T1.titleLabel === '[ SOUND: ON ]', JSON.stringify(s2T1));
+  await key('KeyM', 'keydown'); await key('KeyM', 'keyup'); await sleep(150); // the M path while paused — the label must follow (rider-D mirror)
+  const s3T1 = await J(`({ m: window.__stage2.muted,
+    pauseLabel: (document.getElementById('pause-sound') || {}).textContent || null })`);
+  ok('T1 pause: M while paused live-refreshes the pause SOUND label (rider-D mirror, no click)',
+    s3T1.m === true && s3T1.pauseLabel === '[ SOUND: OFF ]', JSON.stringify(s3T1));
+  await key('KeyM', 'keydown'); await key('KeyM', 'keyup'); await sleep(150); // restore unmuted — the story-020 pages later in this run read the persisted raw key
+  await evl(`(document.getElementById('pause-resume') || { click(){} }).click()`);
+  await sleep(300);
+  let rzT1b = await J(`({ p: window.__stage2.paused, h: document.getElementById('pause').hidden,
+    bp: document.body.classList.contains('paused'), c: getComputedStyle(document.body).cursor })`);
+  if (rzT1b.p) { // red-run fallback (pre-T1 build: no button)
+    await key('KeyP', 'keydown'); await key('KeyP', 'keyup'); await sleep(300);
+    rzT1b = await J(`({ p: window.__stage2.paused, h: document.getElementById('pause').hidden,
+      bp: document.body.classList.contains('paused'), c: getComputedStyle(document.body).cursor })`);
+  }
+  ok('T1 pause: RESUME closes the card, clears body.paused, cursor re-hides into play',
+    rzT1b.p === false && rzT1b.h === true && rzT1b.bp === false && rzT1b.c === 'none', JSON.stringify(rzT1b));
 
   /* --- WASD + boundary probes (story-004 throttle+turn / story-005 soft boundary) ---
      Mutation evidence 2026-11-03: this full probe set ran against the story-002 build
@@ -1926,6 +2007,60 @@ try {
   }
   const d20g = await muteState20();
   ok("story-020: numeric garbage '2' boots unmuted (the 0-1 clamp — mutation B's discriminator)", d20g.m === false, JSON.stringify(d20g));
+
+  /* --- T1 RECORD-0 suppression (observer page; one-time Page.addScriptToEvaluateOnNewDocument
+     capability, registered here for THIS page only — the harness's page setup grows once,
+     contained). A nonzero record is seeded RAW, the page is navigated, and an init-script
+     observer records EVERY #t-rec/#hs-line paint from first parse to the read. visual-audit
+     F2-6: the story-007 lazy store returns 0 pre-warm by design ("title renders 0, warm-up
+     re-renders the real value"), so the title's first paint shows a false RECORD 0 on any
+     warm profile. The fix holds a placeholder until the warm callback — the KEEP-PASSING
+     contract ("F2-6 changes the initial paint, not this contract") is that the warm callback
+     still re-renders the real value, asserted here explicitly.
+     RED-FIRST 2026-11-08 (branch polish/stage6-experience, product untouched): on the pre-T1
+     build title.enter's refreshRecordLine paints 'RECORD 0' with the store still cold — the
+     observer sees it and the never-0 assert records RED; the warm re-render assert is GREEN
+     on the old build BY DESIGN (keep-passing). Transcript:
+     production/qa/evidence/stage6-t1/flow-red-t1.txt. */
+  await evl(`localStorage.setItem('stage2.highscore', '4242')`); // raw seed — a nonzero record must never be painted over by a 0
+  await send('Page.addScriptToEvaluateOnNewDocument', { source: `
+    window.__t1rec = { rec: [], hs: [], err: null };
+    try {
+      const push = (arr, v) => { if (arr[arr.length - 1] !== v) arr.push(v); };
+      const snap = () => {
+        const r = document.getElementById('t-rec'), h = document.getElementById('hs-line');
+        if (r) push(window.__t1rec.rec, r.textContent);
+        if (h) push(window.__t1rec.hs, h.textContent);
+      };
+      new MutationObserver(snap).observe(document, { subtree: true, childList: true, characterData: true });
+    } catch (e) { window.__t1rec.err = String((e && e.message) || e); }
+  ` });
+  await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat' });
+  {
+    const t0 = Date.now();
+    for (;;) {
+      try { if (await J(`(window.__stage2 && __stage2.phase) || 'boot'`) === 'combat') break; } catch {}
+      if (Date.now() - t0 > 60000) break;
+      await sleep(300);
+    }
+  }
+  let recT1 = null;
+  {
+    const t0 = Date.now();
+    for (;;) {
+      try { recT1 = await J(`window.__t1rec || null`); } catch { recT1 = null; }
+      if (recT1 && recT1.err == null && recT1.rec.length >= 2) break; // placeholder paint + warm re-render must both have fired
+      if (Date.now() - t0 > 30000) break;
+      await sleep(200);
+    }
+  }
+  const recX = recT1 || { rec: [], hs: [], err: 'observer absent' };
+  ok('T1 record: observer captured every paint; pre-warm paint is the placeholder — RECORD 0 never paints over a nonzero record',
+    recX.err == null && recX.rec.length >= 2 && recX.rec[0] === 'RECORD —' && recX.rec.every((v) => v !== 'RECORD 0') &&
+    recX.hs.length >= 2 && recX.hs[0] === 'HIGH SCORE —' && recX.hs.every((v) => v !== 'HIGH SCORE — 0'),
+    JSON.stringify(recX));
+  ok('T1 record: warm callback re-renders the real seeded value (KEEP-PASSING contract intact)',
+    recX.rec.includes('RECORD 4242') && recX.hs.includes('HIGH SCORE — 4242'), JSON.stringify(recX));
 
   ok('CONSOLE []', errs.length === 0, errs.join(' | '));
 } catch (e) {

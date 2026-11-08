@@ -120,6 +120,7 @@ export function setPhase(name) {
   ctx.probs.phase = name;
   for (const elm of ctx.OVERLAY_ELMS) elm.hidden = true; // overlay sweep (story-001)
   document.body.classList.toggle('playing', PLAYING_PHASES.has(name)); // cursor:none rides the play phases
+  document.body.classList.remove('paused'); // T1: .paused is the combat-pause window (input.js setPaused) — a phase change always leaves the pause state, so the cursor class can never strand across a sweep
   hook.enter?.();
   return true;
 }
