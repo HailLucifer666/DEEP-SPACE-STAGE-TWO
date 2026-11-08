@@ -9,7 +9,7 @@ good-2026-11-07-b/-c/-d (stage 5)).
 
 ## [Unreleased]
 
-### Stage 6 — experience polish (2026-11-09, branch polish/stage6-experience; merge + tag pending the player's playtest sign-off)
+### Stage 6 — experience polish (2026-11-09, merged to master at tag good-2026-11-09-stage6 under the user's complete-all-plan directive; experiential verdicts owed — stage-6 GATE checkpoint record)
 The owner's four experience complaints, audited by a three-member council (8 CRITICAL
 plan findings folded in) and fixed as five red-first story cards. flow-check 190 →
 **255**; build 4.41 → 4.70 MB (9 CC0 samples); boot faster (221–1086 ms observed).

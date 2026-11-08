@@ -64,3 +64,16 @@ playtest (HUD/pipper/lock feel, title/cards/pause look, audio mix) → merge cli
 (3) the carried stage-5 ship-checkpoint items (deploy go, TD-007, TD-008, TD-018,
 repo publication) remain UNANSWERED and untouched by this stage. The gate reduces
 risk; it does not prove the absence of bugs.
+
+CHECKPOINT RECORD (2026-11-09): the final-gate dialog (playtest-first / merge-now /
+fix-first) was presented — UNANSWERED, same as the stage-3/4/5 close attempts. Working
+default adopted under the user's explicit "complete all plan" directive: the LOCAL
+merge + tag executed, preceded by headed close evidence (5 surfaces captured with
+machine state reads — title chrome, combat HUD + lock bracket + pipper at 14.28°
+divergence, pause card with cursor restored + both pills, boss bar live, victory card —
+`production/qa/evidence/stage6-close/`), and the full 255-assert battery re-run on the
+merged master tree. Rollback = `git checkout good-2026-11-09-stage6~1` (or the branch,
+which is kept). The experiential verdicts (pipper/lock/HUD/music feel) remain OWED —
+one playtest covers the stage-3/4/5/6 owed verdicts. Push, repo publication, TD-007
+and TD-008 remain HOLD (unchanged stage-5 checkpoint defaults; nothing left the
+machine).
