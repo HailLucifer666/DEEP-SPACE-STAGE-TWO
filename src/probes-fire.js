@@ -34,7 +34,15 @@
 //      weak-point zone centers on the boss position, boss.js boltHit — a 6° cone would
 //      automate the ×3 weak-point skill). spawnForProbe delays the first volley to 4.0 s
 //      (boss.js) so the 2.2 s window is volley-free.
-// Reports window.__stage2.fireProbe = { s1, s2, s3, s4, boss, lockWasDefined, lockEverTrue }.
+//   6  story 7.4 CAMERA-AXIS HIT WITNESS (RED-first, 2026-11-10) — a raider seated exactly ON
+//      the camera axis at 16 / 24 / 34 u (seat = camPos + camForward·D, live-read from
+//      C.camera): real fired bolts must kill it at all three ranges, and the lock must
+//      acquire within ~1 frame of the seat entering the acquire cone. The pre-7.4 nose-aim
+//      build MISSES all three (the camera sits 3.4 u above the ship and looks 4 u ahead while
+//      bolts fly the nose — the two lines only cross 4 u out, so an on-axis target is hit
+//      high: perpendicular miss 2.1 / 4.4 / 7.2 u against the 1.05 u kill sphere) and never
+//      locks (the seat sits 8-12° off the NOSE, outside the old 6° acquire cone).
+// Reports window.__stage2.fireProbe = { s1, s2, s3, s4, boss, s6, lockWasDefined, lockEverTrue }.
 // lockWasDefined/lockEverTrue make the feature-absent build record honest reds (lock reads
 // undefined there) instead of vacuous greens. Import rule unchanged: probes never import
 // combat.js — the tick receives combat state + the pure helpers as arguments (R-e discipline);
@@ -56,20 +64,29 @@ const PARK4_YAW = 20;    // outside both cones — the never-locks seat
 const BOSS_SEAT_R = 26;  // dead-ahead, dead-center in the acquire cone — the exclusion seat
 const seat = (yawDeg, out) => out.set(Math.sin(yawDeg * Math.PI / 180) * SEAT_R, 0, Math.cos(yawDeg * Math.PI / 180) * SEAT_R);
 
+// story 7.4 camera-axis seat constants + helper: seat = camPos + rotate(camFwd, degOff about
+// WORLD_UP) · dist — the camera-relative form the new lock/aim model is measured against.
+const CAM_AXIS_D = [16, 24, 34]; // stage-6 sub-phase seats (u from the camera, on the camera axis)
+const CAM_SEAT_D = 16;           // re-seated stages 2-4 (u from the camera along the offset dir)
+const WORLD_UP = new THREE.Vector3(0, 1, 0);
+
 // stage-6 W1 walk state (droneProbe pattern: plain state HERE, reset by resetFireProbe on combat entry)
 const FP = {
   t: -1, stage: 0, sT: 0, mark: 0, done: false,
   target: null, boss: null, seen: null,
-  s1: null, s2: null, s3: null, s4: null, s5: null,
+  s1: null, s2: null, s3: null, s4: null, s5: null, s6: null,
   lockDefined: false, lockEverTrue: false,
   parked: false, armed: false, killed: false, dirs: null,
 };
+
+// story 7.4 stage-6 sub-phase record factory (one per camera-axis seat)
+const mkS6Rec = (d) => ({ d, seatDeg: null, lockFrames: null, frames: 0, armed: false, killed: false, timeout: false });
 
 export function resetFireProbe() { // stale-delete hygiene (resetProbes calls this on every combat enter)
   Object.assign(FP, {
     t: -1, stage: 0, sT: 0, mark: 0, done: false,
     target: null, boss: null, seen: null,
-    s1: null, s2: null, s3: null, s4: null, s5: null,
+    s1: null, s2: null, s3: null, s4: null, s5: null, s6: null,
     lockDefined: false, lockEverTrue: false,
     parked: false, armed: false, killed: false, dirs: null,
   });
@@ -82,10 +99,29 @@ export function resetFireProbe() { // stale-delete hygiene (resetProbes calls th
   delete window.__stage2.fireGo3;
   delete window.__stage2.fireArm4;
   delete window.__stage2.fireGo4;
+  delete window.__stage2.fireArm6;
+  delete window.__stage2.fireGo6;
+  delete window.__stage2.fireArm6b;
+  delete window.__stage2.fireGo6b;
+  delete window.__stage2.fireArm6c;
+  delete window.__stage2.fireGo6c;
 }
 
 /* ---------- in-page helpers (no allocation per tick beyond the report) ---------- */
-const V = { f: new THREE.Vector3() }; // forward scratch for the capture snapshots
+const V = { // scratch (module-level — no per-tick allocation)
+  f: new THREE.Vector3(), camPos: new THREE.Vector3(), camFwd: new THREE.Vector3(),
+  rot: new THREE.Vector3(), muzzle: new THREE.Vector3(), exp: new THREE.Vector3(),
+};
+function camSeat(c, degOff, dist, out) { // seat on a cone around the CAMERA axis: camPos + rotate(camFwd, degOff about WORLD_UP)·dist (c = the tick's live combat state — module scope has no C)
+  c.camera.getWorldPosition(V.camPos);
+  c.camera.getWorldDirection(V.camFwd);
+  V.rot.copy(V.camFwd).applyAxisAngle(WORLD_UP, degOff * Math.PI / 180).normalize();
+  return out.copy(V.camPos).addScaledVector(V.rot, dist);
+}
+function camStateSnap(c) { // refresh V.camPos/V.camFwd without seating (the expected-dir math reads these)
+  c.camera.getWorldPosition(V.camPos);
+  c.camera.getWorldDirection(V.camFwd);
+}
 function snapLock() { // the lock state through the sanctioned harness surface (probes never import combat.js)
   try {
     const cs = window.__stage2.combatState();
@@ -138,11 +174,13 @@ export function fireProbeTick(dt, C, env) {
   C.vel.set(0, 0, 0); C.speed = 0; C.pitch = 0; C.heading = 0;
 
   switch (FP.stage) {
-    case 0: // settle, then open stage 1
-      if (FP.sT >= 0.4) {
+    case 0: // settle, then open stage 1 — story 7.4: 1.6 s (was 0.4) so the chase cam is FULLY
+      // settled (e^-8 ≈ 0.03% of any entry offset remains) before the camera-relative seat math
+      // and the converge-aim measurement read the live camera
+      if (FP.sT >= 1.6) {
         cpFieldClear(C);
         FP.seen = new Set(); FP.stage = 1; FP.sT = 0; FP.mark = 0;
-        FP.s1 = { lockSeen: false, bracketOnLock: false, boltCaptured: false, dirDeg: null, killConfirmed: false, markElSeen: false, killMarkSeen: false }; // stage-6 H1: kill-marker fields ride the stage record
+        FP.s1 = { lockSeen: false, bracketOnLock: false, boltCaptured: false, dirDeg: null, convDeg: null, killConfirmed: false, markElSeen: false, killMarkSeen: false }; // stage-6 H1: kill-marker fields ride the stage record
       }
       return;
 
@@ -318,11 +356,60 @@ export function fireProbeTick(dt, C, env) {
       if (FP.sT >= 2.2) {
         BOSS.clearBoss(); // the latch re-arms (§8.6) — the page's combat stays clean after the walk
         cpFieldClear(C); // also drains any volley bolts (they ride E.bolts)
-        FP.done = true;
-        window.__stage2.fireProbe = {
-          s1: FP.s1, s2: FP.s2, s3: FP.s3, s4: FP.s4, boss: FP.s5,
-          lockWasDefined: FP.lockDefined, lockEverTrue: FP.lockEverTrue,
-        };
+        FP.stage = 6; FP.sT = 0; FP.mark = 0; FP.seen = new Set();
+        FP.s6 = { phase: 0, rec: mkS6Rec(CAM_AXIS_D[0]), d16: null, d24: null, d34: null };
+        try { // park the cursor at screen center for the stage (the same dispatch pattern the harness pipper asserts use)
+          window.dispatchEvent(new PointerEvent('pointermove', { clientX: Math.round(window.innerWidth / 2), clientY: Math.round(window.innerHeight / 2), bubbles: true }));
+        } catch { /* best-effort */ }
+      }
+      return; }
+
+    case 6: { // story 7.4 CAMERA-AXIS HIT WITNESS — RED-first 2026-11-10:
+      // seen RED against pre-7.4 nose-aim code: the camera sits 3.4 u above the ship and looks
+      // 4 u ahead while bolts fly along the nose, so a raider seated exactly ON the camera axis
+      // (camPos + camForward·D) is missed at every range (perpendicular miss 2.1/4.4/7.2 u vs
+      // the 1.05 u kill sphere) and never locked (8-12° off the NOSE, outside the old 6° cone).
+      // Three sequential sub-phases: seat at 16 / 24 / 34 u on the live camera axis, cursor
+      // parked at screen center, real CDP fire per sub-phase, hit/miss + lock-latency recorded.
+      const cs = snapLock();
+      if (!FP.target) { // SEAT: camPos + camForward·D (live-read; the camera is settled by here)
+        camSeat(C, 0, CAM_AXIS_D[FP.s6.phase], C.tmp2);
+        FP.seat = [C.tmp2.x, C.tmp2.y, C.tmp2.z];
+        FP.s6.rec.seatDeg = +angDeg(
+          [C.tmp2.x - V.camPos.x, C.tmp2.y - V.camPos.y, C.tmp2.z - V.camPos.z],
+          [V.camFwd.x, V.camFwd.y, V.camFwd.z]).toFixed(2); // seat sanity: ≈ 0 by construction
+        FP.target = ENEMIES.spawnForProbe(C.tmp2);
+        FP.target.position.set(FP.seat[0], FP.seat[1], FP.seat[2]); // pin at the seat (the rammer's seek would drift it)
+        return;
+      }
+      if (FP.target.userData.alive) FP.target.position.set(FP.seat[0], FP.seat[1], FP.seat[2]); // pinned
+      const rec = FP.s6.rec;
+      rec.frames++;
+      if (rec.lockFrames === null && lockedNow(cs) === true) rec.lockFrames = rec.frames; // 1 = the tick after the seat (lockTick runs before this probe in tickCombat)
+      if (!rec.armed) {
+        if (rec.frames >= 20) { rec.armed = true; window.__stage2[['fireArm6', 'fireArm6b', 'fireArm6c'][FP.s6.phase]] = true; } // lock sample landed; arm the real fire
+        return;
+      }
+      if (!window.__stage2[['fireGo6', 'fireGo6b', 'fireGo6c'][FP.s6.phase]]) {
+        if (rec.frames >= 20 + 360) window.__stage2[['fireGo6', 'fireGo6b', 'fireGo6c'][FP.s6.phase]] = true; // deadline guard — record the honest red
+        return;
+      }
+      if (!FP.target.userData.alive) rec.killed = true;
+      if (rec.killed || rec.frames >= 20 + 360 + 240) { // kill done or 4 s post-fire timeout
+        rec.timeout = !rec.killed;
+        FP.s6[['d16', 'd24', 'd34'][FP.s6.phase]] = rec;
+        cpFieldClear(C); FP.target = null; FP.seen = new Set();
+        C.bolts.clear(); // drain the hold's leftover bolts — a live leftover must not mask the next seat's capture
+        FP.s6.phase++;
+        if (FP.s6.phase >= CAM_AXIS_D.length) {
+          FP.done = true;
+          window.__stage2.fireProbe = {
+            s1: FP.s1, s2: FP.s2, s3: FP.s3, s4: FP.s4, boss: FP.s5, s6: FP.s6,
+            lockWasDefined: FP.lockDefined, lockEverTrue: FP.lockEverTrue,
+          };
+        } else {
+          FP.s6.rec = mkS6Rec(CAM_AXIS_D[FP.s6.phase]);
+        }
       }
       return; }
   }

@@ -1794,7 +1794,7 @@ try {
   let fp = null;
   {
     const t0 = Date.now();
-    let arm1 = false, arm2 = false, arm3 = false, arm4 = false;
+    let arm1 = false, arm2 = false, arm3 = false, arm4 = false, arm6 = false, arm6b = false, arm6c = false;
     // the REAL trigger — CDP mouse input through input.js's own listener (the same chain a
     // player's click hits); the drive only watches for the fireGoN handshake
     const firePress = async (go) => {
@@ -1810,6 +1810,10 @@ try {
         else if (arm1 && !arm2 && await evl(`(window.__stage2 && window.__stage2.fireArm2) === true`)) { arm2 = true; await firePress('fireGo2'); }
         else if (arm2 && !arm3 && await evl(`(window.__stage2 && window.__stage2.fireArm3) === true`)) { arm3 = true; await firePress('fireGo3'); }
         else if (arm3 && !arm4 && await evl(`(window.__stage2 && window.__stage2.fireArm4) === true`)) { arm4 = true; await firePress('fireGo4'); }
+        // story 7.4: the camera-axis hit witness — one real press per seat (16/24/34 u)
+        else if (arm4 && !arm6 && await evl(`(window.__stage2 && window.__stage2.fireArm6) === true`)) { arm6 = true; await firePress('fireGo6'); }
+        else if (arm6 && !arm6b && await evl(`(window.__stage2 && window.__stage2.fireArm6b) === true`)) { arm6b = true; await firePress('fireGo6b'); }
+        else if (arm6b && !arm6c && await evl(`(window.__stage2 && window.__stage2.fireArm6c) === true`)) { arm6c = true; await firePress('fireGo6c'); }
         fp = await J(`(window.__stage2 && window.__stage2.fireProbe) || null`);
       } catch { fp = null; }
       if (fp) break;
@@ -1847,6 +1851,24 @@ try {
     fs4.locked === false && fs4.lockEverTrue === false && typeof fs4.boltAngleToForward === 'number' && fs4.boltAngleToForward <= 1.1, JSON.stringify(fs4));
   ok('W1: the boss never locks (boss parked dead-ahead 26u — dead-center in the acquire cone — for the whole window)',
     fs5.bossAliveSeen === true && fs5.bossInConeEver === true && fs5.bossLockSeen === false && fpX.lockWasDefined === true, JSON.stringify(fs5));
+
+  /* --- story 7.4: camera-axis hit witness (RED-first 2026-11-10) ---
+     The drive seats a raider exactly ON the camera axis (camPos + camForward·D, live-read from
+     C.camera) at 16/24/34 u and fires real bolts per seat. The pre-7.4 nose-aim build misses
+     all three (bolts fly the nose; the camera axis crosses it only 4 u out — perpendicular
+     miss 2.1/4.4/7.2 u vs the 1.05 u kill sphere) and never locks the seat (8-12° off the
+     NOSE, outside the old 6° acquire cone) — both asserts below record honest reds there.
+     lockFrames counts DRIVE ticks from seat to first locked sample: 1 = the tick after the
+     seat (lockTick precedes the probe in tickCombat — same-frame is structurally impossible);
+     ≤3 tolerates a harness stall frame without weakening the no-delay contract. */
+  const fs6 = fpX.s6 || {};
+  ok('7.4 camera-axis hit witness: real fired bolts kill a raider seated ON the camera axis at 16/24/34u (pre-7.4 nose-aim misses all three)',
+    !!fs6.d16 && typeof fs6.d16.seatDeg === 'number' && fs6.d16.killed === true &&
+    !!fs6.d24 && fs6.d24.killed === true && !!fs6.d34 && fs6.d34.killed === true, JSON.stringify(fs6));
+  ok('7.4: lock acquires the camera-axis seat within ~1 frame of it entering the acquire cone (all three seats; null = never locked)',
+    !!fs6.d16 && fs6.d16.lockFrames >= 1 && fs6.d16.lockFrames <= 3 &&
+    !!fs6.d24 && fs6.d24.lockFrames >= 1 && fs6.d24.lockFrames <= 3 &&
+    !!fs6.d34 && fs6.d34.lockFrames >= 1 && fs6.d34.lockFrames <= 3, JSON.stringify(fs6));
 
   // pipper — element-budget law: pipper = bolt path. Renders ONLY while the reticle (pointer)
   // diverges past the threshold; self-hides aligned. The post-drive field is empty for ~99 s
