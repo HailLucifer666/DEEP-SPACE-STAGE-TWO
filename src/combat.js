@@ -18,7 +18,7 @@ import { noiseBurst, loopStart, musicEvict, musicSetDuck, alarmTick, proximityTi
 import { initWeapons, makeBolt, fireTick, boltsTick, effectsTick, applyEffect, T_CHARGE, BOLT_LIFE } from './weapons.js'; // review-fix split (story-018 review round): the fire path + projectile/effect side — verbatim moves; combat calls them at the same tickCombat positions and composes POWERUP_API around the imported applyEffect
 import { stageShip, combatFlow } from './launch.js';
 import * as AIM from './aim-assist.js'; // stage-6 W1: the lock scan + spawn-bias + aim HUD owner — combat hands the LIVE C + forward closure ONCE (the initWeapons seam pattern); aim-assist imports enemies/drone directly and must NEVER import combat.js (dep-check rule)
-import { droneProbeTick, bossProbeTick, pitchProbeTick, dressingProbeTick, chargeProbeTick, powerupProbeTick, balanceProbeTick, fireProbeTick, resetProbes } from './probes.js'; // rider R-e: the probe drives + their state live in probes.js — combat calls them, never the reverse (dep-check: acyclic; story-019 adds balanceProbeTick through the same re-export wiring; stage-6 W1 adds fireProbeTick — the real-fire capture walk)
+import { droneProbeTick, bossProbeTick, pitchProbeTick, dressingProbeTick, chargeProbeTick, powerupProbeTick, balanceProbeTick, fireProbeTick, flightProbeTick, resetProbes } from './probes.js'; // rider R-e: the probe drives + their state live in probes.js — combat calls them, never the reverse (dep-check: acyclic; story-019 adds balanceProbeTick through the same re-export wiring; stage-6 W1 adds fireProbeTick — the real-fire capture walk; stage-7 story 7.0 adds flightProbeTick — the flight-baseline walk)
 import * as DRESSING from './arena-dressing.js'; // story-017: combat-only ambient field + shell visual (GDD §3.6)
 
 const ARENA_Y = 18; // story-016: re-anchored as the sphere CENTER's y — O = (0, ARENA_Y, 0) (the spawn point)
@@ -520,6 +520,7 @@ export function tickCombat(dt, t) {
   powerupProbeTick(dt, C, probeEnv); // story-018: deterministic pickup/effect walk (?powerupProbe=1)
   balanceProbeTick(dt, C, probeEnv); // story-019: elite/table/telemetry walk (?balanceProbe=1) — the drive grows with the story's commits
   fireProbeTick(dt, C, probeEnv); // stage-6 W1: real-fire bolt capture (?fireProbe=1) — seeds targets, captures b.userData.dir of REAL fired bolts (CDP press via the harness arm flags); never spawns a bolt itself
+  flightProbeTick(dt, C, probeEnv); // stage-7 story 7.0: flight-baseline walk (?flightProbe=1) — measures the OLD model (pitch clamp, no-roll, fov, cam-lag, R_HARD clamp); the 7.1/7.3 honest-red witness; zero gameplay change
   DRESSING.tickDressing(dt, Math.hypot(C.pos.x, C.pos.y - ARENA_Y, C.pos.z)); // story-017: slow whole-group rotation + shell opacity from 3D proximity (the ring's driver grammar)
 
   // shield regen after a clean 3 s — story-018: while SHIELD is active the regen delay reads 0

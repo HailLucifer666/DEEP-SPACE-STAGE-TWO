@@ -20,6 +20,7 @@ import { resetChargeProbe } from './probes-charge.js'; // review-fix split: the 
 import { resetPowerupProbe } from './probes-powerup.js'; // review-fix split: same, for the powerup walk
 import { resetBalanceProbe } from './probes-balance.js'; // story-019: the balance walk's state bag + window hygiene live with the drive (the story-018 split precedent)
 import { resetFireProbe } from './probes-fire.js'; // stage-6 W1: the fire-path walk's state bag + window hygiene live with the drive (the story-018 split precedent)
+import { resetFlightProbe } from './probes-flight.js'; // stage-7 story 7.0: the flight-baseline walk's state bag + window hygiene live with the drive (the story-018 split precedent)
 import './probes-audio.js'; // stage-6 A1: the self-driving audio probe (?audioProbe=1 / ?sfxFault=1) — no tick, no reset: it waits for the unlock gesture and exercises audio.js's public surface directly (imports audio.js, NEVER combat.js)
 
 // story-018 walks (review-fix split): combat.js imports the ticks from HERE (the R-e wiring,
@@ -28,6 +29,7 @@ export { chargeProbeTick, resetChargeProbe } from './probes-charge.js';
 export { powerupProbeTick, resetPowerupProbe } from './probes-powerup.js';
 export { balanceProbeTick, resetBalanceProbe } from './probes-balance.js'; // story-019 re-export — the new walk rides the same wiring (combat.js's probes import gains exactly one name)
 export { fireProbeTick, resetFireProbe } from './probes-fire.js'; // stage-6 W1 re-export — the real-fire capture walk (the drive seeds targets + captures b.userData.dir; it never spawns a bolt itself)
+export { flightProbeTick, resetFlightProbe } from './probes-flight.js'; // stage-7 story 7.0 re-export — the flight-baseline walk (measures the OLD model; the 7.1/7.3 honest-red witness)
 
 const qs = new URLSearchParams(location.search);
 const DRONE_PROBE = qs.get('droneProbe') === '1'; // story-012: deterministic single-drone run
@@ -74,6 +76,7 @@ export function resetProbes() { // rider R-e: what enterCombat's inline probe re
   resetPowerupProbe();
   resetBalanceProbe(); // story-019: the balance walk joins the stale-delete hygiene (called last — the story-018 split's call order)
   resetFireProbe(); // stage-6 W1: the fire-path walk joins the stale-delete hygiene (called after the balance walk)
+  resetFlightProbe(); // stage-7 story 7.0: the flight-baseline walk joins the stale-delete hygiene (called last — the story-018 split's call order)
 }
 
 /* ---------- story-012 drone probe (?droneProbe=1) ----------
