@@ -46,8 +46,8 @@ export function initWeapons(deps) {
 }
 
 const FIRE_INTERVAL = 1 / 8; // ~8/s hold-fire
-const BOLT_SPEED = 42;
-export const BOLT_LIFE = 1.2; // exported — combat.js's scriptedKill path + probeEnv still read it (review-fix split)
+const BOLT_SPEED = 70; // story 7.4: 42 → 70 — camera-true aim + homing need the bolt to reach the converge/lead point inside the life window
+export const BOLT_LIFE = 1.1; // story 7.4: 1.2 → 1.1 (range 77u at 70 u/s vs the old 50u — exported — combat.js's scriptedKill path + probeEnv still read it (review-fix split))
 // story-018 charged shot (GDD §3.1-3.2, §7 — threshold spray-then-charge, the resolved
 // Decision 1): ONE trigger, two stages. Below T_CHARGE of continuous LMB hold the stream fires
 // exactly as shipped (first bolt on the press frame); AT the threshold the stream suppresses

@@ -989,7 +989,9 @@ try {
   ok('drift recovers (<8° at 0.8s after release)', typeof sl.recoveredDeg === 'number' && sl.recoveredDeg < 8, `slip=${sl.recoveredDeg}`);
   ok('full-turn circle radius 6.5-7.3 u (FLAGGED: GDD predicted 8.5-11.5, formula traces 6.94 — see block comment + report)', typeof dpth.radius === 'number' && dpth.radius >= 6.5 && dpth.radius <= 7.3, `r=${dpth.radius} max=${dpth.radiusMax}`);
   ok('pitched bolt climbs (>5u over 0.5s)', br.dy > 5, `dy=${br.dy}`);
-  ok('pitched bolt xz-speed honest (±10% of BOLT_SPEED·cosφ)', typeof br.xzSpeed === 'number' && typeof br.phi === 'number' && Math.abs(br.xzSpeed - 42 * Math.cos(br.phi)) <= 0.1 * 42 * Math.cos(br.phi), `xz=${br.xzSpeed} φ=${br.phi}`);
+  // story 7.4: BOLT_SPEED 42 → 70 (weapons.js) — the assert formula reads the new constant (the
+  // measured xzSpeed is BOLT_SPEED·cosφ by construction; ±10% band unchanged)
+  ok('pitched bolt xz-speed honest (±10% of BOLT_SPEED·cosφ)', typeof br.xzSpeed === 'number' && typeof br.phi === 'number' && Math.abs(br.xzSpeed - 70 * Math.cos(br.phi)) <= 0.1 * 70 * Math.cos(br.phi), `xz=${br.xzSpeed} φ=${br.phi}`);
   // BAND SCAFFOLD RETIRED BY STORY-016 — sphere replaces it (FLAGGED, never a quiet edit).
   // Removed 2026-11-05 with the BAND_H/BAND_HH consts and the band bleed block in combat.js:
   // the three story-015 band asserts ('altitude band holds |y−18| ≤ 20.5', 'band vertical
