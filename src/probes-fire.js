@@ -181,7 +181,7 @@ export function fireProbeTick(dt, C, env) {
         cpFieldClear(C);
         FP.seen = new Set(); FP.stage = 1; FP.sT = 0; FP.mark = 0;
         C.bolts.clear(); // nothing may precede the converge capture — the FIRST bolt of stage 1 is the measurement
-        FP.s1 = { lockSeen: false, bracketOnLock: false, boltCaptured: false, dirDeg: null, convDeg: null, armed: false, killConfirmed: false, markElSeen: false, killMarkSeen: false }; // stage-6 H1: kill-marker fields ride the stage record
+        FP.s1 = { lockSeen: false, bracketOnLock: false, pipLockedSeen: false, boltCaptured: false, dirDeg: null, convDeg: null, armed: false, killConfirmed: false, markElSeen: false, killMarkSeen: false }; // stage-6 H1: kill-marker fields ride the stage record
       }
       return;
 
@@ -218,11 +218,14 @@ export function fireProbeTick(dt, C, env) {
         const cap = captureBolt(C, env);
         if (cap) { FP.s1.boltCaptured = true; FP.s1.dirDeg = +angDeg(cap.dir, cap.fwd).toFixed(2); }
       }
-      // bracket honesty sample: the dead-ahead target is in-cone, so on the W1 build the lock
-      // acquires it and the bracket renders ON it (pre-W1 build: element absent → stays false)
+      // bracket honesty sample + story 7.4 pipper-locked sample: the dead-ahead target is
+      // in-cone, so the lock acquires it — the bracket renders ON it and the pipper carries
+      // the `locked` class (pre-7.4 build: the class never exists → stays false, honest red)
       try {
         const el = document.getElementById('lock-bracket');
         if (el && el.hidden === false && FP.s1.lockSeen) FP.s1.bracketOnLock = true;
+        const pip = document.getElementById('pipper');
+        if (pip && FP.s1.lockSeen && pip.classList.contains('locked')) FP.s1.pipLockedSeen = true;
       } catch { /* DOM read is best-effort */ }
       // stage-6 H1: the kill-only hit marker — sampled beside the kill confirmation. The
       // writer runs later in the same tickCombat (the probe ticks precede the HUD block), so

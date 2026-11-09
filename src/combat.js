@@ -546,6 +546,7 @@ export function tickCombat(dt, t) {
   const k = 1 - Math.exp(-5 * dt); // feel: trail reads — 6 -> 5 (story-002)
   C.camera.position.lerp(camTarget, k);
   C.camera.lookAt(C.pos.x + C.tmp2.x * 4, C.pos.y + C.tmp2.y * 4, C.pos.z + C.tmp2.z * 4); // story-015: look-target y UNPINNED from ARENA_Y — rides the pitched nose
+  C.camera.updateMatrixWorld(true); // story 7.4: every projection AFTER this point (pipper anchor state, lock bracket) reads THIS frame's camera — the matrixWorld was one frame stale behind the lookAt write
   EFFECTS.applyShake(dt);
   EFFECTS.tickEffects(dt); // drive the explosion pool — was never called (particles never faded)
   C.flow += ((C.boosting ? 1 : 0) - C.flow) * (1 - Math.exp(-4 * dt)); // smoothed boost rush

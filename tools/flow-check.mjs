@@ -1851,6 +1851,11 @@ try {
   // bossProbe page's 6-real-hit evidence.
   ok('H1: hit marker shows on the registered kill (stage-1 real-bolt kill; element present, seen visible ~150 ms)',
     fs1.markElSeen === true && fs1.killConfirmed === true && fs1.killMarkSeen === true, JSON.stringify(fs1));
+  // story 7.4: the positive half of the pipper `locked` class — the stage-1 target is in-cone,
+  // so the lock holds while the drive samples the element (the negative half is the empty-field
+  // assert below).
+  ok('7.4: pipper carries the `locked` class while a lock is held (stage-1 in-cone sample)',
+    fs1.lockSeen === true && fs1.pipLockedSeen === true, JSON.stringify(fs1));
   ok('W1: lock acquires an in-cone target (dead-ahead seed)', fs2.lockSeen === true, JSON.stringify(fs2));
   // story 7.4 rewrite (was: parked 8.5° off the NOSE, outside acquire 6 / inside retain 10):
   // the park is now 16° off the CAMERA axis — outside acquire 12°, inside retain 20° (the same
@@ -1900,18 +1905,24 @@ try {
     !!fs6.d24 && fs6.d24.lockFrames >= 1 && fs6.d24.lockFrames <= 3 &&
     !!fs6.d34 && fs6.d34.lockFrames >= 1 && fs6.d34.lockFrames <= 3, JSON.stringify(fs6));
 
-  // pipper — element-budget law: pipper = bolt path. Renders ONLY while the reticle (pointer)
-  // diverges past the threshold; self-hides aligned. The post-drive field is empty for ~99 s
-  // (the drive's wave-gap pin), so "no lock" here is deterministic. Real pointer events.
+  // pipper — story 7.4 REWRITE (was: renders ONLY while the reticle (pointer, px) diverges
+  // past the 72px threshold — self-hides aligned; that rule and PIPPER_ON_PX are removed).
+  // The pipper is ALWAYS visible while the combat HUD is on (screen-center anchor — with
+  // camera-true aim it is the honest bolt-path marker at every range) and carries the
+  // `locked` class iff a lock is held. The post-drive field is empty for ~99 s (the drive's
+  // wave-gap pin), so "no lock" here is deterministic. Real pointer events.
   await evl(`window.dispatchEvent(new PointerEvent('pointermove', {clientX: Math.round(window.innerWidth/2), clientY: Math.round(window.innerHeight/2), bubbles: true}))`);
   await sleep(300);
   const w1PipC = await J(`({ el: !!document.getElementById('pipper'),
-    hidden: document.getElementById('pipper') ? document.getElementById('pipper').hidden : null })`);
-  ok('W1: pipper self-hides when the reticle is aligned (center pointer)', w1PipC.el === true && w1PipC.hidden === true, JSON.stringify(w1PipC));
+    hidden: document.getElementById('pipper') ? document.getElementById('pipper').hidden : null,
+    locked: document.getElementById('pipper') ? document.getElementById('pipper').classList.contains('locked') : null })`);
+  ok('7.4: pipper always visible in combat (center pointer — the 72px hide rule is gone)', w1PipC.el === true && w1PipC.hidden === false, JSON.stringify(w1PipC));
+  ok('7.4: pipper `locked` class absent with nothing locked (post-drive field empty)', w1PipC.locked === false, JSON.stringify(w1PipC));
   await evl(`window.dispatchEvent(new PointerEvent('pointermove', {clientX: Math.round(window.innerWidth*0.75), clientY: Math.round(window.innerHeight/2), bubbles: true}))`);
   await sleep(300);
-  const w1PipO = await J(`({ hidden: document.getElementById('pipper') ? document.getElementById('pipper').hidden : null })`);
-  ok('W1: pipper renders while the reticle diverges past the threshold (the bolt-path marker appears)', w1PipO.hidden === false, JSON.stringify(w1PipO));
+  const w1PipO = await J(`({ hidden: document.getElementById('pipper') ? document.getElementById('pipper').hidden : null,
+    locked: document.getElementById('pipper') ? document.getElementById('pipper').classList.contains('locked') : null })`);
+  ok('7.4: pipper stays visible while the reticle diverges (always-on law) and still unlocked on the empty field', w1PipO.hidden === false && w1PipO.locked === false, JSON.stringify(w1PipO));
   // stage-6 H1 pipper honesty rider (W1's chair flag): the pipper's visibility gate rides
   // pointer-divergence — the same input-state class as the pre-law reticle — so combatState()
   // now exposes the WRITER'S OWN stored state ({ visible, divergenceDeg }) and the harness can
@@ -1925,7 +1936,7 @@ try {
   await evl(`window.dispatchEvent(new PointerEvent('pointermove', {clientX: Math.round(window.innerWidth/2), clientY: Math.round(window.innerHeight/2), bubbles: true}))`);
   await sleep(300);
   const w1PipR = await J(`({ hidden: document.getElementById('pipper') ? document.getElementById('pipper').hidden : null })`);
-  ok('W1: pipper self-hides on re-alignment (renders ONLY while diverging)', w1PipR.hidden === true, JSON.stringify(w1PipR));
+  ok('7.4: pipper still visible on re-alignment (the always-on law — no self-hide)', w1PipR.hidden === false, JSON.stringify(w1PipR));
   // bracket — ONE element, the locked target only; hidden without a lock; honesty surface:
   // combatState().lockTarget must be null exactly when nothing is locked
   const w1Br = await J(`({ hidden: document.getElementById('lock-bracket') ? document.getElementById('lock-bracket').hidden : null,

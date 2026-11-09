@@ -87,7 +87,8 @@ export const AIMK = {
 // removed — orphaned by the 7.4 lockTick rewrite; no other module referenced them)
 const BIAS_MAX_DEG = 6;                      // per-bolt bias rotation cap — biasDir is RETIRED by 7.4 (kept, uncalled, for API stability)
 const BIAS_MAX_RAD = BIAS_MAX_DEG * Math.PI / 180;
-const PIPPER_ON_PX = 72;                     // the 132px reticle's half-width (66) + 6px — see the header
+// (PIPPER_ON_PX — the 72px divergence-hide threshold — is removed by story 7.4: the pipper is
+// always visible while the combat HUD is on, see hudTick)
 
 const qs = new URLSearchParams(location.search);
 const LOCK_FORCED_OFF = qs.get('lock') === '0'; // probe override: ?lock=0 forces the lock OFF for the whole page (T no-ops)
@@ -237,14 +238,15 @@ export function biasDir(dir, fromPos) { // rotates dir ≤BIAS_MAX_DEG toward th
 
 /* ---------- HUD writers (change-gated; the card puts these here, combat hands camera via the seam) ---------- */
 let pipShow = false; // last pipper gate
+let pipLocked = false; // story 7.4: last pipper `locked`-class gate (change-gated — no per-frame DOM churn)
 let pipDivDeg = 0; // stage-6 H1 honesty rider: the divergence the gate measured this tick (deg off the bolt path) — pipperState() reads THIS stored state, never recomputes
 let brVis = false, brX = -1, brY = -1; // last bracket gates (integer-px change gate)
 
 // stage-6 H1 honesty rider (W1's chair flag): the pointer-divergence from the bolt path in
-// DEGREES, computed from the same pointer read the visibility gate uses — NDC pointer →
-// angular via the live camera frustum (fov vertical, aspect-scaled horizontal). The VISIBILITY
-// gate itself stays px-based (PIPPER_ON_PX — the W1 law); this is the honest companion the
-// harness reads through combatState().pipper.
+// DEGREES, computed from the same pointer read the old visibility gate used — NDC pointer →
+// angular via the live camera frustum (fov vertical, aspect-scaled horizontal). story 7.4: the
+// VISIBILITY gate no longer rides it (the pipper is always visible in combat); this stays the
+// honest companion the harness reads through combatState().pipper.
 function pipDivergenceDeg(inp) {
   if (!C.camera || !Number.isFinite(C.camera.fov) || !Number.isFinite(C.camera.aspect)) return 0;
   const t = Math.tan(C.camera.fov * Math.PI / 360);
@@ -253,19 +255,24 @@ function pipDivergenceDeg(inp) {
 
 export function hudTick() { // called once per tickCombat, after the edge-pip block
   if (!C || !C.ready) return;
-  // pipper — analytic anchor ≈ screen center (header decision); renders ONLY while the
-  // reticle (pointer, px) diverges past PIPPER_ON_PX; self-hides aligned; hidden while
-  // dead. No clip-path (flow-check counts #hud clip-path children — the 8 edge pips).
+  // pipper — story 7.4: ALWAYS visible while the combat HUD is on, analytic anchor ≈ screen
+  // center (header decision). With camera-true aim the pipper is the honest bolt-path marker
+  // at every range — the old 72px divergence hide (PIPPER_ON_PX, removed) hid the one marker
+  // that told the player where the bolts actually go. Hidden while dead (the death card owns
+  // the screen). The H1 divergence rider still measures the pointer angle. The `locked` class
+  // marks an active lock (change-gated). No clip-path (flow-check counts #hud clip-path
+  // children — the 8 edge pips).
   if (C.ui.pipper) {
     const inp = C.api.input;
-    let show = false;
     pipDivDeg = 0;
-    if (!C.dead && inp.mouseActive) {
-      const dx = inp.px.x - window.innerWidth / 2, dy = inp.px.y - window.innerHeight / 2;
-      show = Math.hypot(dx, dy) >= PIPPER_ON_PX;
-      pipDivDeg = pipDivergenceDeg(inp);
-    }
+    if (!C.dead && inp.mouseActive) pipDivDeg = pipDivergenceDeg(inp);
+    const show = !C.dead;
     if (show !== pipShow) { C.ui.pipper.hidden = !show; pipShow = show; }
+    const lk = !!lockTarget; // getLockTarget() — the module's own lock variable
+    if (lk !== pipLocked) {
+      pipLocked = lk;
+      C.ui.pipper.classList.toggle('locked', lk);
+    }
   }
   // bracket — ONE element, the locked target's screen anchor (pip-block projection: in-front
   // dot with the CAMERA forward, then .project). Change-gated on visibility + integer px —
@@ -294,10 +301,10 @@ export function hudTick() { // called once per tickCombat, after the edge-pip bl
 export function resetAimHud() { // clearCombat drain (§8.6): the pad never inherits combat's aim HUD
   lockTarget = null;
   if (C && C.ui) {
-    if (C.ui.pipper) C.ui.pipper.hidden = true;
+    if (C.ui.pipper) { C.ui.pipper.hidden = true; C.ui.pipper.classList.remove('locked'); }
     if (C.ui.lockBr) C.ui.lockBr.hidden = true;
   }
-  pipShow = false; brVis = false; brX = -1; brY = -1;
+  pipShow = false; pipLocked = false; brVis = false; brX = -1; brY = -1;
 }
 
 /* ---------- honesty surface (combatState reads these — the harness-visible lock state) ---------- */
