@@ -89,14 +89,15 @@ export function makeBolt() { // the factory rides with the fire path; combat.js'
 function spawnBolt(dmg, charged, dir) {
   const b = C.bolts.spawn();
   noseWorld(b.position);
-  if (dir) b.userData.dir.copy(dir); else forward(b.userData.dir);
-  // stage-6 W1: the aim-lock spawn bias — STREAM bolts only (the charged release at :147 stays
-  // the manual-aim reward, ux-audit F1). The bias is FINAL at spawn: boltsTick never rewrites
-  // dir after this, bolts stay ballistic (no homing). Runs BEFORE the lookAt so the mesh
-  // follows the biased dir. biasDir uses aim-assist's OWN scratch — never C.tmp (the clobber
-  // warning below); at zero lock angle it is a no-op, so the fire-path baseline invariant
-  // (bolts fly along forward) is untouched.
-  if (!charged) AIM.biasDir(b.userData.dir, b.position);
+  // story 7.4: bolts aim at what the CAMERA sees — stream bolts steer at the locked target's
+  // lead point (AIM.aimDir), charged bolts stay manual but camera-true (the AIMK.CONVERGE_DIST
+  // point). The old nose-forward aim + the spawn bias (AIM.biasDir — retired, still exported
+  // uncalled) are gone: a locked bolt converges by AIMING at the target, and boltsTick HOMES
+  // stream bolts from here on. aimDir writes the module's OWN scratch — never C.tmp (the
+  // clobber warning below still applies to the lookAt itself). Runs BEFORE the lookAt so the
+  // mesh follows the aimed dir.
+  if (dir) b.userData.dir.copy(dir); else AIM.aimDir(b.position, charged, BOLT_SPEED, b.userData.dir);
+  b.userData.target = charged ? null : AIM.getLockTarget(); // story 7.4: the homing target — boltsTick steers stream bolts at its lead point; charged never homes
   b.userData.life = BOLT_LIFE;
   b.userData.dmg = dmg;
   b.userData.charged = charged;
@@ -106,24 +107,26 @@ function spawnBolt(dmg, charged, dir) {
   return b;
 }
 
-// story-018 fan scratch (module-level — no per-shot allocation). The fan rotates the shot's
-// forward ±SPREAD_ARC about the SHIP'S LOCAL UP (kept perpendicular to forward, so the angle
-// between the dirs is exactly ±6° at any pitch — a world-up rotation would narrow the fan at
-// high pitch). The charged bolt is NEVER fanned (GDD §3.2: 3×6 = 18 alpha per cycle would
-// break the DPS parity anchor). NOTE: the center dir is copied OUT of C.tmp first — spawnBolt's
-// lookAt clobbers C.tmp, so a second spawnBolt(dir) reading C.tmp would fly a garbage direction.
-const FAN = { right: new THREE.Vector3(), up: new THREE.Vector3(), left: new THREE.Vector3(), rightD: new THREE.Vector3(), center: new THREE.Vector3() };
+// story-018 fan scratch (module-level — no per-shot allocation). story 7.4: the fan's BASE is
+// the CAMERA-TRUE aim (AIM.aimDir — the locked target's lead point or the AIMK.CONVERGE_DIST
+// point), not the ship's nose; the ±SPREAD_ARC rotation keeps the existing axis derivation
+// (right = base × WORLD_UP, up = right × base — kept perpendicular to the base, so the angle
+// between the dirs is exactly ±6° at any pitch) applied to that base. The charged bolt is
+// NEVER fanned (GDD §3.2: 3×6 = 18 alpha per cycle would break the DPS parity anchor). NOTE:
+// FAN.center is the aimDir OUT vector (never C.tmp), so spawnBolt's lookAt clobber no longer
+// threatens the base — each spawnBolt copies its dir before any lookAt anyway.
+const FAN = { right: new THREE.Vector3(), up: new THREE.Vector3(), left: new THREE.Vector3(), rightD: new THREE.Vector3(), center: new THREE.Vector3(), nose: new THREE.Vector3() };
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 
 function spawnStreamShot() {
-  const d0 = forward(C.tmp); // center dir
+  noseWorld(FAN.nose);
+  AIM.aimDir(FAN.nose, false, BOLT_SPEED, FAN.center); // camera-true base (locked → lead point; else the converge point)
   if (C.effects.SPREAD > 0) {
-    FAN.right.copy(d0).cross(WORLD_UP).normalize();
-    FAN.up.copy(FAN.right).cross(d0).normalize();
+    FAN.right.copy(FAN.center).cross(WORLD_UP).normalize();
+    FAN.up.copy(FAN.right).cross(FAN.center).normalize();
     const a = SPREAD_ARC * Math.PI / 180;
-    FAN.left.copy(d0).applyAxisAngle(FAN.up, a).normalize();
-    FAN.rightD.copy(d0).applyAxisAngle(FAN.up, -a).normalize();
-    FAN.center.copy(d0); // out of the lookAt-clobbered scratch BEFORE the first spawn
+    FAN.left.copy(FAN.center).applyAxisAngle(FAN.up, a).normalize();
+    FAN.rightD.copy(FAN.center).applyAxisAngle(FAN.up, -a).normalize();
     spawnBolt(1, false, FAN.left);
     spawnBolt(1, false, FAN.center);
     spawnBolt(1, false, FAN.rightD);

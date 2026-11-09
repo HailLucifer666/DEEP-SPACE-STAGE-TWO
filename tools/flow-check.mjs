@@ -1427,10 +1427,20 @@ try {
   ok('blink during the last 2 s (off before 6.0 s, on after — blink starts at LIFE − BLINK = 6.0)', puDs.blinkAt55 === false && puDs.blinkAt65 === true, JSON.stringify(puDs));
   ok('pickup radius full-3D (1.3 picks up, 1.6 does not, vertical 1.345 picks up)',
     puRad.pickedAt13 === true && puRad.pickedAt3D === true && puRad.pickedAt16 === false, JSON.stringify(puRad));
-  ok('SPREAD: one shot = 3-bolt fan at ±6°, charged stays single',
-    puSpr.fan === 3 && typeof puSpr.anglePlus === 'number' && Math.abs(puSpr.anglePlus - 6) <= 0.5 &&
-    typeof puSpr.angleMinus === 'number' && Math.abs(puSpr.angleMinus - 6) <= 0.5 &&
-    puSpr.centerAngle <= 0.5 && puSpr.chargedSingle === 1, JSON.stringify(puSpr));
+  // story 7.4 REWRITE (was: anglePlus/angleMinus ≈ 6 and centerAngle ≤ 0.5 — the fan measured
+  // against the NOSE forward, which was the old base). The fan base is the CAMERA-TRUE
+  // converge aim now (?lock=0 on this page — nothing locked): the drive's angles-vs-forward
+  // become geometry constants of the parked seat (centerAngle ≈16°, the camera offset; the
+  // ±6° spread is perpendicular to that offset, so it barely moves the polar angles — the
+  // fan's ±6° geometry is asserted where the real dirs are captured: the fireProbe stage-3
+  // pairSpan assert). What THIS page can still prove: 3 fan bolts, the base is clearly off
+  // the nose (camera-true — centerAngle ≥10 would read 0 on the old base), and charged stays
+  // single. All three fan dirs sit within ±3° of the base's polar angle (bounded fan).
+  ok('SPREAD: one shot = 3-bolt fan about the camera-true base (centerAngle ≈16° parked-seat camera offset, both outer bolts within 3° of it), charged stays single',
+    puSpr.fan === 3 && typeof puSpr.centerAngle === 'number' && puSpr.centerAngle >= 10 && puSpr.centerAngle <= 19 &&
+    typeof puSpr.anglePlus === 'number' && Math.abs(puSpr.anglePlus - puSpr.centerAngle) <= 3 &&
+    typeof puSpr.angleMinus === 'number' && Math.abs(puSpr.angleMinus - puSpr.centerAngle) <= 3 &&
+    puSpr.chargedSingle === 1, JSON.stringify(puSpr));
   // RE-REVIEW band widen (2026-11-06, test-only): shots floor 9 → 8. The reviewer's arithmetic,
   // recorded here: at dt ≳ 0.0238 the fire cadence quantizes to 3 frames ≈ 0.0714 s and
   // 0.617 s / 0.0714 ≈ 8.6 → 8 is the DETERMINISTIC low edge, not a miss (committed history:
@@ -1826,10 +1836,13 @@ try {
   const fpX = fp || {};
   const fs1 = fpX.s1 || {}, fs2 = fpX.s2 || {}, fs3 = fpX.s3 || {}, fs4 = fpX.s4 || {}, fs5 = fpX.boss || {};
   ok('fireProbe reports (stage-6 W1)', !!fp, JSON.stringify(fpX));
-  // FIRE-PATH BASELINE — the invariant the bias must not break (green-by-design on the pre-W1
-  // build; see the block comment). Reads b.userData.dir of REAL fired bolts via the drive.
-  ok('W1 fire-path baseline: real fired bolt flies along forward (b.userData.dir vs forward ≤1.1°)',
-    fs1.boltCaptured === true && typeof fs1.dirDeg === 'number' && fs1.dirDeg <= 1.1, `dirDeg=${fs1.dirDeg}`);
+  // FIRE-PATH BASELINE — story 7.4 rewrite (was: dir vs forward ≤1.1°, the nose-alignment
+  // invariant the W1 bias had to keep). With nothing on the field the lock is null, so the
+  // first real bolt must be CAMERA-TRUE converge aim: dir == normalize(camPos+camFwd·28−muzzle)
+  // within 0.5° (28 = AIMK.CONVERGE_DIST). The old metric rides the report as s1.dirDeg
+  // (provenance only — under 7.4 it reads ~16°, the parked-seat camera offset, BY DESIGN).
+  ok('7.4 fire-path baseline: with nothing locked the real fired bolt is camera-true converge aim (dir vs normalize(camPos+camFwd*28−muzzle) ≤0.5°)',
+    fs1.boltCaptured === true && typeof fs1.convDeg === 'number' && fs1.convDeg <= 0.5, `convDeg=${fs1.convDeg} dirDeg=${fs1.dirDeg}`);
   ok('W1 fire-path baseline: the real fired bolt kills the seeded dead-ahead target (real trigger → spawnBolt → boltsTick)',
     fs1.killConfirmed === true, JSON.stringify(fs1));
   // stage-6 H1: the kill-only hit marker — the registered kill (this stage's real bolt kill,
@@ -1838,19 +1851,34 @@ try {
   // bossProbe page's 6-real-hit evidence.
   ok('H1: hit marker shows on the registered kill (stage-1 real-bolt kill; element present, seen visible ~150 ms)',
     fs1.markElSeen === true && fs1.killConfirmed === true && fs1.killMarkSeen === true, JSON.stringify(fs1));
-  ok('W1: lock acquires an in-cone target (dead-ahead seed, acquire cone ≤6°)', fs2.lockSeen === true, JSON.stringify(fs2));
-  ok('W1: hysteresis — the lock RETAINS a target parked at 8.5° (outside acquire 6°, inside retain ~10°)',
-    fs2.lockRetainedSeen === true, JSON.stringify(fs2));
-  ok('W1: bias cap — the fired bolt converges on the retained target (≥5.5° off the nose) and never exceeds 6.3° (the 6° bias max; the fan+bias sum is bounded by the 10° retain cone — see the block comment)',
-    typeof fs2.biasDeg === 'number' && fs2.biasDeg >= 5.5 && fs2.biasDeg <= 6.3, `biasDeg=${fs2.biasDeg}`);
+  ok('W1: lock acquires an in-cone target (dead-ahead seed)', fs2.lockSeen === true, JSON.stringify(fs2));
+  // story 7.4 rewrite (was: parked 8.5° off the NOSE, outside acquire 6 / inside retain 10):
+  // the park is now 16° off the CAMERA axis — outside acquire 12°, inside retain 20° (the same
+  // hysteresis intent at the new cone numbers); parkDeg ≈16 recorded as the seat sanity.
+  ok('7.4: hysteresis — the lock RETAINS a target parked at 16° off the camera axis (outside acquire 12°, inside retain 20°)',
+    fs2.lockRetainedSeen === true && typeof fs2.parkDeg === 'number' && Math.abs(fs2.parkDeg - 16) <= 1, JSON.stringify(fs2));
+  // story 7.4 rewrite (was: the bias-cap band ≥5.5 ≤6.3 — the capped spawn rotation). The bias
+  // is retired: the fired bolt is LOCK-AIMED at the retained target (≈0° from the direct dir).
+  ok('7.4: the fired bolt is lock-aimed on the retained target (dir vs the direct target dir ≤3°)',
+    typeof fs2.convToTargetDeg === 'number' && fs2.convToTargetDeg <= 3, `convToTargetDeg=${fs2.convToTargetDeg}`);
   ok('W1: dead-target drops the lock (the real bolt kills the retained target; lock reads false after)',
     fs2.lockAfterKill === false, `lockAfterKill=${JSON.stringify(fs2.lockAfterKill)}`);
-  ok('W1: SPREAD fan + bias — the far fan bolt does NOT fully converge (the 6° bias clamp binds; unclamped it would land on the target)',
-    fs3.lockSeen === true && fs3.spreadSeen === true && typeof fs3.maxAngleToTarget === 'number' && fs3.maxAngleToTarget >= 3, JSON.stringify(fs3));
-  ok('W1: SPREAD fan + bias — every fired bolt stays ≤6.3° from the nose (stage-scoped band: fresh-acquire geometry)',
-    fs3.lockSeen === true && typeof fs3.maxAngleToForward === 'number' && fs3.maxAngleToForward <= 6.3, `maxF=${fs3.maxAngleToForward}`);
-  ok('W1: outside-cone target never locks (20° parked; lock false the whole window; fired bolt stays unbiased)',
-    fs4.locked === false && fs4.lockEverTrue === false && typeof fs4.boltAngleToForward === 'number' && fs4.boltAngleToForward <= 1.1, JSON.stringify(fs4));
+  // story 7.4 rewrites (were: 'far fan bolt does NOT fully converge' + 'every bolt ≤6.3° from
+  // the nose' — both describe the retired bias clamp). The fan's base is the camera-true
+  // lock-aim now and fan bolts HOME: the fan still spreads ±6° about that base (max pairwise
+  // dir span at capture, narrowed only by the homing lerp) and a fan bolt converges ON the
+  // locked target (min angle-to-target ≈0 — the center bolt is lock-aimed).
+  ok('7.4: SPREAD fan — the fan still spreads ±6° about the camera-true base (max pairwise dir span 4-13° at capture)',
+    fs3.lockSeen === true && fs3.spreadSeen === true && typeof fs3.pairSpan === 'number' && fs3.pairSpan >= 4 && fs3.pairSpan <= 13, JSON.stringify(fs3));
+  ok('7.4: SPREAD fan — a fan bolt converges ON the locked target (min angle-to-target ≤2.5°; the center bolt is lock-aimed, homing sharpens the outers)',
+    fs3.lockSeen === true && typeof fs3.minToTarget === 'number' && fs3.minToTarget <= 2.5, JSON.stringify(fs3));
+  // story 7.4 rewrite (was: 20° off the NOSE, bolt stays nose-aligned ≤1.1°): the seat is 25°
+  // off the CAMERA axis (outside acquire 12 AND retain 20) and the fired bolt is camera-true
+  // converge aim ≤0.5° (the boltAngleToForward provenance field reads ~16° by design now).
+  ok('7.4: outside-cone target never locks (25° off the camera axis; lock false the whole window)',
+    fs4.locked === false && fs4.lockEverTrue === false, JSON.stringify(fs4));
+  ok('7.4: with nothing locked the fired bolt is camera-true converge aim (dir vs normalize(camPos+camFwd*28−muzzle) ≤0.5°)',
+    typeof fs4.boltConvDeg === 'number' && fs4.boltConvDeg <= 0.5, `boltConvDeg=${fs4.boltConvDeg}`);
   ok('W1: the boss never locks (boss parked dead-ahead 26u — dead-center in the acquire cone — for the whole window)',
     fs5.bossAliveSeen === true && fs5.bossInConeEver === true && fs5.bossLockSeen === false && fpX.lockWasDefined === true, JSON.stringify(fs5));
 

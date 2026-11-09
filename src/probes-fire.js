@@ -13,21 +13,24 @@
 //
 // Stages (all targets probe-pinned at their seat — probe-owned precondition, the pitchProbe
 // lockstep precedent; the rammer's seek/wobble would otherwise drift it off the bolt ray):
-//   1  fire-path BASELINE — rammer seeded dead-ahead at 9 u on the nose axis; a real fired
-//      bolt must fly along forward() (|dir−forward| ≤ ~1.1°) and kill the target. GREEN ON
-//      THE PRE-W1 BUILD BY DESIGN (documented in flow-check + evidence) — this is the
-//      invariant the W1 spawn bias must never break.
-//   2  bias cap + hysteresis + dead-drop — target seeded dead-ahead (acquire ≤6°), then
-//      parked at 8.5° (OUTSIDE acquire, INSIDE retain ~10°): the lock must retain, the fired
-//      bolt must converge (≥5.5° off the nose — bias did work) but never exceed 6.3° (the 6°
-//      bias cap), and the real bolt's kill must DROP the lock.
-//   3  SPREAD fan + bias — target parked at +4° (in-cone), hp 999 probe-stamped (alive for
-//      the whole window so the lock holds), C.effects.SPREAD = 8 (probe-stamped, the
-//      powerupProbe precedent): the far fan bolt (−6°) must NOT fully converge (the 6° bias
-//      clamp binds; unclamped it would land on the target) and every bolt stays ≤6.3° off the
-//      nose (stage-scoped band: fresh-acquire geometry).
-//   4  outside-cone never locks — target parked at 20° (outside acquire 6° and retain 10°):
-//      lock stays false, fired bolts stay unbiased.
+// story 7.4 re-seated stages 2-4 from ship-relative yaws to CAMERA-relative cones (the lock
+// and the aim are camera-axis now) and rebuilt stage 1's baseline around the converge aim.
+//   1  fire-path BASELINE — the field is EMPTY at the arm: the first real bolt must be
+//      CAMERA-TRUE converge aim (dir == normalize(camPos + camFwd·28 − muzzle) within 0.5°).
+//      The dead-ahead target (9 u on the nose axis) is seeded after the capture; the hold's
+//      later bolts lock-aim/hone onto it and kill (kill + bracket + hit-marker asserts keep
+//      their meaning).
+//   2  hysteresis + dead-drop — target seeded dead-ahead (acquires at ~5° off the camera
+//      axis), then parked at 16° off the CAMERA axis (OUTSIDE acquire 12°, INSIDE retain 20°):
+//      the lock must retain, the fired bolt must be LOCK-AIMED on the parked target (≈0° from
+//      the direct target dir), and the real bolt's kill must DROP the lock.
+//   3  SPREAD fan — target parked at 6° off the CAMERA axis (in-cone), hp 999 probe-stamped
+//      (alive for the whole window so the lock holds), C.effects.SPREAD = 8 (probe-stamped,
+//      the powerupProbe precedent): the fan's base is the camera-true lock-aim; a fan bolt
+//      converges ON the target (min angle-to-target ≈0) and the ±6° fan still spreads (max
+//      pairwise dir span 4-13° at capture — narrowed only by the homing lerp).
+//   4  outside-cone never locks — target parked at 25° off the CAMERA axis (outside acquire
+//      12° AND retain 20°): lock stays false, fired bolts stay camera-true converge aim.
 //   5  THE BOSS NEVER LOCKS — BOSS.spawnForProbe parks the boss dead-ahead 26 u (dead-center
 //      in the acquire cone) for 2.2 s: lock stays false the whole window. The boss is excluded
 //      from the candidate scan BY CONSTRUCTION (aim-assist.js header documents why: the
@@ -55,14 +58,11 @@ import { cpFieldClear, cpPin } from './probes-common.js';
 const qs = new URLSearchParams(location.search);
 const FIRE_PROBE = qs.get('fireProbe') === '1'; // stage-6 W1: real-fire bolt-capture walk
 
-// probe geometry (u, degrees): every seat is ship-relative at heading 0 / pitch 0, so the nose
-// axis is +Z and a yaw seat is exactly (sin a · r, 0, cos a · r) off C.pos.
+// probe geometry (u, degrees): the stage-1 seed and the boss seat are SHIP-relative at
+// heading 0 / pitch 0 (nose axis = +Z); stages 2-4 and 6 seat CAMERA-relative via camSeat()
+// below (story 7.4 — the cones are measured from the camera axis now).
 const SEAT_R = 9;
-const PARK2_YAW = 8.5;   // inside retain (~10°), outside acquire (6°) — the hysteresis seat
-const PARK3_YAW = 4;     // inside acquire — the SPREAD fan-clamp seat
-const PARK4_YAW = 20;    // outside both cones — the never-locks seat
 const BOSS_SEAT_R = 26;  // dead-ahead, dead-center in the acquire cone — the exclusion seat
-const seat = (yawDeg, out) => out.set(Math.sin(yawDeg * Math.PI / 180) * SEAT_R, 0, Math.cos(yawDeg * Math.PI / 180) * SEAT_R);
 
 // story 7.4 camera-axis seat constants + helper: seat = camPos + rotate(camFwd, degOff about
 // WORLD_UP) · dist — the camera-relative form the new lock/aim model is measured against.
@@ -180,19 +180,36 @@ export function fireProbeTick(dt, C, env) {
       if (FP.sT >= 1.6) {
         cpFieldClear(C);
         FP.seen = new Set(); FP.stage = 1; FP.sT = 0; FP.mark = 0;
-        FP.s1 = { lockSeen: false, bracketOnLock: false, boltCaptured: false, dirDeg: null, convDeg: null, killConfirmed: false, markElSeen: false, killMarkSeen: false }; // stage-6 H1: kill-marker fields ride the stage record
+        C.bolts.clear(); // nothing may precede the converge capture — the FIRST bolt of stage 1 is the measurement
+        FP.s1 = { lockSeen: false, bracketOnLock: false, boltCaptured: false, dirDeg: null, convDeg: null, armed: false, killConfirmed: false, markElSeen: false, killMarkSeen: false }; // stage-6 H1: kill-marker fields ride the stage record
       }
       return;
 
-    case 1: { // BASELINE: dead-ahead seed, REAL CDP fire, bolt flies along forward and kills
+    case 1: { // story 7.4 BASELINE: the field is EMPTY at the arm — the first real bolt must be
+      // CAMERA-TRUE converge aim (nothing locked): dir == normalize(camPos + camFwd·28 − muzzle)
+      // (AIMK.CONVERGE_DIST = 28). The dead-ahead target is seeded only AFTER that capture; the
+      // hold's later bolts lock-aim/hone onto it and kill — the kill + bracket + marker asserts
+      // keep their meaning under the new model.
       const cs = snapLock();
       if (lockedNow(cs) === true) FP.s1.lockSeen = true;
+      if (!FP.s1.boltCaptured) {
+        if (!FP.s1.armed) { FP.s1.armed = true; window.__stage2.fireArm = true; } // harness: real mousePressed → 0.5 s hold → mouseReleased → fireGo1 (press fires into the EMPTY field)
+        const cap = captureBolt(C, env);
+        if (cap) {
+          FP.s1.boltCaptured = true;
+          FP.s1.dirDeg = +angDeg(cap.dir, cap.fwd).toFixed(2); // provenance: the old nose-alignment metric (no longer asserted)
+          camStateSnap(C);
+          env.noseWorld(V.muzzle);
+          V.exp.copy(V.camPos).addScaledVector(V.camFwd, 28).sub(V.muzzle).normalize(); // 28 = AIMK.CONVERGE_DIST (hard-pinned by the plan)
+          FP.s1.convDeg = +angDeg(cap.dir, [V.exp.x, V.exp.y, V.exp.z]).toFixed(2);
+        }
+        return;
+      }
       if (!FP.target) {
         env.forward(C.tmp);
         FP.seatV = C.tmp2.copy(C.pos).addScaledVector(C.tmp, SEAT_R);
         FP.seat = [FP.seatV.x, FP.seatV.y, FP.seatV.z];
-        FP.target = ENEMIES.spawnForProbe(C.tmp2);
-        window.__stage2.fireArm = true; // harness: real mousePressed → 0.5 s hold → mouseReleased → fireGo1
+        FP.target = ENEMIES.spawnForProbe(C.tmp2); // seeded AFTER the converge capture — the hold's later bolts home onto it
         return;
       }
       if (FP.target.userData.alive) FP.target.position.set(FP.seat[0], FP.seat[1], FP.seat[2]); // pinned at the seat
@@ -217,12 +234,13 @@ export function fireProbeTick(dt, C, env) {
       } catch { /* DOM read is best-effort */ }
       if (FP.sT >= 2.2) { // kill window done (press lands ~0.4 s + flight 0.2 s + margin)
         cpFieldClear(C); FP.target = null; FP.seen = new Set(); FP.stage = 2; FP.sT = 0; FP.mark = 0;
-        C.bolts.clear(); // drain stage-1's leftover hold bolts — a live leftover would be captured as stage 2's "first bolt" (its unbiased dir would mask the bias measurement; RED-run finding, fixed before green)
-        FP.s2 = { lockSeen: false, lockRetainedSeen: false, biasDeg: null, lockAfterKill: null, parked: false, armed: false };
+        C.bolts.clear(); // drain stage-1's leftover hold bolts — a live leftover would be captured as stage 2's "first bolt" (its dir would mask the measurement; RED-run finding, fixed before green)
+        FP.s2 = { lockSeen: false, lockRetainedSeen: false, parkDeg: null, convToTargetDeg: null, lockAfterKill: null, parked: false, armed: false };
       }
       return; }
 
-    case 2: { // bias cap + hysteresis + dead-target drop
+    case 2: { // story 7.4 hysteresis: the lock RETAINS a target parked at 16° off the CAMERA axis
+      // (outside acquire 12°, inside retain 20°) and the fired bolt is LOCK-AIMED on it.
       const cs = snapLock();
       if (!FP.target) {
         env.forward(C.tmp);
@@ -231,14 +249,16 @@ export function fireProbeTick(dt, C, env) {
       }
       if (!FP.s2.parked) {
         if (lockedNow(cs) === true) FP.s2.lockSeen = true;
-        if (FP.s2.lockSeen || FP.sT >= 2.0) { FP.s2.parked = true; FP.mark = FP.sT; } // pre-W1: 2 s timeout, park anyway — the red records honestly
+        if (FP.s2.lockSeen || FP.sT >= 2.0) { FP.s2.parked = true; FP.mark = FP.sT; } // no-lock build: 2 s timeout, park anyway — the red records honestly
         return;
       }
-      // park at 8.5° yaw: OUTSIDE acquire (6°), INSIDE retain (~10°) — a retained lock must hold.
+      // park at 16° off the CAMERA axis: OUTSIDE acquire (12°), INSIDE retain (20°) — a retained
+      // lock must hold (the grace window is 0.35 s; the park is instantaneous, well inside it).
       // A dead slot is NEVER re-pinned (the pool's kill already retired it; pinning would resurrect it).
       if (FP.target.userData.alive) {
-        seat(PARK2_YAW, C.tmp).add(C.pos);
+        camSeat(C, 16, CAM_SEAT_D, C.tmp);
         FP.target.position.copy(C.tmp);
+        FP.s2.parkDeg = +angDeg([C.tmp.x - V.camPos.x, C.tmp.y - V.camPos.y, C.tmp.z - V.camPos.z], [V.camFwd.x, V.camFwd.y, V.camFwd.z]).toFixed(2); // seat sanity: ≈16 by construction
       }
       if (!FP.s2.armed) {
         if (lockedNow(cs) === true) FP.s2.lockRetainedSeen = true;
@@ -246,37 +266,39 @@ export function fireProbeTick(dt, C, env) {
         return;
       }
       if (!window.__stage2.fireGo2) { // real hold in flight — capture the FIRST fired bolt only
-        // (later shots ride past the killed target unbiased and must not overwrite the record —
-        // the first capture IS the bias measurement; this overwrite was the RED-run-to-green
-        // finding that biasDeg read 0 while the bolt demonstrably converged)
+        // (the first capture IS the lock-aim measurement; later shots ride past the killed
+        // target and must not overwrite the record — the W1 RED-run-to-green finding, kept)
         const cap = captureBolt(C, env);
-        if (cap && FP.s2.biasDeg === null) FP.s2.biasDeg = +angDeg(cap.dir, cap.fwd).toFixed(2);
+        if (cap && FP.s2.convToTargetDeg === null) {
+          env.noseWorld(V.muzzle);
+          V.exp.copy(FP.target.position).sub(V.muzzle).normalize();
+          FP.s2.convToTargetDeg = +angDeg(cap.dir, [V.exp.x, V.exp.y, V.exp.z]).toFixed(2); // lock-aimed ⇒ ≈0 (the bolt aims AT the retained target)
+        }
         if (FP.sT - FP.mark >= 6) { FP.mark = FP.sT; window.__stage2.fireGo2 = true; } // deadline guard — record the honest red
         return;
       }
-      // post-fire: the capped bolt converges 6° and still hits the parked target (0.24 < the
-      // 1.1 kill-sphere² at closest approach) → the target dies → the lock must DROP
+      // post-fire: the lock-aimed bolt hits the parked target (the aim is exact — no capped
+      // rotation to miss with) → the target dies → the lock must DROP
       if (!FP.target.userData.alive) FP.killed = true;
       if (FP.killed || FP.sT - FP.mark >= 1.2) {
         FP.s2.killed = FP.killed;
-        FP.s2.lockAfterKill = lockedNow(cs); // feature: false (the lock dropped) · pre-W1: null (surface absent)
+        FP.s2.lockAfterKill = lockedNow(cs); // feature: false (the lock dropped) · pre-7.4: null (surface absent)
         cpFieldClear(C); FP.target = null; FP.killed = false; FP.seen = new Set();
-        C.bolts.clear(); // drain stage-2's leftover hold bolts (post-kill shots fly unbiased — they must not pollute stage 3's fan capture)
+        C.bolts.clear(); // drain stage-2's leftover hold bolts (post-kill shots fly converge-true — they must not pollute stage 3's fan capture)
         FP.stage = 3; FP.sT = 0; FP.mark = 0;
-        FP.s3 = { lockSeen: false, spreadSeen: false, boltCount: 0, maxAngleToTarget: null, maxAngleToForward: null, dirs: [], tgt: null };
+        FP.s3 = { lockSeen: false, spreadSeen: false, boltCount: 0, minToTarget: null, pairSpan: null, dirs: [], tgt: null, ship: null };
       }
       return; }
 
-    case 3: { // SPREAD fan + bias: the far fan bolt must NOT fully converge (the clamp binds)
+    case 3: { // story 7.4 SPREAD fan: the base is the CAMERA-TRUE lock-aim — the fan still
+      // spreads ±6° about that base and converges onto the locked target via homing
       const cs = snapLock();
       if (!FP.target) {
         C.effects.SPREAD = 8; // probe-stamped (powerupProbe precedent) — one shot = 3 fan bolts at ±6°
-        env.forward(C.tmp);
-        FP.target = ENEMIES.spawnForProbe(C.tmp2.copy(C.pos).addScaledVector(C.tmp, SEAT_R));
+        camSeat(C, 6, CAM_SEAT_D, C.tmp2); // inside acquire (12°) — the camera-relative in-cone seat
+        FP.target = ENEMIES.spawnForProbe(C.tmp2);
         FP.target.userData.hp = 999; // probe-stamped: alive for the whole window so the lock holds (this stage measures dirs, not the kill)
-        seat(PARK3_YAW, C.tmp).add(C.pos);
-        FP.target.position.copy(C.tmp);
-        FP.s3.tgt = [FP.target.position.x, FP.target.position.y, FP.target.position.z];
+        FP.s3.tgt = [C.tmp2.x, C.tmp2.y, C.tmp2.z];
         FP.s3.ship = [C.pos.x, C.pos.y, C.pos.z];
         return;
       }
@@ -294,33 +316,39 @@ export function fireProbeTick(dt, C, env) {
       }
       if (FP.sT - FP.mark < 0.3) return; // settle — let the last shot's bolts land in the capture
       captureAll(C, FP.s3.dirs);
-      const f = env.forward(C.tmp);
-      const fw = [f.x, f.y, f.z];
-      const tdir = [FP.s3.tgt[0] - FP.s3.ship[0], FP.s3.tgt[1] - FP.s3.ship[1], FP.s3.tgt[2] - FP.s3.ship[2]]; // ship-relative (the cone definition)
-      let maxT = 0, maxF = 0;
-      for (const d of FP.s3.dirs) { maxT = Math.max(maxT, angDeg(d, tdir)); maxF = Math.max(maxF, angDeg(d, fw)); }
+      // story 7.4 metrics: min angle-to-target (a fan bolt is LOCK-AIMED ⇒ ≈0) + the max
+      // pairwise dir span (the ±6° fan exists at capture, narrowed only by the homing lerp).
+      // Angles run from the LIVE muzzle — the bolts aimed from it (the old ship-relative tdir
+      // sits 1 u below the muzzle: ~6.6° of error over this seat distance, wrong reference now).
+      env.noseWorld(V.muzzle);
+      V.exp.set(FP.s3.tgt[0] - V.muzzle.x, FP.s3.tgt[1] - V.muzzle.y, FP.s3.tgt[2] - V.muzzle.z).normalize();
+      const tdir = [V.exp.x, V.exp.y, V.exp.z];
+      let minT = 999, pair = 0;
+      for (const d of FP.s3.dirs) {
+        minT = Math.min(minT, angDeg(d, tdir));
+        for (const e of FP.s3.dirs) pair = Math.max(pair, angDeg(d, e));
+      }
       FP.s3.boltCount = FP.s3.dirs.length;
-      FP.s3.maxAngleToTarget = +maxT.toFixed(2);
-      FP.s3.maxAngleToForward = +maxF.toFixed(2);
+      FP.s3.minToTarget = +minT.toFixed(2);
+      FP.s3.pairSpan = +pair.toFixed(2);
       C.effects.SPREAD = 0;
       cpFieldClear(C); FP.target = null; FP.seen = new Set();
       C.bolts.clear(); // drain stage-3's fan bolts (hp-999 target never dies — its bolts live past the transition)
       FP.stage = 4; FP.sT = 0; FP.mark = 0;
-      FP.s4 = { locked: null, lockEverTrue: false, boltAngleToForward: null, armed: false };
+      FP.s4 = { locked: null, lockEverTrue: false, boltAngleToForward: null, boltConvDeg: null, armed: false };
       return; }
 
-    case 4: { // outside-cone never locks
+    case 4: { // story 7.4: outside-cone never locks — 25° off the CAMERA axis (outside acquire
+      // 12° AND retain 20°); with nothing locked the fired bolt is CAMERA-TRUE converge aim
       const cs = snapLock();
       if (!FP.target) {
-        env.forward(C.tmp);
-        FP.target = ENEMIES.spawnForProbe(C.tmp2.copy(C.pos).addScaledVector(C.tmp, SEAT_R));
-        seat(PARK4_YAW, C.tmp).add(C.pos);
-        FP.target.position.copy(C.tmp);
-        FP.park4 = [FP.target.position.x, FP.target.position.y, FP.target.position.z];
+        camSeat(C, 25, CAM_SEAT_D, C.tmp2);
+        FP.target = ENEMIES.spawnForProbe(C.tmp2);
+        FP.park4 = [C.tmp2.x, C.tmp2.y, C.tmp2.z];
         return;
       }
-      if (FP.target.userData.alive) FP.target.position.set(FP.park4[0], FP.park4[1], FP.park4[2]); // parked at 20° (never re-pin a dead slot)
-      FP.s4.locked = lockedNow(cs); // feature: false expected · pre-W1: null (surface absent)
+      if (FP.target.userData.alive) FP.target.position.set(FP.park4[0], FP.park4[1], FP.park4[2]); // parked at 25° (never re-pin a dead slot)
+      FP.s4.locked = lockedNow(cs); // feature: false expected · pre-7.4: null (surface absent)
       if (lockedNow(cs) === true) FP.s4.lockEverTrue = true;
       if (!FP.s4.armed) {
         if (FP.sT >= 0.8) { FP.s4.armed = true; FP.mark = FP.sT; window.__stage2.fireArm4 = true; }
@@ -328,7 +356,13 @@ export function fireProbeTick(dt, C, env) {
       }
       if (!window.__stage2.fireGo4) {
         const cap = captureBolt(C, env);
-        if (cap && FP.s4.boltAngleToForward === null) FP.s4.boltAngleToForward = +angDeg(cap.dir, cap.fwd).toFixed(2); // first bolt only (all unbiased here — no lock — but record the first regardless)
+        if (cap && FP.s4.boltConvDeg === null) {
+          FP.s4.boltAngleToForward = +angDeg(cap.dir, cap.fwd).toFixed(2); // provenance: the old nose-alignment metric
+          camStateSnap(C);
+          env.noseWorld(V.muzzle);
+          V.exp.copy(V.camPos).addScaledVector(V.camFwd, 28).sub(V.muzzle).normalize(); // 28 = AIMK.CONVERGE_DIST (hard-pinned by the plan)
+          FP.s4.boltConvDeg = +angDeg(cap.dir, [V.exp.x, V.exp.y, V.exp.z]).toFixed(2); // first bolt only (all converge-true here — no lock — but record the first regardless)
+        }
         if (FP.sT - FP.mark >= 6) { FP.mark = FP.sT; window.__stage2.fireGo4 = true; } // deadline guard
         return;
       }
