@@ -175,18 +175,46 @@ export function fireTick(dt) {
   spawnStreamShot();
 }
 
+// story 7.4 homing + swept-scan scratch (module-level — no per-frame allocation)
+const _prev = new THREE.Vector3(), _hp = new THREE.Vector3(), _hd = new THREE.Vector3(),
+  _ab = new THREE.Vector3(), _ac = new THREE.Vector3(), _cl = new THREE.Vector3();
+
+// story 7.4: swept segment × sphere — a 70 u/s bolt moves 1.2-2.3 u per tick, and the old
+// fixed point-sample (distance² < 1.1 at the bolt's NEW position only) could tunnel past a
+// small target between samples at headless frame times. a→b is the bolt's per-tick segment;
+// c/r the target sphere. Returns true when the segment passes within r of c.
+function segHitsSphere(a, b, c, r) {
+  _ab.copy(b).sub(a);
+  const t = THREE.MathUtils.clamp(_ac.copy(c).sub(a).dot(_ab) / (_ab.lengthSq() || 1), 0, 1);
+  return _cl.copy(a).addScaledVector(_ab, t).distanceToSquared(c) < r * r;
+}
+
 export function boltsTick(dt) {
   C.bolts.update(dt, (b) => {
     b.userData.life -= dt;
+    _prev.copy(b.position); // story 7.4: pre-move position — the swept hit test below spans [prev, now]
+    const tg = b.userData.target; // story 7.4 homing — stream bolts steer at the locked target's lead point (charged bolts carry null: never home)
+    if (tg && AIM.targetAlive(tg)) {
+      AIM.leadPoint(tg, b.position, BOLT_SPEED, _hp);
+      _hd.copy(_hp).sub(b.position).normalize();
+      if (b.userData.dir.dot(_hd) < 0) b.userData.target = null; // passed it: stop homing
+      else {
+        b.userData.dir.lerp(_hd, 1 - Math.exp(-AIM.AIMK.HOMING_RATE * dt)).normalize();
+        b.lookAt(C.tmp.copy(b.position).add(b.userData.dir));
+      }
+    }
     b.position.addScaledVector(b.userData.dir, BOLT_SPEED * dt);
     if (b.userData.life <= 0) { C.bolts.kill(b); return; }
     // bolt × drone scan (both pools are small — brute force is the honest option)
     ENEMIES.eachAlive((d) => {
       if (!b.userData.alive) return;
-      // story-015: full-3D squared distance (the orb scan's proven form) — the XZ-only form
-      // hit a raider a whole ring-tilt above/below the bolt once the ship can pitch
-      const dx = d.position.x - b.position.x, dy = d.position.y - b.position.y, dz = d.position.z - b.position.z;
-      if (dx * dx + dy * dy + dz * dz < 1.1) {
+      // story 7.4: swept segment test with the stamped radius — RADIUS_PROP = userData.r
+      // (enemies.js: the elite stamp and the unconditional per-spawn reset both write it).
+      // The 1.1 floor keeps the old fixed kill-sphere (r ≈ 1.05) as the minimum; ×1.6 is the
+      // plan's band. Orbs carry their ORBIT radius in userData.r too — never read here; the
+      // orb scan below uses its own bolt radius.
+      const r = Math.max(d.userData.r || 0, 1.1) * 1.6;
+      if (segHitsSphere(_prev, b.position, d.position, r)) {
         C.bolts.kill(b);
         C.telemetry.hits[b.userData.charged ? 'charged' : 'stream']++; // story-019: bolts die on hit — 1:1 max (probe-spawned unstamped bolts read stream)
         EFFECTS.explosion(d.position);
@@ -212,12 +240,12 @@ export function boltsTick(dt) {
         }
       }
     });
-    // bolt × orb scan (story-012) — FULL 3D distance: orbs fly altitudes, so the raiders' XZ
-    // check would hit a drone a whole ring-tilt above the bolt (or miss one below it)
+    // bolt × orb scan (story-012) — story 7.4: the same swept segment test, the orb's radius
+    // VALUE unchanged (orbBoltR2 = 1.3², drone.js; sqrt reads the radius the old point-test
+    // compared against). Orbs fly altitudes — full-3D by construction in the swept form.
     DRONES.eachAlive((o) => {
       if (!b.userData.alive) return;
-      const dx = o.position.x - b.position.x, dy = o.position.y - b.position.y, dz = o.position.z - b.position.z;
-      if (dx * dx + dy * dy + dz * dz < DRONES.orbBoltR2()) {
+      if (segHitsSphere(_prev, b.position, o.position, Math.sqrt(DRONES.orbBoltR2()))) {
         C.bolts.kill(b);
         C.telemetry.hits[b.userData.charged ? 'charged' : 'stream']++; // story-019: same 1:1 hit rule
         EFFECTS.explosion(o.position);
