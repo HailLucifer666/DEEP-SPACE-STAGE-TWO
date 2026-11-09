@@ -1,0 +1,14 @@
+{
+ "runs": [
+  {
+   "date": "2026-11-09T12:41:05.928381+00:00",
+   "input_tokens": 0,
+   "output_tokens": 0,
+   "files": 65,
+   "semantic_subagent_tokens": 1431173,
+   "note": "AST deterministic (0 tok); semantic pass = 1 subagent, harness-reported aggregate usage (reads+writes)"
+  }
+ ],
+ "total_input_tokens": 0,
+ "total_output_tokens": 0
+}

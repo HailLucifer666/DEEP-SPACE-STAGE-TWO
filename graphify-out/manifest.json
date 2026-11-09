@@ -1,0 +1,392 @@
+{
+  "E:\\Game Build\\index.html": {
+    "mtime": 1794163827.690198,
+    "seen": 1794228065.9262867,
+    "ast_hash": "961c2e37cd1c7a0d79c03c04ba5a7659",
+    "semantic_hash": "961c2e37cd1c7a0d79c03c04ba5a7659"
+  },
+  "E:\\Game Build\\package-lock.json": {
+    "mtime": 1793743310.925014,
+    "seen": 1794228065.926294,
+    "ast_hash": "755d9e5b9cc8a095c97c9680698f8bc0",
+    "semantic_hash": "755d9e5b9cc8a095c97c9680698f8bc0"
+  },
+  "E:\\Game Build\\package.json": {
+    "mtime": 1793743310.9260867,
+    "seen": 1794228065.9262972,
+    "ast_hash": "c2866353ae004efbbed4f172a94402c4",
+    "semantic_hash": "c2866353ae004efbbed4f172a94402c4"
+  },
+  "E:\\Game Build\\project.yaml": {
+    "mtime": 1793666120.9749851,
+    "seen": 1794228065.9262986,
+    "ast_hash": "c21df92bb7535229653c9c2e704ea3eb",
+    "semantic_hash": "c21df92bb7535229653c9c2e704ea3eb"
+  },
+  "E:\\Game Build\\src\\aim-assist.js": {
+    "mtime": 1794163827.848191,
+    "seen": 1794228065.9263,
+    "ast_hash": "9ea565502eaf5f75529704f1f981cae8",
+    "semantic_hash": "9ea565502eaf5f75529704f1f981cae8"
+  },
+  "E:\\Game Build\\src\\arena-dressing.js": {
+    "mtime": 1793892618.1334314,
+    "seen": 1794228065.9263015,
+    "ast_hash": "75f105812faf749545b77a43a802371c",
+    "semantic_hash": "75f105812faf749545b77a43a802371c"
+  },
+  "E:\\Game Build\\src\\assets.js": {
+    "mtime": 1794163827.848191,
+    "seen": 1794228065.9263027,
+    "ast_hash": "f678330614cad1fd56f3a6a8d0aed699",
+    "semantic_hash": "f678330614cad1fd56f3a6a8d0aed699"
+  },
+  "E:\\Game Build\\src\\audio.js": {
+    "mtime": 1794163827.8540454,
+    "seen": 1794228065.9263036,
+    "ast_hash": "1c0ca29d5db4ed0e06d7ef4833cfbc06",
+    "semantic_hash": "1c0ca29d5db4ed0e06d7ef4833cfbc06"
+  },
+  "E:\\Game Build\\src\\boss.js": {
+    "mtime": 1794163827.8555315,
+    "seen": 1794228065.9263048,
+    "ast_hash": "8d6b6ff3512a68518194db35df8b7c59",
+    "semantic_hash": "8d6b6ff3512a68518194db35df8b7c59"
+  },
+  "E:\\Game Build\\src\\combat.js": {
+    "mtime": 1794163827.8555315,
+    "seen": 1794228065.9263058,
+    "ast_hash": "3491a8bfb2fde223b56c8fb79a664dd0",
+    "semantic_hash": "3491a8bfb2fde223b56c8fb79a664dd0"
+  },
+  "E:\\Game Build\\src\\drone.js": {
+    "mtime": 1793822895.8676994,
+    "seen": 1794228065.9263067,
+    "ast_hash": "bbfe96dfb98714d9d1a26f10239cc011",
+    "semantic_hash": "bbfe96dfb98714d9d1a26f10239cc011"
+  },
+  "E:\\Game Build\\src\\effects.js": {
+    "mtime": 1793660942.4069636,
+    "seen": 1794228065.9263082,
+    "ast_hash": "65985399caae20b86e72e535da31ca36",
+    "semantic_hash": "65985399caae20b86e72e535da31ca36"
+  },
+  "E:\\Game Build\\src\\enemies.js": {
+    "mtime": 1794163827.8568296,
+    "seen": 1794228065.926309,
+    "ast_hash": "aa8c3c0f32b81aa1a9e849f217ed0ba1",
+    "semantic_hash": "aa8c3c0f32b81aa1a9e849f217ed0ba1"
+  },
+  "E:\\Game Build\\src\\hud.js": {
+    "mtime": 1794163827.8568296,
+    "seen": 1794228065.92631,
+    "ast_hash": "cd1cc7a1978904010213f821b9ff3f4e",
+    "semantic_hash": "cd1cc7a1978904010213f821b9ff3f4e"
+  },
+  "E:\\Game Build\\src\\input.js": {
+    "mtime": 1794163827.8582556,
+    "seen": 1794228065.9263113,
+    "ast_hash": "ce650c0cccceec6468152a2f985843b4",
+    "semantic_hash": "ce650c0cccceec6468152a2f985843b4"
+  },
+  "E:\\Game Build\\src\\launch.js": {
+    "mtime": 1793825848.3364415,
+    "seen": 1794228065.9263122,
+    "ast_hash": "0f8a715d69d807c38c9abb2f01883813",
+    "semantic_hash": "0f8a715d69d807c38c9abb2f01883813"
+  },
+  "E:\\Game Build\\src\\lib-entry.js": {
+    "mtime": 1793625695.943881,
+    "seen": 1794228065.9263132,
+    "ast_hash": "29fdf61b3cb322c2d131e95d54677cd0",
+    "semantic_hash": "29fdf61b3cb322c2d131e95d54677cd0"
+  },
+  "E:\\Game Build\\src\\loop.js": {
+    "mtime": 1793822895.8691916,
+    "seen": 1794228065.9263144,
+    "ast_hash": "5e2c46732e985f7a3b54f786aab41f55",
+    "semantic_hash": "5e2c46732e985f7a3b54f786aab41f55"
+  },
+  "E:\\Game Build\\src\\main.js": {
+    "mtime": 1794163827.8582556,
+    "seen": 1794228065.9263155,
+    "ast_hash": "857503d24a00fd88694fe4d28371a13c",
+    "semantic_hash": "857503d24a00fd88694fe4d28371a13c"
+  },
+  "E:\\Game Build\\src\\music-seq.js": {
+    "mtime": 1794163827.859398,
+    "seen": 1794228065.9263165,
+    "ast_hash": "d86120e6f53f0dbaf26f7f4f08022d8b",
+    "semantic_hash": "d86120e6f53f0dbaf26f7f4f08022d8b"
+  },
+  "E:\\Game Build\\src\\phases.js": {
+    "mtime": 1794163827.859398,
+    "seen": 1794228065.9263175,
+    "ast_hash": "190f76fc91a13c11764ead5807a97fe4",
+    "semantic_hash": "190f76fc91a13c11764ead5807a97fe4"
+  },
+  "E:\\Game Build\\src\\pool.js": {
+    "mtime": 1793637864.279356,
+    "seen": 1794228065.9263186,
+    "ast_hash": "d4f004fa6fcf63f2bf304801699758b0",
+    "semantic_hash": "d4f004fa6fcf63f2bf304801699758b0"
+  },
+  "E:\\Game Build\\src\\powerups.js": {
+    "mtime": 1794061963.8803737,
+    "seen": 1794228065.92632,
+    "ast_hash": "94e0aee32f4e06b0bcede8aa57fefd12",
+    "semantic_hash": "94e0aee32f4e06b0bcede8aa57fefd12"
+  },
+  "E:\\Game Build\\src\\probes-audio.js": {
+    "mtime": 1794163827.859398,
+    "seen": 1794228065.9263213,
+    "ast_hash": "45f5f11ef59db2d12ddff4b7f9002cb2",
+    "semantic_hash": "45f5f11ef59db2d12ddff4b7f9002cb2"
+  },
+  "E:\\Game Build\\src\\probes-balance.js": {
+    "mtime": 1794163827.8605077,
+    "seen": 1794228065.9263222,
+    "ast_hash": "e6c70b5b565965fe13f2afe668772b93",
+    "semantic_hash": "e6c70b5b565965fe13f2afe668772b93"
+  },
+  "E:\\Game Build\\src\\probes-charge.js": {
+    "mtime": 1793986302.5093834,
+    "seen": 1794228065.9263232,
+    "ast_hash": "c9f0e4327eb2342f42ef5839ed0820bc",
+    "semantic_hash": "c9f0e4327eb2342f42ef5839ed0820bc"
+  },
+  "E:\\Game Build\\src\\probes-common.js": {
+    "mtime": 1793986302.5103858,
+    "seen": 1794228065.9263244,
+    "ast_hash": "7342dba82e8b984daeea7bba8a0b680f",
+    "semantic_hash": "7342dba82e8b984daeea7bba8a0b680f"
+  },
+  "E:\\Game Build\\src\\probes-fire.js": {
+    "mtime": 1794163827.8605077,
+    "seen": 1794228065.9263256,
+    "ast_hash": "16ed5d92fc3f4d404c3e5e3a52ae48d1",
+    "semantic_hash": "16ed5d92fc3f4d404c3e5e3a52ae48d1"
+  },
+  "E:\\Game Build\\src\\probes-powerup.js": {
+    "mtime": 1793986302.5103858,
+    "seen": 1794228065.9263263,
+    "ast_hash": "583fddb5ac734c35ecb9e3d53ee805e8",
+    "semantic_hash": "583fddb5ac734c35ecb9e3d53ee805e8"
+  },
+  "E:\\Game Build\\src\\probes.js": {
+    "mtime": 1794163827.8616462,
+    "seen": 1794228065.9263275,
+    "ast_hash": "588b5412d70e75d02e238e1d27b79673",
+    "semantic_hash": "588b5412d70e75d02e238e1d27b79673"
+  },
+  "E:\\Game Build\\src\\rocket.js": {
+    "mtime": 1793909011.2257113,
+    "seen": 1794228065.9263287,
+    "ast_hash": "84fa7758aef8a6b8daebdb937c21ae13",
+    "semantic_hash": "84fa7758aef8a6b8daebdb937c21ae13"
+  },
+  "E:\\Game Build\\src\\sfx-pack.js": {
+    "mtime": 1794163827.8616462,
+    "seen": 1794228065.9263296,
+    "ast_hash": "8e1033784dcf61a5588d00420dfe4aaf",
+    "semantic_hash": "8e1033784dcf61a5588d00420dfe4aaf"
+  },
+  "E:\\Game Build\\src\\ship-fix.js": {
+    "mtime": 1793652523.0207906,
+    "seen": 1794228065.9263306,
+    "ast_hash": "f659707ad21cf67978674ef8c0db7044",
+    "semantic_hash": "f659707ad21cf67978674ef8c0db7044"
+  },
+  "E:\\Game Build\\src\\store.js": {
+    "mtime": 1794163827.862656,
+    "seen": 1794228065.9263318,
+    "ast_hash": "edbdc6abd6b25da8d7d071e40bb41be4",
+    "semantic_hash": "edbdc6abd6b25da8d7d071e40bb41be4"
+  },
+  "E:\\Game Build\\src\\transition.js": {
+    "mtime": 1793749224.9523938,
+    "seen": 1794228065.9263327,
+    "ast_hash": "cc58cc02a36a9ba1fb58648745cc0333",
+    "semantic_hash": "cc58cc02a36a9ba1fb58648745cc0333"
+  },
+  "E:\\Game Build\\src\\weapons.js": {
+    "mtime": 1794163827.862656,
+    "seen": 1794228065.9263337,
+    "ast_hash": "405fae0326383f696f61e66cc86582b2",
+    "semantic_hash": "405fae0326383f696f61e66cc86582b2"
+  },
+  "E:\\Game Build\\tools\\basis-check.mjs": {
+    "mtime": 1793652505.0289686,
+    "seen": 1794228065.9263346,
+    "ast_hash": "19bf3143be05f5b84da8ef4e315bd62a",
+    "semantic_hash": "19bf3143be05f5b84da8ef4e315bd62a"
+  },
+  "E:\\Game Build\\tools\\boot-marks.mjs": {
+    "mtime": 1793741192.9467344,
+    "seen": 1794228065.9263358,
+    "ast_hash": "113e3d2873dd9dffb1300e46b628f5a5",
+    "semantic_hash": "113e3d2873dd9dffb1300e46b628f5a5"
+  },
+  "E:\\Game Build\\tools\\boss-shot.mjs": {
+    "mtime": 1793815420.8595932,
+    "seen": 1794228065.9263368,
+    "ast_hash": "32ebc56b9a5f127232eb2622412a4d53",
+    "semantic_hash": "32ebc56b9a5f127232eb2622412a4d53"
+  },
+  "E:\\Game Build\\tools\\build.mjs": {
+    "mtime": 1794163827.8637147,
+    "seen": 1794228065.9263377,
+    "ast_hash": "6d2132bdc15fb6a5a38212af70e6851c",
+    "semantic_hash": "6d2132bdc15fb6a5a38212af70e6851c"
+  },
+  "E:\\Game Build\\tools\\cdp-check.mjs": {
+    "mtime": 1793637698.1437833,
+    "seen": 1794228065.926339,
+    "ast_hash": "5a0beb3ad6520315e7e11cb0ef77b9ab",
+    "semantic_hash": "5a0beb3ad6520315e7e11cb0ef77b9ab"
+  },
+  "E:\\Game Build\\tools\\combat-probe.mjs": {
+    "mtime": 1794163827.8647332,
+    "seen": 1794228065.92634,
+    "ast_hash": "8ca64be581fa952c327eb54418ea4719",
+    "semantic_hash": "8ca64be581fa952c327eb54418ea4719"
+  },
+  "E:\\Game Build\\tools\\death-card-check.mjs": {
+    "mtime": 1793656526.195944,
+    "seen": 1794228065.926341,
+    "ast_hash": "813911f8686690b6ca0ec45336c1b372",
+    "semantic_hash": "813911f8686690b6ca0ec45336c1b372"
+  },
+  "E:\\Game Build\\tools\\dep-check.mjs": {
+    "mtime": 1794163827.8659008,
+    "seen": 1794228065.9263427,
+    "ast_hash": "efa926c64393bea7ee6607465ca01807",
+    "semantic_hash": "efa926c64393bea7ee6607465ca01807"
+  },
+  "E:\\Game Build\\tools\\drone-glb-probe.mjs": {
+    "mtime": 1793809359.3605967,
+    "seen": 1794228065.9263437,
+    "ast_hash": "8045a89fb740e33b0e507ee68be6a148",
+    "semantic_hash": "8045a89fb740e33b0e507ee68be6a148"
+  },
+  "E:\\Game Build\\tools\\flow-check.mjs": {
+    "mtime": 1794163827.8669055,
+    "seen": 1794228065.9263446,
+    "ast_hash": "b0382d2b620a09eede7be76c3505c5e5",
+    "semantic_hash": "b0382d2b620a09eede7be76c3505c5e5"
+  },
+  "E:\\Game Build\\tools\\index.template.html": {
+    "mtime": 1794163827.8679526,
+    "seen": 1794228065.9263458,
+    "ast_hash": "5081f297021f88e8728c9e83baabcb40",
+    "semantic_hash": "5081f297021f88e8728c9e83baabcb40"
+  },
+  "E:\\Game Build\\tools\\serve.mjs": {
+    "mtime": 1793743310.9344504,
+    "seen": 1794228065.9263465,
+    "ast_hash": "d180041ec839fa9699b0a334ed52b3a1",
+    "semantic_hash": "d180041ec839fa9699b0a334ed52b3a1"
+  },
+  "E:\\Game Build\\tools\\victory-shot.mjs": {
+    "mtime": 1793820181.0712233,
+    "seen": 1794228065.9263477,
+    "ast_hash": "b40044058392a939b9fd7fe4feba5f6c",
+    "semantic_hash": "b40044058392a939b9fd7fe4feba5f6c"
+  },
+  "E:\\Game Build\\CHANGELOG.md": {
+    "mtime": 1794163827.6310868,
+    "seen": 1794228065.9263487,
+    "ast_hash": "099ba02024dc872afe1b49b0a2f19726",
+    "semantic_hash": "099ba02024dc872afe1b49b0a2f19726"
+  },
+  "E:\\Game Build\\CLAUDE.md": {
+    "mtime": 1793986302.0226736,
+    "seen": 1794228065.9263499,
+    "ast_hash": "dd9ee326d25646a1023ce9041bf10819",
+    "semantic_hash": "dd9ee326d25646a1023ce9041bf10819"
+  },
+  "E:\\Game Build\\CREDITS.md": {
+    "mtime": 1794163827.6310868,
+    "seen": 1794228065.9263506,
+    "ast_hash": "51f2211d808b794a942796f2af4ce7ac",
+    "semantic_hash": "51f2211d808b794a942796f2af4ce7ac"
+  },
+  "E:\\Game Build\\README.md": {
+    "mtime": 1794071664.942869,
+    "seen": 1794228065.9263515,
+    "ast_hash": "c8099c11729f7a3262b347554232d406",
+    "semantic_hash": "c8099c11729f7a3262b347554232d406"
+  },
+  "E:\\Game Build\\STAGE TWO \u2014 Recovery & Polish Plan (Anti-Drift Edition).md": {
+    "mtime": 1793916700.9616003,
+    "seen": 1794228065.9263577,
+    "ast_hash": "b9fb0122b2b170c070054d04590e6646",
+    "semantic_hash": "b9fb0122b2b170c070054d04590e6646"
+  },
+  "E:\\Game Build\\design\\game-brief.md": {
+    "mtime": 1793741035.073795,
+    "seen": 1794228065.926359,
+    "ast_hash": "8cdfa62401273f7186ffa65358d40023",
+    "semantic_hash": "8cdfa62401273f7186ffa65358d40023"
+  },
+  "E:\\Game Build\\design\\gdd\\full-3d-flight.md": {
+    "mtime": 1793837152.3791637,
+    "seen": 1794228065.9263601,
+    "ast_hash": "35e813251897bd71153ebd19bba94a27",
+    "semantic_hash": "35e813251897bd71153ebd19bba94a27"
+  },
+  "E:\\Game Build\\design\\gdd\\stage-4-balance.md": {
+    "mtime": 1794069563.3406656,
+    "seen": 1794228065.926361,
+    "ast_hash": "e3572a6a39c4f3c61733612898d4d666",
+    "semantic_hash": "e3572a6a39c4f3c61733612898d4d666"
+  },
+  "E:\\Game Build\\design\\gdd\\stage-6-experience.md": {
+    "mtime": 1794163827.6570218,
+    "seen": 1794228065.9263623,
+    "ast_hash": "b6ef5ffabef5b6a7a2208b958c4fcf32",
+    "semantic_hash": "b6ef5ffabef5b6a7a2208b958c4fcf32"
+  },
+  "E:\\Game Build\\docs\\architecture.md": {
+    "mtime": 1794015903.275082,
+    "seen": 1794228065.9263635,
+    "ast_hash": "a75de2be33c0f34ad2b3bff5ea55b8de",
+    "semantic_hash": "a75de2be33c0f34ad2b3bff5ea55b8de"
+  },
+  "E:\\Game Build\\docs\\tech-debt-register.md": {
+    "mtime": 1794163827.6580262,
+    "seen": 1794228065.9263644,
+    "ast_hash": "a7ec476d892d73b710266ba14c5ee8af",
+    "semantic_hash": "a7ec476d892d73b710266ba14c5ee8af"
+  },
+  "E:\\Game Build\\production\\polish\\audio-audit.md": {
+    "mtime": 1794163827.6926303,
+    "seen": 1794228065.9263656,
+    "ast_hash": "e6a288a8a5226bdc11e194b84feed8ce",
+    "semantic_hash": "e6a288a8a5226bdc11e194b84feed8ce"
+  },
+  "E:\\Game Build\\production\\polish\\polish-plan.md": {
+    "mtime": 1794163827.6926303,
+    "seen": 1794228065.9263668,
+    "ast_hash": "9fafa05b62f993b1e1d65a200a166598",
+    "semantic_hash": "9fafa05b62f993b1e1d65a200a166598"
+  },
+  "E:\\Game Build\\production\\polish\\scope.md": {
+    "mtime": 1794163827.7197573,
+    "seen": 1794228065.9263678,
+    "ast_hash": "4817d6b02f33e117fbfe93a780c3fc96",
+    "semantic_hash": "4817d6b02f33e117fbfe93a780c3fc96"
+  },
+  "E:\\Game Build\\production\\polish\\ux-audit.md": {
+    "mtime": 1794163827.721232,
+    "seen": 1794228065.9263687,
+    "ast_hash": "757c8e6fc74e239a6cbccd58da467f2d",
+    "semantic_hash": "757c8e6fc74e239a6cbccd58da467f2d"
+  },
+  "E:\\Game Build\\production\\polish\\visual-audit.md": {
+    "mtime": 1794163827.722239,
+    "seen": 1794228065.92637,
+    "ast_hash": "928b6d8a05fd83fe70ff3332d13731de",
+    "semantic_hash": "928b6d8a05fd83fe70ff3332d13731de"
+  }
+}
