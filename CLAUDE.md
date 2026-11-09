@@ -30,6 +30,14 @@ follow it — the file IS the skill.
 6. Rollback = `git checkout <last good-tag>`. Tag chain lives in `one-shot-work/PROGRESS.md`.
 7. `git reset --hard`, force-push and destructive rm are denied in `.claude/settings.json`.
 
+## Stage 7 — flight & world v2 (owner-directed 2026-11-09)
+
+The NMS-feel plan (6DOF flight, inertia + FA toggle, open space + pulse, heat encounters,
+scan/discovery) lives in `one-shot-work/STAGE-7-FLIGHT-V2.md` with story cards under
+`production/epics/flight-v2/`. Read the spec before ANY flight/aim/camera/world/encounter
+task; one story per session per its §7 protocol. It supersedes story-015 PITCH_MAX and
+story-016 whole-arena (recorded there); LAUNCH-10-10 W4–W7 are reordered behind it.
+
 ## Architecture map (read before touching code)
 
 - `src/main.js` — boot, loop, phase machine (`setPhase` runs the NEW phase's exit hook —
