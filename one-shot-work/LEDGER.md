@@ -1,7 +1,7 @@
 LEDGER — STAGE TWO
 CURRENT: W2 MERGED — reconciled 2026-11-06 (evening session); the STOP below is RESOLVED (see its footer)
 PLAN: B-full (5+ days, flexible) — decided 2026-11-06
-STAGE 7: owner-directed flight/world v2 — spec `one-shot-work/STAGE-7-FLIGHT-V2.md`, cards `production/epics/flight-v2/` (2026-11-09); W4–W7 reordered behind it (see spec §0); **7.0 DONE 2026-11-09** — flightProbe baseline recorded, battery 255/0, evidence `production/qa/evidence/story-7.0-feel-baseline/`; next CRITICAL: 7.1 flight body
+STAGE 7: owner-directed flight/world v2 — spec `one-shot-work/STAGE-7-FLIGHT-V2.md`, cards `production/epics/flight-v2/` (2026-11-09); W4–W7 reordered behind it (see spec §0); **7.0 DONE 2026-11-09** — flightProbe baseline recorded, battery 255/0, merge `db4c9ed`, tag `good-2026-11-09-s7-0`, evidence `production/qa/evidence/story-7.0-feel-baseline/`; next CRITICAL: 7.1 flight body
 SEED: C:\Users\acarg\.opencode\plan\STAGE-TWO-LAUNCH-10-10.md → one-shot-work/LAUNCH-10-10.md
 
 | ID | Title | Branch | Status | Tag / Evidence |
