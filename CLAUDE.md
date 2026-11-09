@@ -45,3 +45,15 @@ follow it — the file IS the skill.
   `?holdBeat=1..4`, `?skipProbe=N`, `?scriptedKill=1`, `?restartProbe=N`, `?spin=1`,
   `?corruptGlb=1`. Harness: `tools/cdp-check.mjs`, click-throughs in
   `tools/death-card-check.mjs`.
+
+## Knowledge graph — query it FIRST (token saver)
+
+A graphify knowledge graph of this repo lives in `graphify-out/` (built 2026-11-09, 765
+nodes / 1470 edges): `graph.json` (queryable), `GRAPH_REPORT.md` (god nodes, surprising
+connections, suggested questions), `graph.html` (interactive viz). Before reading many
+files to answer an architecture/relationship question, query the graph instead —
+`.venv/Scripts/graphify query "<question>"` (or `.venv/Scripts/python -m graphify ...`),
+`.venv/Scripts/graphify path A B`, `.venv/Scripts/graphify explain "Concept"`.
+Incremental refresh after code changes: `npm run build`-independent —
+`.venv/Scripts/graphify update` (needs the venv; AST cache is gitignored, outputs are
+committed). Corpus scope: `src/ tools/ design/ docs/ production/polish/` + root specs.
