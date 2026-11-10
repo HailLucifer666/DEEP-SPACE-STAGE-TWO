@@ -1054,21 +1054,24 @@ try {
   ok('CONSOLE [] (pitchProbe page)', errs.length === 0, errs.join(' | '));
 
   /* --- story-017 world goes 3D (?dressingProbe=1): combat-only ambient field + shell visual ---
-     Deterministic drive (pitchProbe pattern, in-page, src/probes.js dressingProbeTick):
-     reports window.__stage2.dressingProbe = { ambientCount, shellFill, clearance, shell,
-     lifecycle }:
-       ambientCount — instanced rock instances on the combat-only ambient field (design 120).
+     Deterministic drive (pitchProbe pattern, in-page, src/probes-dressing.js
+     dressingProbeTick — moved out of probes.js in c44f925, 2026-11-10, one-walk-per-file):
+     reports window.__stage2.dressingProbe = { ambientCount, shellFill, clearance,
+     shellRemoved, lifecycle, rockHit, laneHiddenInCombat, warn }:
+       ambientCount — instanced rock instances on the combat-only ambient field (design 40
+                     since story 7.5).
        shellFill   — sampled min/max radial distance from O across all instances (construction
                      band 25-75, fixed PRNG seed AMBIENT_FIELD_SEED — stable across runs).
        clearance   — nearest instance-to-ship distance min'd over a 10 s drive at cruise with a
                      full-yaw orbit + varied-pitch pulses (R/F). The orbit holds radius ≈7 u
-                     around O (the drift circle), so the geometric margin to the shell's inner
+                     around O (the drift circle), so the geometric margin to the field's inner
                      edge (25 u) is ~18 u; the assert requires > 10 u.
-       shell       — material grammar (additive/transparent/depthWrite:false, the rim-ring/rift
-                     family) + opacity sampled at two probe-owned parks: r3 78 (> 0, design
-                     0.162) and r3 60 (== 0), teleported like the bossProbe shell park (C.pos
-                     set, vel/speed zeroed, keys released).
-       lifecycle   — shownOnEnter: the field/shell visibility sampled at combat entry.
+       shell       — (story-017 era, FIELD REMOVED) the wireframe shell died in story 7.6.
+                     Task A 2026-11-10 replaced this entry with the MEASURED `shellRemoved`
+                     witness and the `warn` samples; Task B 2026-11-10 added `rockHit` and
+                     `laneHiddenInCombat`. Details live at the dated assert comments below
+                     and in src/probes-dressing.js — this header no longer describes them.
+       lifecycle   — shownOnEnter: the field visibility sampled at combat entry.
      The clear/re-show half of the lifecycle is a HARNESS-verified phase walk on this same
      page. NOTE (architecture §5 / phases.js): setPhase is exit-before-enter — the current
      phase's exit() runs before the target's enter(), and combat.exit() calls clearCombat().
