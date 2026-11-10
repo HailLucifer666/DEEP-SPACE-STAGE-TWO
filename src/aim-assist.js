@@ -1,5 +1,7 @@
-// STAGE TWO — AIM ASSIST (stage-6 W1, ux-audit F1b): the soft aim-lock scan + the spawn-bias
-// source + the two aim HUD writers (pipper, lock bracket). The design contract lives in
+// STAGE TWO — AIM ASSIST (stage-6 W1, ux-audit F1b; story 7.4 camera-axis model): the
+// camera-axis lock scan + the camera-true aim source (aimDir/leadPoint — the locked target's
+// lead point or the converge point — and the AIMK knobs the weapons homing reads) + the two
+// aim HUD writers (pipper, lock bracket). The design contract lives in
 // production/polish/ux-audit.md F1 and production/polish/polish-plan.md W1 (the story card).
 //
 // WHY THIS MODULE EXISTS AS ITS OWN FILE (import direction, dep-check-pinned): combat.js and
@@ -52,18 +54,19 @@
 // (the steer target IS the target), so the old fan+bias sum argument has no successor to prove.
 //
 // SCRATCH DISCIPLINE: everything below uses THIS module's vectors. NEVER C.tmp/C.tmp2 —
-// spawnBolt's lookAt clobbers C.tmp (weapons.js:99-104 warning) and the bias runs inside
-// spawnBolt before that lookAt.
+// spawnBolt's lookAt clobbers C.tmp (weapons.js), and aimDir runs inside spawnBolt (and inside
+// spawnStreamShot for the fan base) before those lookAts — a C.tmp read here would race the
+// clobber.
 //
-// PIPPER ANCHOR DECISION (the card allowed either): the pipper is ANALYTICALLY anchored at
-// screen center. Why: the chase cam looks at pos + forward·4 from pos − forward·(7.5+trail)
-// + 3.4 up (combat.js:523), so the nose-forward bolt path projects ≈ screen center by
-// construction (the audit's own wording). A per-frame projection of the vanishing point was
-// considered and rejected: it adds per-frame matrix work AND a documented 1-frame
-// matrixWorld staleness (the camera matrix is written later in tickCombat), while the
-// analytic anchor costs zero per-frame layout and never disagrees with the construction the
-// camera itself uses. Divergence threshold: the 132px reticle's half-width (66px) + 6px —
-// the pipper appears only once the bolt path has visibly cleared the reticle box.
+// PIPPER ANCHOR DECISION (story 7.4 contract): the pipper is ANALYTICALLY anchored at screen
+// center and is ALWAYS VISIBLE while the combat HUD is on — hidden only while dead (the death
+// card owns the screen). The 72px divergence threshold (reticle half-width 66 + 6) that used
+// to gate visibility is GONE: with camera-true aim the pipper is the bolt-path marker the
+// player aims with, and hiding it while the cursor sat on target hid it exactly when it
+// mattered. The chase-cam construction still backs the anchor (the camera looks at
+// pos + forward·4 from pos − forward·(7.5+trail) + 3.4 up — combat.js:523), and since story
+// 7.4 tickCombat calls camera.updateMatrixWorld(true) right after the lookAt, every projection
+// that runs later (the lock bracket, the pipper's divergence rider) reads THIS frame's camera.
 //
 // TOGGLE + PERSISTENCE (the muted-pair mirror, store.js): T in combat (input.js) toggles the
 // live flag and writes through; default ON (restored at boot by main.js's warm block via
@@ -135,7 +138,7 @@ const _cp = new THREE.Vector3(), _cf = new THREE.Vector3(); // camera world pos 
 const _t = new THREE.Vector3(), _p = new THREE.Vector3();
 const COS_ACQ = Math.cos(THREE.MathUtils.degToRad(AIMK.ACQUIRE_DEG));
 const COS_RET = Math.cos(THREE.MathUtils.degToRad(AIMK.RETAIN_DEG));
-const velMap = new WeakMap(); // locked-target smoothed velocity — one entry per entity, allocated ONCE per entity (never per frame; pool instances are finite and restart-clean)
+const velMap = new WeakMap(); // locked-target smoothed velocity — one entry per entity, allocated ONCE per entity (never per frame). Pool meshes persist across restarts by design, so a stale entry can survive one; it SELF-HEALS on re-lock — trackVel re-lerps v toward the measured motion and re-pins s.p every tick
 let graceT = 0; // s since the locked target left the retain cone (the LOCK_GRACE hold)
 
 function camState() {

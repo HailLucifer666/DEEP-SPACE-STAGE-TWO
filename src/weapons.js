@@ -26,7 +26,7 @@ import * as EFFECTS from './effects.js';
 import * as POWERUPS from './powerups.js';
 import { EFFECT_T, KINDS as EFFECT_KINDS } from './powerups.js';
 import { beep, chargeWhine, chargeRelease, expireBlip, sfxLaser, sfxExplosion, sfxPickup } from './audio.js'; // story-018: named synth recipes (audio.js) — the fire path owns the crossing/release voices, the effect side owns the pickup/expire blips; powerups.js stays sound-free. stage-6 A1a: the laser/explosion/pickup one-liners play the CC0 sample when decoded with the shipped synth params as the CONSOLE-SILENT fallback (audio-audit wiring map)
-import * as AIM from './aim-assist.js'; // stage-6 W1: the spawn-bias source — stream bolts only (aim-assist imports enemies/drone/store, never combat.js — dep-check acyclic; the sum-clamp decision lives in its header)
+import * as AIM from './aim-assist.js'; // story 7.4: camera-true aim — weapons consumes aimDir (the spawnBolt/spawnStreamShot base), getLockTarget (the homing-target stamp), targetAlive/leadPoint/AIMK.HOMING_RATE (boltsTick homing); biasDir is retired/uncalled (aim-assist imports enemies/drone/store, never combat.js — dep-check acyclic)
 
 /* ---------- the seam (see the header) ---------- */
 let C = null; // combat.js's live state bag — set once by initWeapons, read at CALL TIME

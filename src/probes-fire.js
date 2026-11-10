@@ -8,8 +8,10 @@
 // window.__stage2.fireArmN flag, the flow-check harness performs Input.dispatchMouseEvent
 // mousePressed/mouseReleased (the same listener chain a player's click hits), and the drive
 // reads the bolt pool (pool.update(0, …) — the ENEMIES.eachAlive trick) to capture
-// b.userData.dir of the bolts that actually flew. Dir is FINAL at spawn (boltsTick never
-// rewrites it), so the capture is exact.
+// b.userData.dir of the bolts that actually flew. story 7.4: stream bolts HOME (boltsTick
+// rewrites dir toward the lead point every tick), so a capture is a FIRST-SIGHTING snapshot —
+// the bolt's dir ~1 tick after spawn, before homing has materially steered it. Converge-aimed
+// bolts (nothing locked → target null) still carry a final-at-spawn dir: no target, no homing.
 //
 // Stages (all targets probe-pinned at their seat — probe-owned precondition, the pitchProbe
 // lockstep precedent; the rammer's seek/wobble would otherwise drift it off the bolt ray):
@@ -214,10 +216,6 @@ export function fireProbeTick(dt, C, env) {
       }
       if (FP.target.userData.alive) FP.target.position.set(FP.seat[0], FP.seat[1], FP.seat[2]); // pinned at the seat
       else FP.s1.killConfirmed = true;
-      if (!FP.s1.boltCaptured) {
-        const cap = captureBolt(C, env);
-        if (cap) { FP.s1.boltCaptured = true; FP.s1.dirDeg = +angDeg(cap.dir, cap.fwd).toFixed(2); }
-      }
       // bracket honesty sample + story 7.4 pipper-locked sample: the dead-ahead target is
       // in-cone, so the lock acquires it — the bracket renders ON it and the pipper carries
       // the `locked` class (pre-7.4 build: the class never exists → stays false, honest red)
