@@ -8,9 +8,10 @@ import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { resolveEdge, rmProfile } from './edge-bin.mjs';
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const EDGE = process.env.EDGE || 'C:\\Program Files (x86)\\Microsoft\\EdgeCore\\156.0.4314.58\\msedge.exe';
+const EDGE = resolveEdge();
 const PORT = 9330 + Math.floor(Math.random() * 100);
 // own throwaway profile inside this tree (TD-008 discipline: never grow the main build/ litter);
 // best-effort deleted on exit — a locked profile just survives, force:true keeps that silent
@@ -36,7 +37,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const cleanup = () => {
   try { ws?.close(); } catch {}
   try { spawnSync('taskkill', ['/F', '/T', '/PID', String(child.pid)], { stdio: 'ignore' }); } catch {}
-  try { fs.rmSync(PROFILE, { recursive: true, force: true }); } catch {}
+  rmProfile(PROFILE);
 };
 
 try {

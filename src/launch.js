@@ -206,6 +206,7 @@ export function prepareLaunch(scene, camera, rocket, ui, go) {
 /* ---------- shared helpers ---------- */
 function resetStage() { // full phase-reset contract (§8.6) — restarts allocate nothing new
   L.phaseT = 0; L.dist = 0; L.holdSeconds = 0; L.lastVelShown = 0; L.lastNumeral = null;
+  setLaneVisible(true);
   if (L.shipRig) { L.shipRig.position.set(0, 0, 0); L.shipRig.rotation.set(0, 0, 0); }
   if (L.rocket) { L.rocket.position.set(0, 0, 0); L.rocket.rotation.set(0, 0, 0); }
   if (L.thrPivot) { L.thruster.visible = false; L.thrPivot.scale.setScalar(1); L.thruster.material.opacity = 0.6; }
@@ -407,4 +408,11 @@ export function plumeSet({ visible, color } = {}) {
 }
 export function ambience() { // kept for combat's entry call — we live in vacuum from the first frame now
   if (L.starsA) { L.starsA.material.opacity = 1; L.starsB.material.opacity = 1; }
+}
+
+export function setLaneVisible(v) {
+  const vis = !!v;
+  if (L.streamA) L.streamA.visible = vis;
+  if (L.streamB) L.streamB.visible = vis;
+  if (L.wreckStream) L.wreckStream.visible = vis;
 }

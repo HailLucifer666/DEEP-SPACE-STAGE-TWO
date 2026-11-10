@@ -22,6 +22,7 @@ const D = {
   ready: false, scene: null, cfg: null,
   group: null, field: null, shell: null,
   lpos: null, fill: null, // local instance positions (Float32Array) + static shell-fill sample
+  rocks: [], // { lx, ly, lz, radius } local sphere obstacles
   tmp: new THREE.Vector3(),
 };
 
@@ -55,6 +56,7 @@ export function prepareDressing(scene, cfg) {
   const _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3();
   const _e = new THREE.Euler(), _m = new THREE.Matrix4();
   D.lpos = new Float32Array(n * 3);
+  D.rocks.length = 0;
   let minR = Infinity, maxR = 0;
   for (let i = 0; i < n; i++) {
     const theta = 2 * Math.PI * rng();
@@ -67,8 +69,10 @@ export function prepareDressing(scene, cfg) {
     minR = Math.min(minR, rad); maxR = Math.max(maxR, rad);
     _p.set(x, y, z);
     _e.set(rng() * 6.28, rng() * 6.28, rng() * 6.28); _q.setFromEuler(_e);
-    _s.setScalar(0.8 + rng() * 3.6);
+    const s = 0.8 + rng() * 2.7;
+    _s.setScalar(s);
     mesh.setMatrixAt(i, _m.compose(_p, _q, _s));
+    D.rocks.push({ lx: x, ly: y, lz: z, radius: s * 0.95 });
   }
   mesh.instanceMatrix.needsUpdate = true;
   D.fill = { minR3: +minR.toFixed(2), maxR3: +maxR.toFixed(2), samples: n };
@@ -121,6 +125,39 @@ export function shellOpacity() { return D.shell ? D.shell.material.opacity : 0; 
 export function shellMaterial() {
   const m = D.shell.material;
   return { additive: m.blending === THREE.AdditiveBlending, transparent: m.transparent, depthWrite: m.depthWrite };
+}
+
+export function collideRocks(pos, radius, outNormal) {
+  const rocks = D.rocks;
+  if (!rocks || !rocks.length || !D.group) return 0;
+  const yaw = D.group.rotation.y || 0;
+  const cy = Math.cos(yaw), sy = Math.sin(yaw);
+  for (let i = 0, n = rocks.length; i < n; i++) {
+    const r = rocks[i];
+    const wx = r.lx * cy + r.lz * sy;
+    const wy = r.ly;
+    const wz = -r.lx * sy + r.lz * cy;
+    const dx = pos.x - wx, dy = pos.y - wy, dz = pos.z - wz;
+    const d2 = dx * dx + dy * dy + dz * dz;
+    const minD = radius + r.radius;
+    if (d2 < minD * minD) {
+      const d = Math.sqrt(d2) || 1e-6;
+      if (outNormal) outNormal.set(dx / d, dy / d, dz / d);
+      return minD - d;
+    }
+  }
+  return 0;
+}
+
+export function getRock(index) {
+  const r = D.rocks[index];
+  if (!r) return null;
+  const yaw = D.group ? D.group.rotation.y : 0;
+  const cy = Math.cos(yaw), sy = Math.sin(yaw);
+  const wx = r.lx * cy + r.lz * sy;
+  const wy = r.ly;
+  const wz = -r.lx * sy + r.lz * cy;
+  return { lx: r.lx, ly: r.ly, lz: r.lz, radius: r.radius, wx, wy, wz };
 }
 export function nearestTo(pos) { // min 3D distance from `pos` to any instance (world-space)
   if (!D.group || !D.field) return null;

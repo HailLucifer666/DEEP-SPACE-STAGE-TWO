@@ -7,7 +7,8 @@
 // Usage: node build/tmp-death-repro.mjs "<url>"
 import { spawn, spawnSync } from 'node:child_process';
 
-const EDGE = process.env.EDGE || 'C:\\Program Files (x86)\\Microsoft\\EdgeCore\\156.0.4314.58\\msedge.exe';
+import { resolveEdge, rmProfile } from './edge-bin.mjs';
+const EDGE = resolveEdge();
 const PORT = 9430 + Math.floor(Math.random() * 100);
 const PROFILE = `E:\\Game Build\\build\\.edge-profile-cdp-${Date.now()}`;
 const url = process.argv[2] || 'file:///E:/Game%20Build/index.html?debug=1&goto=combat';

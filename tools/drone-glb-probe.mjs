@@ -16,7 +16,8 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const GLB = path.join(ROOT, 'build', 'drone.glb');
 const SHOT = path.join(ROOT, 'production', 'qa', 'evidence', 'story-012-drone', 's12-drone.png');
-const EDGE = process.env.EDGE || 'C:\\Program Files (x86)\\Microsoft\\EdgeCore\\156.0.4314.58\\msedge.exe';
+import { resolveEdge, rmProfile } from './edge-bin.mjs';
+const EDGE = resolveEdge();
 const PORT = 9947; // fixed per pass; passes run strictly sequentially
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -73,7 +74,7 @@ async function probePass(wantBuild) {
     '--headless=new', '--disable-gpu', '--no-first-run', '--disable-background-networking', '--disable-sync',
     `--user-data-dir=${profile}`, `--remote-debugging-port=${PORT}`, url,
   ], { stdio: 'ignore' });
-  const cleanup = () => { try { ws?.close(); } catch {} try { spawnSync('taskkill', ['/F', '/T', '/PID', String(child.pid)], { stdio: 'ignore' }); } catch {} try { fs.rmSync(profile, { recursive: true, force: true }); } catch {} };
+  const cleanup = () => { try { ws?.close(); } catch {} try { spawnSync('taskkill', ['/F', '/T', '/PID', String(child.pid)], { stdio: 'ignore' }); } catch {} rmProfile(profile);;
   let ws = null;
 
   try {

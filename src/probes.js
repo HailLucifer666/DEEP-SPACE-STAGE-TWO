@@ -747,12 +747,27 @@ export function dressingProbeTick(dt, C, env) {
     if (DD.sub === 'park60') {
       if (DD.t >= DD.mark + 0.6) {
         DD.opacityAt60 = +DRESSING.shellOpacity().toFixed(4);
+        const r0 = DRESSING.getRock ? DRESSING.getRock(0) : null;
+        let rockHit = null;
+        if (r0) {
+          // verify world rock collision detection
+          const testPos = { x: r0.wx, y: r0.wy, z: r0.wz };
+          const normal = C.tmp;
+          const pen = DRESSING.collideRocks(testPos, 1.4, normal);
+          rockHit = {
+            detected: pen > 0,
+            radius: r0.radius,
+            pen: +pen.toFixed(3),
+            hasNormal: normal.lengthSq() > 0,
+          };
+        }
         const probe = {
           ambientCount: DRESSING.fieldCount(),
           shellFill: DRESSING.shellFill(),
           clearance: { min: +DD.minCl.toFixed(2), samples: DD.samples },
           shell: { material: DRESSING.shellMaterial(), opacityAt78: DD.opacityAt78, opacityAt60: DD.opacityAt60 },
           lifecycle: { shownOnEnter: DD.entryShown },
+          rockHit,
         };
         window.__stage2.dressingProbe = probe;
         window.__stage2.dressingProbeLive = false;

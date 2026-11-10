@@ -6,7 +6,8 @@
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 
-const EDGE = process.env.EDGE || 'C:\\Program Files (x86)\\Microsoft\\EdgeCore\\156.0.4314.58\\msedge.exe';
+import { resolveEdge, rmProfile } from './edge-bin.mjs';
+const EDGE = resolveEdge();
 const PORT = 9941;
 const PROFILE = `E:\\Game Build\\build\\.edge-profile-bossshots-${Date.now()}`;
 const url = 'file:///E:/Game%20Build/index.html?debug=1&goto=combat&bossProbe=1&bossShot=1';
@@ -20,7 +21,7 @@ const child = spawn(EDGE, [
 const cleanup = () => {
   try { ws?.close(); } catch {}
   try { spawnSync('taskkill', ['/F', '/T', '/PID', String(child.pid)], { stdio: 'ignore' }); } catch {}
-  try { fs.rmSync(PROFILE, { recursive: true, force: true }); } catch {}
+  rmProfile(PROFILE);
 };
 
 let ws = null;

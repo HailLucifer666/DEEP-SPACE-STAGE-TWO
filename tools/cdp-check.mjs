@@ -3,11 +3,12 @@
 //   node tools/cdp-check.mjs "<url>" [waitMs]
 import { spawn, spawnSync } from 'node:child_process';
 
-const EDGE = process.env.EDGE || 'C:\\Program Files (x86)\\Microsoft\\EdgeCore\\156.0.4314.58\\msedge.exe';
+import { resolveEdge, rmProfile } from './edge-bin.mjs';
+const EDGE = resolveEdge();
 const PORT = 9230 + Math.floor(Math.random() * 100);
 const PROFILE = `E:\\Game Build\\build\\.edge-profile-cdp-${Date.now()}`;
 const url = process.argv[2];
-const waitMs = Number(process.argv[3] || 25000);
+const waitMs = Number(process.argv[3] || 8000);
 
 const child = spawn(EDGE, [
   '--headless=new', '--disable-gpu', '--no-first-run', '--disable-background-networking',
@@ -23,6 +24,7 @@ const cleanup = () => {
   try { ws?.close(); } catch {}
   // taskkill /T nukes the whole browser tree — spawn-only kill leaks subprocesses
   try { spawnSync('taskkill', ['/F', '/T', '/PID', String(child.pid)], { stdio: 'ignore' }); } catch {}
+  rmProfile(PROFILE);
 };
 
 try {

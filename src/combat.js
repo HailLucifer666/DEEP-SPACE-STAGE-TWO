@@ -16,7 +16,7 @@ import * as POWERUPS from './powerups.js'; // story-018: drop roll + pickup pool
 import { KINDS as EFFECT_KINDS } from './powerups.js';
 import { noiseBurst, loopStart, musicEvict, musicSetDuck, alarmTick, proximityTick, setListener, sfxHit } from './audio.js'; // story-009 audio + hit voices that stayed with combat (the fire-path/effect voices moved to weapons.js with their call sites). stage-6 A1a: setListener feeds the ship position to the panner/attenuation math once per frame; sfxHit is the impact sample for the hurt site below
 import { initWeapons, makeBolt, fireTick, boltsTick, effectsTick, applyEffect, T_CHARGE, BOLT_LIFE } from './weapons.js'; // review-fix split (story-018 review round): the fire path + projectile/effect side — verbatim moves; combat calls them at the same tickCombat positions and composes POWERUP_API around the imported applyEffect
-import { stageShip, combatFlow } from './launch.js';
+import { stageShip, combatFlow, setLaneVisible } from './launch.js';
 import * as AIM from './aim-assist.js'; // stage-6 W1: the lock scan + spawn-bias + aim HUD owner — combat hands the LIVE C + forward closure ONCE (the initWeapons seam pattern); aim-assist imports enemies/drone directly and must NEVER import combat.js (dep-check rule)
 import { droneProbeTick, bossProbeTick, pitchProbeTick, dressingProbeTick, chargeProbeTick, powerupProbeTick, balanceProbeTick, fireProbeTick, flightProbeTick, resetProbes } from './probes.js'; // rider R-e: the probe drives + their state live in probes.js — combat calls them, never the reverse (dep-check: acyclic; story-019 adds balanceProbeTick through the same re-export wiring; stage-6 W1 adds fireProbeTick — the real-fire capture walk; stage-7 story 7.0 adds flightProbeTick — the flight-baseline walk)
 import * as DRESSING from './arena-dressing.js'; // story-017: combat-only ambient field + shell visual (GDD §3.6)
@@ -39,7 +39,7 @@ const R_SOFT = 60, R_HARD = 80;
 // a volume. Knobs live HERE (the owning-module convention): ambient field count (range 80-200)
 // + the fixed PRNG seed (deterministic — probe asserts stable), and the boundary-shell max
 // opacity (range 0.1-0.3; R8: ≤ the 0.85 bloom threshold, additive/non-emissive).
-const AMBIENT_FIELD_COUNT = 120;
+const AMBIENT_FIELD_COUNT = 40;
 const AMBIENT_FIELD_SEED = 17017;
 const SHELL_VISUAL_MAX_OPACITY = 0.18;
 const MAX_SPEED = 17;        // bumped with the arena — same crossing time as the old 26 arena at 14
@@ -85,7 +85,7 @@ function freshTelemetry() {
     chargedKills: 0, // kills by charged bolt — the skill signal
     shots: { stream: 0, charged: 0 }, // bolts spawned (a SPREAD fan counts each fan bolt)
     hits: { stream: 0, charged: 0 }, // bolts that hit anything (1:1 max — bolts die on hit)
-    damageTaken: { bolt: 0, ram: 0, dive: 0, bossDash: 0 }, // summed damage by honest source —
+    damageTaken: { bolt: 0, ram: 0, dive: 0, bossDash: 0, rock: 0 }, // summed damage by honest source —
     // 'bolt' honestly merges gunner fire AND the boss volley (both ride the E.bolts pool and
     // the same player scan through the enemies api); 'dive'/'bossDash' are tagged by their
     // per-caller api wraps (the orb's / the boss's only damage source each — drone.js and
@@ -102,6 +102,7 @@ const C = {
   ready: false, scene: null, camera: null, rocket: null, ui: null, api: null,
   pose: null, tilt: null,
   pos: new THREE.Vector3(), vel: new THREE.Vector3(), heading: 0, bank: 0, speed: 0, pitch: 0, // speed = throttle state (u/s along the nose); heading/pitch are player-commanded (story-004/015); vel is drift state (persistent, story-015)
+  rockCooldown: 0,
   hp: HP_MAX, shield: SHIELD_MAX, regenT: 0, dead: false, deathT: 0,
   fireT: 0, boost: 1, boosting: false,
   chargeT: 0, charging: false, // story-018: hold accumulator (s) + past-threshold latch — zeroed on death/pause/exit (GDD §3.2 cancel rules)
@@ -237,7 +238,7 @@ const probeEnv = { forward, noseWorld, clamp, ARENA_Y, BOLT_LIFE, TURN_RATE, HP_
 // CALL-TIME read, never a snapshot; forward/noseWorld are live closures over C. ARENA_Y /
 // R_HARD / SHIELD_MAX are const primitives — immutable, snapshot-safe by construction. Called
 // once at module scope: the references never change for the page's lifetime.
-initWeapons({ C, forward, noseWorld, ARENA_Y, R_HARD, SHIELD_MAX, KILL_MARK_S });
+initWeapons({ C, forward, noseWorld, ARENA_Y, R_HARD, SHIELD_MAX, KILL_MARK_S, collideRocks: DRESSING.collideRocks });
 // stage-6 W1: the aim-lock seam — the same live-reference contract as initWeapons above
 // (call-time reads of C.pos/C.camera/C.api; forward is the live closure). NOT probeEnv — that
 // is the probes-only seam; the aim state is game code, not probe plumbing. Called once at
@@ -310,6 +311,21 @@ function steer(dt) {
     }
   }
   C.pos.addScaledVector(C.vel, dt);
+
+  // rock collision (story 7.5) — sphere-vs-sphere obstacle deflection + impact damage
+  if (C.rockCooldown > 0) C.rockCooldown = Math.max(0, C.rockCooldown - dt);
+  const pen = DRESSING.collideRocks(C.pos, 1.4, C.tmp);
+  if (pen > 0) {
+    C.pos.addScaledVector(C.tmp, pen);
+    const vn = C.vel.dot(C.tmp);
+    if (vn < 0) C.vel.addScaledVector(C.tmp, -1.6 * vn);
+    if (C.rockCooldown <= 0 && !C.dead) {
+      const impactSpeed = Math.max(0, -vn);
+      const dmg = Math.min(25, Math.max(6, Math.round(impactSpeed * 0.75)));
+      C.rockCooldown = 0.35;
+      damagePlayer(dmg, 'rock');
+    }
+  }
 
   // hard spherical clamp — safety net for the one frame the bleed cap allows: past R_HARD the
   // position is scaled back onto the shell (pos = O + (pos − O)·R_HARD/r3, GDD §4.4)
@@ -463,12 +479,14 @@ export function enterCombat(scene, camera, rocket, ui, api) {
   }
   C.rim.visible = true;
   DRESSING.showDressing(); // story-017: the ambient field + shell visual join the fight (rim-ring lifecycle)
+  setLaneVisible(false); // story-7.5: launch lane rocks hide in combat
   C.pos.set(0, ARENA_Y, 0);
   C.vel.set(0, 0, 0);
   C.heading = 0; C.bank = 0; C.speed = 0; C.pitch = 0; // story-015: the replay never inherits a nose-up start (GDD §5.6); vel reset above covers drift
   C.hp = HP_MAX; C.shield = SHIELD_MAX; C.regenT = 0; C.dead = false; C.deathT = 0;
   C.fireT = 0; C.boost = 1; C.boosting = false;
   C.chargeT = 0; C.charging = false; // story-018: the hold accumulator never survives an entry (GDD §3.2 combat-exit cancel)
+  C.rockCooldown = 0;
   C.effects = { SPREAD: 0, OVERDRIVE: 0, SHIELD: 0 }; // story-018: effect timers wipe beside score/kills (the L453 pattern)
   C.fired = { stream: 0, charged: 0 }; // story-018 probe counters restart beside kills (the L453 pattern)
   C.score = 0; C.kills = 0; C.wave = 1; C.waveGapT = 0;
@@ -732,11 +750,13 @@ export function clearCombat() {
   // last-frame pip state must not ride the pad — the pips are combat's writes, same class as the #hud-bars
   // clear above (pre-existing leak; the death-card REPLAY inherits this fix too)
   C.dead = false; C.deathT = 0; C.speed = 0;
+  C.rockCooldown = 0;
   C.chargeT = 0; C.charging = false; // story-018: a mid-hold exit wipes the accumulator (GDD §3.2) — the death-card SKIP can never inherit it
   C.effects = { SPREAD: 0, OVERDRIVE: 0, SHIELD: 0 }; // story-018: timers + entities wiped with the pools
   C.fired = { stream: 0, charged: 0 };
   if (C.rim) { C.rim.material.opacity = 0; C.rim.visible = false; } // story-005: rim leaves the render list with combat (review R2-9)
   DRESSING.hideDressing(); // story-017: the ambient field + shell visual leave the render list with combat (rim-ring lifecycle — hidden, never disposed)
+  setLaneVisible(true); // story-7.5: launch lane rocks restored for pad/ascent
 }
 
 /* ---------- probe surface (window.__stage2 reads these) ---------- */

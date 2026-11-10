@@ -3,7 +3,8 @@
 // Usage: node tools/combat-probe.mjs
 import { spawn, spawnSync } from 'node:child_process';
 
-const EDGE = process.env.EDGE || 'C:\\Program Files (x86)\\Microsoft\\EdgeCore\\156.0.4314.58\\msedge.exe';
+import { resolveEdge, rmProfile } from './edge-bin.mjs';
+const EDGE = resolveEdge();
 const PORT = 9400 + Math.floor(Math.random() * 200);
 const URL = 'file:///E:/Game%20Build/index.html?debug=1&goto=combat';
 const child = spawn(EDGE, [

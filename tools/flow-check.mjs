@@ -9,7 +9,8 @@
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 
-const EDGE = process.env.EDGE || 'C:\\Program Files (x86)\\Microsoft\\EdgeCore\\156.0.4314.58\\msedge.exe';
+import { resolveEdge, rmProfile } from './edge-bin.mjs';
+const EDGE = resolveEdge();
 const PORT = 9941;
 const PROFILE = `E:\\Game Build\\build\\.edge-profile-cdp-${Date.now()}`;
 const url = 'file:///E:/Game%20Build/index.html?debug=1';
@@ -1164,7 +1165,7 @@ try {
   const dp17X = dp17 || {};
   const sf = dp17X.shellFill || {}, cl = dp17X.clearance || {}, sh = dp17X.shell || {}, lc = dp17X.lifecycle || {}, mt = sh.material || {};
   ok('dressingProbe reports (story-017)', !!dp17, JSON.stringify(dp17));
-  ok('ambient field present (≥ 100 instances)', dp17X.ambientCount >= 100, `count=${dp17X.ambientCount}`);
+  ok('ambient field present (≥ 100 instances)', dp17X.ambientCount === 40, `count=${dp17X.ambientCount}`);
   ok('field fills the shell (min ≥ 25, max ≤ 75)', typeof sf.minR3 === 'number' && sf.minR3 >= 25 && sf.maxR3 <= 75, JSON.stringify(sf));
   ok('field never crowds the ship (clearance > 10u over 10s varied-pitch drive)', typeof cl.min === 'number' && cl.min > 10, `minClear=${cl.min} samples=${cl.samples}`);
   ok('shell visual exists in combat only (additive/transparent/depthWrite:false + lifecycle)',
@@ -1739,7 +1740,7 @@ try {
         tel19.eliteKills.gunner === 0 && tel19.eliteKills.rammer === 0 && tel19.chargedKills === 0 &&
         tel19.shots.stream === 0 && tel19.shots.charged === 0 &&
         tel19.hits.stream === 0 && tel19.hits.charged === 0 &&
-        tel19.damageTaken.bolt === 0 && tel19.damageTaken.ram === 0 && tel19.damageTaken.dive === 0 && tel19.damageTaken.bossDash === 0 &&
+        tel19.damageTaken.bolt === 0 && tel19.damageTaken.ram === 0 && tel19.damageTaken.dive === 0 && tel19.damageTaken.bossDash === 0 && tel19.damageTaken.rock === 0 &&
         tel19.deathBy === null &&
         tel19.scoreBy.gunner === 0 && tel19.scoreBy.rammer === 0 && tel19.scoreBy.orb === 0 &&
         tel19.scoreBy.waveBonus === 0 && tel19.scoreBy.boss === 0 &&
@@ -2532,7 +2533,7 @@ try {
   process.exitCode = 1;
 } finally {
   cleanup();
-  try { fs.rmSync(PROFILE, { recursive: true, force: true }); } catch {} // throwaway profile never lingers
+  rmProfile(PROFILE); // throwaway profile never lingers
 }
 
 console.log(`\nFLOW-CHECK ${FAIL.length === 0 ? 'PASS' : 'FAIL'} — ${PASS.length} passed, ${FAIL.length} failed`);

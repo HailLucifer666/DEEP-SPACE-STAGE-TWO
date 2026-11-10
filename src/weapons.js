@@ -34,6 +34,7 @@ let forward = null; // combat.js's 3D forward closure (story-015 keystone) — l
 let noseWorld = null; // combat.js's nose closure — live, never copied
 let ARENA_Y = 0, R_HARD = 0, SHIELD_MAX = 0; // const primitives in combat.js — immutable, snapshot-safe
 let KILL_MARK_S = 0; // stage-6 H1: the kill-marker window (s) — combat.js owns the const + the #hit-mark writer; the kill sites below only STAMP the timestamp (additive UI hooks, not logic changes)
+let collideRocks = null; // story-7.5: rock obstacle collision check
 
 export function initWeapons(deps) {
   C = deps.C;
@@ -43,6 +44,7 @@ export function initWeapons(deps) {
   R_HARD = deps.R_HARD;
   SHIELD_MAX = deps.SHIELD_MAX;
   KILL_MARK_S = deps.KILL_MARK_S || 0; // stage-6 H1: rides the same seam (the const's single definition lives in combat.js)
+  collideRocks = deps.collideRocks || null;
 }
 
 const FIRE_INTERVAL = 1 / 8; // ~8/s hold-fire
@@ -205,6 +207,11 @@ export function boltsTick(dt) {
     }
     b.position.addScaledVector(b.userData.dir, BOLT_SPEED * dt);
     if (b.userData.life <= 0) { C.bolts.kill(b); return; }
+    if (collideRocks && collideRocks(b.position, 0.4, null) > 0) {
+      EFFECTS.explosion(b.position);
+      C.bolts.kill(b);
+      return;
+    }
     // bolt × drone scan (both pools are small — brute force is the honest option)
     ENEMIES.eachAlive((d) => {
       if (!b.userData.alive) return;
