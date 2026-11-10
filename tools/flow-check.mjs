@@ -1168,12 +1168,8 @@ try {
   ok('ambient field present (≥ 100 instances)', dp17X.ambientCount === 40, `count=${dp17X.ambientCount}`);
   ok('field fills the shell (min ≥ 25, max ≤ 75)', typeof sf.minR3 === 'number' && sf.minR3 >= 25 && sf.maxR3 <= 75, JSON.stringify(sf));
   ok('field never crowds the ship (clearance > 10u over 10s varied-pitch drive)', typeof cl.min === 'number' && cl.min > 10, `minClear=${cl.min} samples=${cl.samples}`);
-  ok('shell visual exists in combat only (additive/transparent/depthWrite:false + lifecycle)',
-    mt.additive === true && mt.transparent === true && mt.depthWrite === false && lc.shownOnEnter === true &&
-    !!lcSeen.atPad && lcSeen.atPad.sv === false && !!lcSeen.atReenter && lcSeen.atReenter.sv === true,
-    `mat=${JSON.stringify(mt)} lc=${JSON.stringify(lcSeen)}`);
-  ok('shell opacity tracks 3D proximity (>0 at r3 ≥ 78, ==0 at r3 ≤ 60)',
-    typeof sh.opacityAt78 === 'number' && sh.opacityAt78 > 0 && sh.opacityAt60 === 0, `at78=${sh.opacityAt78} at60=${sh.opacityAt60}`);
+  // SANCTIONED REWRITE (Story 7.6 - Boundary): blue shell wireframe sphere removed
+  ok('boundary wireframe shell removed (story 7.6)', dp17X.shellRemoved === true, JSON.stringify(dp17X));
   ok('field lifecycle: hidden on clearCombat (pad), re-shown on enterCombat',
     !!lcSeen.atPad && lcSeen.atPad.fv === false && !!lcSeen.atReenter && lcSeen.atReenter.fv === true,
     JSON.stringify(lcSeen));

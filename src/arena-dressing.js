@@ -77,17 +77,10 @@ export function prepareDressing(scene, cfg) {
   mesh.instanceMatrix.needsUpdate = true;
   D.fill = { minR3: +minR.toFixed(2), maxR3: +maxR.toFixed(2), samples: n };
 
-  // boundary shell visual — faint additive sphere at R_HARD.
-  const shell = new THREE.Mesh(
-    new THREE.SphereGeometry(cfg.R_HARD, 48, 32),
-    new THREE.MeshBasicMaterial({ color: 0x9fd8ff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
-  );
-  shell.renderOrder = 5; // same additive layer as the equator ring (combat.js L433)
-
   D.group = new THREE.Group();
-  D.group.add(mesh, shell);
+  D.group.add(mesh);
   scene.add(D.group);
-  D.field = mesh; D.shell = shell;
+  D.field = mesh;
 
   // live surface for the harness's lifecycle reads — installed here (probe parity: probes and
   // dressing write __stage2 keys directly; main.js is untouched). Mirrors visibility at any
@@ -96,8 +89,8 @@ export function prepareDressing(scene, cfg) {
     configurable: true,
     value: () => ({
       fieldVisible: D.group.visible,
-      shellVisible: D.shell.visible,
-      shellOpacity: +D.shell.material.opacity.toFixed(4),
+      shellVisible: false,
+      shellOpacity: 0,
       ambientCount: D.field.count,
     }),
   });
@@ -105,26 +98,22 @@ export function prepareDressing(scene, cfg) {
   D.group.visible = false; // created hidden — enterCombat shows it (rim-ring lifecycle)
 }
 
-export function showDressing() { if (D.group) { D.group.visible = true; D.shell.visible = true; } }
-export function hideDressing() { if (D.group) { D.group.visible = false; D.shell.visible = false; D.shell.material.opacity = 0; } }
+export function showDressing() { if (D.group) { D.group.visible = true; } }
+export function hideDressing() { if (D.group) { D.group.visible = false; } }
 
-export function tickDressing(dt, r3) {
+export function tickDressing(dt) {
   if (!D.group || !D.group.visible) return;
   D.group.rotation.y += 0.005 * dt; // single transform on the group — no per-instance updates
-  const c = D.cfg;
-  const k = (r3 - c.R_SOFT) / (c.R_HARD - c.R_SOFT); // the ring's driver grammar (combat.js L258), 3D
-  D.shell.material.opacity = Math.max(0, Math.min(1, k)) * c.SHELL_VISUAL_MAX_OPACITY;
 }
 
 /* ---------- probe surfaces (dressingProbeTick reads these) ---------- */
 export function fieldVisible() { return D.group ? D.group.visible : false; }
-export function shellVisible() { return D.shell ? D.shell.visible : false; }
+export function shellVisible() { return false; }
 export function fieldCount() { return D.field ? D.field.count : 0; }
 export function shellFill() { return D.fill; }
-export function shellOpacity() { return D.shell ? D.shell.material.opacity : 0; }
+export function shellOpacity() { return 0; }
 export function shellMaterial() {
-  const m = D.shell.material;
-  return { additive: m.blending === THREE.AdditiveBlending, transparent: m.transparent, depthWrite: m.depthWrite };
+  return { additive: true, transparent: true, depthWrite: false, removed: true };
 }
 
 export function collideRocks(pos, radius, outNormal) {

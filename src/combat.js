@@ -337,11 +337,21 @@ function steer(dt) {
     C.pos.z *= s;
     r3 = R_HARD;
   }
-  // #warn ("EDGE OF SECTOR") fires entering the soft shell (r3 > 60) and clears inside it —
-  // the 015 band branch of this driver was retired with the band scaffold (story-016).
+  // #warn fires entering the soft shell (r3 > 60) and clears inside it (two-stage warning)
   if (C.ui.warn) {
-    C.ui.warn.hidden = (r3 <= R_SOFT) || C.dead;
-    C.ui.warn.textContent = 'EDGE OF SECTOR';
+    const show = (r3 > R_SOFT) && !C.dead;
+    C.ui.warn.hidden = !show;
+    if (show) {
+      if (r3 >= 72) {
+        C.ui.warn.textContent = 'END OF COMBAT ZONE - TURN BACK';
+        C.ui.warn.classList.add('danger');
+      } else {
+        C.ui.warn.textContent = 'APPROACHING ZONE EDGE';
+        C.ui.warn.classList.remove('danger');
+      }
+    } else {
+      C.ui.warn.classList.remove('danger');
+    }
   }
   // rim ring opacity: 3D proximity (was 2D hypot(x,z) — story-016; the ring stays at the
   // equator as the ground reference, no shell visual until story-017)
