@@ -1163,7 +1163,11 @@ try {
     }
   }
   const dp17X = dp17 || {};
-  const sf = dp17X.shellFill || {}, cl = dp17X.clearance || {}, sh = dp17X.shell || {}, lc = dp17X.lifecycle || {}, mt = sh.material || {};
+  // Task A follow-up 2026-11-10 (review finding 2): the sh/mt destructures (dp17X.shell →
+  // sh.material) were orphaned by the Task A commit — the probe stopped reporting `shell`
+  // when the story-7.6 shell removal made shellRemoved the measured witness. Dropped; the
+  // probe still reports shellFill/clearance/lifecycle, and none of the asserts read sh/mt.
+  const sf = dp17X.shellFill || {}, cl = dp17X.clearance || {}, lc = dp17X.lifecycle || {};
   ok('dressingProbe reports (story-017)', !!dp17, JSON.stringify(dp17));
   // Task A 2026-11-10: LABEL-ONLY fix — the label said "≥ 100" (the pre-story-7.5 field size)
   // while the assert reads === 40 (story 7.5 thinned AMBIENT_FIELD_COUNT to 40). The assert
@@ -1172,13 +1176,20 @@ try {
   ok('field fills the shell (min ≥ 25, max ≤ 75)', typeof sf.minR3 === 'number' && sf.minR3 >= 25 && sf.maxR3 <= 75, JSON.stringify(sf));
   ok('field never crowds the ship (clearance > 10u over 10s varied-pitch drive)', typeof cl.min === 'number' && cl.min > 10, `minClear=${cl.min} samples=${cl.samples}`);
   // SANCTIONED REWRITE (Story 7.6 - Boundary): blue shell wireframe sphere removed.
-  // Task A 2026-11-10: shellRemoved is now MEASURED in the probe (probes.js shellScan — any
-  // wireframe mesh ≥ 40 u in the live scene fails), not the literal `true` it replaced
-  // (tautology / false green). MUTATION-PROVEN 2026-11-10: a wireframe IcosahedronGeometry(78,2)
-  // mesh re-added to the scene inside dressingProbeTick → RED here with shellRemoved:false in
-  // the probe JSON below; restored → green. Adjacent keep-passing in that run: the ambient
-  // count / shell-fill / clearance asserts all stayed green (the mutation mesh touches nothing
-  // else the block measures).
+  // Task A 2026-11-10: shellRemoved is now MEASURED in the probe (probes-dressing.js shellScan
+  // — any wireframe-material MESH at shell scale fails; the walk + helper moved to that file in
+  // the review follow-up split), not the literal `true` it replaced (tautology / false green).
+  // MUTATION-PROVEN 2026-11-10, two recorded mutations, each verified applied by grepping the
+  // built bundle before trusting the red:
+  //   (a) a wireframe IcosahedronGeometry(78,2) MESH re-added inside dressingProbeTick → RED
+  //       here with shellRemoved:false in the probe JSON below; restored → green. Adjacent
+  //       keep-passing in that run: the ambient count / shell-fill / clearance asserts all
+  //       stayed green (the mutation mesh touches nothing else the block measures).
+  //   (b) review finding 3: the same shell re-added as THREE.LineSegments (a LINE, not a Mesh —
+  //       line materials carry no wireframe flag, and a line cage is the most natural future
+  //       boundary shape) → RED here with shellRemoved:false for that reason; restored → green.
+  //       This mutation exists because the first cut witnessed only o.isMesh; the shellScan
+  //       class is now closed (isLine || isLineSegments fail on the same 40 u radius floor).
   ok('boundary wireframe shell removed (story 7.6)', dp17X.shellRemoved === true, JSON.stringify(dp17X));
   // Task A 2026-11-10 (Story 7.6 Step 3 sanctioned #warn-text asserts): asserted against the
   // PLAN's sanctioned strings (docs/FIX_PLAN.md Story 7.6 Step 2) — verified byte-identical to
