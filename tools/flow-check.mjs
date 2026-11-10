@@ -1223,7 +1223,7 @@ try {
      trusting the red; restore → green):
        1. graze gate removed (combat.js: the damage condition dropped its vn<0 half — damage
           on ANY overlap again) → RED 'rock graze: zero closing speed drains nothing …'
-          (graze.rockDmg 18, hpTicks 3 — the clamp minimum ~6 re-fired every 0.35 s on the
+          (graze.rockDmg 24, hpTicks 4 — the clamp minimum ~6 re-fired every 0.35 s on the
           pinned zero-closing-speed overlap: the audit's ~17 dps drain). Adjacent
           keep-passing: both impact asserts (the bounce still clears the overlap — exactly
           one impact tick, deflected), boltStopped, laneHidden (untouched mechanisms).
