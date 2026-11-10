@@ -415,4 +415,10 @@ export function setLaneVisible(v) {
   if (L.streamA) L.streamA.visible = vis;
   if (L.streamB) L.streamB.visible = vis;
   if (L.wreckStream) L.wreckStream.visible = vis;
+  // story-7.5 probe surface (Task B 2026-11-10; the arena-dressing dressingLive precedent):
+  // mirrors the lane's visibility for the harness's hidden-in-combat / restored-on-clear
+  // asserts — a scene-graph traversal would have to re-derive which instanced meshes ARE the
+  // lane (the ambient field deliberately shares the rock geometry/material family), so the
+  // setter itself is the honest witness. Read-only side effect; gameplay untouched.
+  if (window.__stage2) window.__stage2.laneVisible = vis;
 }

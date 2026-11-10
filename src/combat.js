@@ -319,7 +319,12 @@ function steer(dt) {
     C.pos.addScaledVector(C.tmp, pen);
     const vn = C.vel.dot(C.tmp);
     if (vn < 0) C.vel.addScaledVector(C.tmp, -1.6 * vn);
-    if (C.rockCooldown <= 0 && !C.dead) {
+    // 2026-11-10 audit: ungated rock damage drained ~17 dps on zero-closing-speed grazes —
+    // the old condition fired on ANY overlap, so hovering/grazing at a rock took the clamp
+    // minimum (6) every cooldown while vn >= 0. Damage only when the ship moves INTO the
+    // rock (vn < 0 — the same test that gates the bounce above): a graze/hover still
+    // deflects, but drains nothing (Story 7.5: impact damage from closing speed only).
+    if (vn < 0 && C.rockCooldown <= 0 && !C.dead) {
       const impactSpeed = Math.max(0, -vn);
       const dmg = Math.min(25, Math.max(6, Math.round(impactSpeed * 0.75)));
       C.rockCooldown = 0.35;

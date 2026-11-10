@@ -1134,8 +1134,8 @@ try {
     const t0 = Date.now();
     for (;;) {
       try {
-        const g = await J(`({ p: (window.__stage2 && __stage2.phase) || 'boot', dl: (window.__stage2 && window.__stage2.dressingLive) ? __stage2.dressingLive() : null })`);
-        if (g.p === 'combat') { if (g.dl) lcSeen.atReenter = { fv: g.dl.fieldVisible, sv: g.dl.shellVisible }; break; }
+        const g = await J(`({ p: (window.__stage2 && __stage2.phase) || 'boot', dl: (window.__stage2 && window.__stage2.dressingLive) ? __stage2.dressingLive() : null, lv: (window.__stage2 && typeof __stage2.laneVisible === 'boolean') ? __stage2.laneVisible : null })`);
+        if (g.p === 'combat') { if (g.dl) lcSeen.atReenter = { fv: g.dl.fieldVisible, sv: g.dl.shellVisible, lv: g.lv }; break; } // lv: Task B 2026-11-10 — the launch lane mirror (story 7.5)
       } catch {}
       if (Date.now() - t0 > 20000) break; // deadline — the asserts below record the red
       await sleep(200);
@@ -1155,8 +1155,8 @@ try {
     const t0 = Date.now();
     for (;;) {
       try {
-        const g = await J(`({ p: (window.__stage2 && __stage2.phase) || 'boot', dl: (window.__stage2 && window.__stage2.dressingLive) ? __stage2.dressingLive() : null })`);
-        if (g.p === 'pad') { if (g.dl) lcSeen.atPad = { fv: g.dl.fieldVisible, sv: g.dl.shellVisible }; break; }
+        const g = await J(`({ p: (window.__stage2 && __stage2.phase) || 'boot', dl: (window.__stage2 && window.__stage2.dressingLive) ? __stage2.dressingLive() : null, lv: (window.__stage2 && typeof __stage2.laneVisible === 'boolean') ? __stage2.laneVisible : null })`);
+        if (g.p === 'pad') { if (g.dl) lcSeen.atPad = { fv: g.dl.fieldVisible, sv: g.dl.shellVisible, lv: g.lv }; break; } // lv: Task B 2026-11-10 — clearCombat restores the lane (combat.js setLaneVisible(true))
       } catch {}
       if (Date.now() - t0 > 20000) break; // deadline — the asserts below record the red
       await sleep(200);
@@ -1212,6 +1212,50 @@ try {
   ok('field lifecycle: hidden on clearCombat (pad), re-shown on enterCombat',
     !!lcSeen.atPad && lcSeen.atPad.fv === false && !!lcSeen.atReenter && lcSeen.atReenter.fv === true,
     JSON.stringify(lcSeen));
+  /* --- Task B 2026-11-10 (Story 7.5 Step 5 sanctioned rock asserts): the rockHit witness is
+     now the REAL-ship drive (probes-dressing.js stage 2 — impact / graze / bolt windows),
+     replacing the self-seeded center test that flow-check never read (ZERO rockHit asserts
+     existed — rock collision had no battery coverage at all). Asserts read MEASURED probe
+     values, each red by absence when the probe never reports. The damage witnesses read the
+     probe's rock-accumulator counts (damageTaken.rock — only damagePlayer(...,'rock') writes
+     it), immune to the boss volley the walk's wave cadence can seat mid-window.
+     MUTATION-PROVEN 2026-11-10 (each verified applied by grepping the built bundle before
+     trusting the red; restore → green):
+       1. graze gate removed (combat.js: the damage condition dropped its vn<0 half — damage
+          on ANY overlap again) → RED 'rock graze: zero closing speed drains nothing …'
+          (graze.rockDmg 18, hpTicks 3 — the clamp minimum ~6 re-fired every 0.35 s on the
+          pinned zero-closing-speed overlap: the audit's ~17 dps drain). Adjacent
+          keep-passing: both impact asserts (the bounce still clears the overlap — exactly
+          one impact tick, deflected), boltStopped, laneHidden (untouched mechanisms).
+       2. steer()'s collideRocks ship call removed (pen forced 0 — no push-out/bounce/damage)
+          → RED 'rock impact …' (hpTicks 0, rockDmg 0, hpDelta 0 — no collision block ran) +
+          RED 'deflected' (minAxial < 0 — the ship flew THROUGH to the far side: the fixture's
+          anti-fly-through discriminator, since endOverlapFree alone cannot witness it).
+          Adjacent keep-passing: the graze assert (zero damage is EXPECTED there — the pinned
+          ship simply never collides) and boltStopped (weapons.js holds its OWN collideRocks
+          binding via initWeapons — the ship-call mutation cannot reach it).
+       3. boltStopped's own mechanism (weapons.js rock-kill branch disabled — `false &&` folded
+          the branch out of the bundle: signature position,.4,null absent, present after restore)
+          → RED 'player bolt stops at the rock …' (travel 35, endDist 29.21 — the bolt flew
+          CLEAN THROUGH; died:true there is the probe's window-end cleanup kill, which is why
+          the assert conjuncts travel < 8 and endDist < radius+0.5 rather than trusting died
+          alone). Adjacent keep-passing: impact, deflected, graze, laneHidden. */
+  const rk = dp17X.rockHit || {};
+  ok('rock impact: seat overlaps, exactly one damage tick, hp/shield dropped (story 7.5)',
+    !!rk.impact && rk.impact.sawOverlap === true && rk.impact.hpTicks === 1 && rk.impact.rockDmg > 0 && rk.impact.hpDelta < 0,
+    JSON.stringify(rk.impact || null));
+  ok('rock impact: deflected — pushed out, ends overlap-free, never crossed the center (story 7.5)',
+    !!rk.impact && rk.impact.deflected === true,
+    JSON.stringify(rk.impact || null));
+  ok('rock graze: zero closing speed drains nothing across the cooldown (story 7.5 gate — 2026-11-10 audit)',
+    !!rk.graze && rk.graze.pinnedOverlapTicks >= 10 && rk.graze.rockDmg === 0 && rk.graze.hpTicks === 0,
+    JSON.stringify(rk.graze || null));
+  ok('player bolt stops at the rock — dies at the surface, no pass-through (story 7.5)',
+    !!rk.boltStopped && rk.boltStopped.spawned === true && rk.boltStopped.died === true && rk.boltStopped.travel < 8 && typeof rk.boltStopped.endDist === 'number' && rk.radius > 0 && rk.boltStopped.endDist < rk.radius + 0.5,
+    JSON.stringify(rk.boltStopped || null));
+  ok('launch lane hidden in combat, restored on clearCombat (story 7.5)',
+    dp17X.laneHiddenInCombat === true && !!lcSeen.atReenter && lcSeen.atReenter.lv === false && !!lcSeen.atPad && lcSeen.atPad.lv === true,
+    JSON.stringify({ laneHiddenInCombat: dp17X.laneHiddenInCombat, atReenter: lcSeen.atReenter && lcSeen.atReenter.lv, atPad: lcSeen.atPad && lcSeen.atPad.lv }));
   ok('CONSOLE [] (dressingProbe page)', errs.length === 0, errs.join(' | '));
   /* --- story-018 charged shot (?chargeProbe=1, page over the SAME CDP session) ---
      Deterministic in-page drive (droneProbe pattern; src/probes-charge.js chargeProbeTick —

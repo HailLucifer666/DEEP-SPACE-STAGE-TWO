@@ -17,15 +17,27 @@
 //     the ship.
 //   walk (10 s) — sample the nearest instance-to-ship 3D distance every tick (min over the
 //     drive).
-//   rock park (r3 78; bossProbe shell-park precedent: C.pos set, vel/speed zeroed, keys
-//     released at walk end) — the story-7.5 rock-collision witness (collideRocks on rock 0).
+//   rock witness (Task B 2026-11-10, story 7.5 Step 5 sanctioned shape — replaces the old
+//     self-seeded center test, which probed collideRocks with a static {x,y,z} literal and
+//     no velocity: the fixture-generosity trap, FIX-PROTOCOL STAGE 4.6). The REAL ship is
+//     driven through the REAL steer() path against rock 0 (world coords via the exposed
+//     getRock(0) getter) in three windows: impact (seated overlapping with real inward
+//     velocity — exactly one damage tick, push-out, never crosses the rock center), graze
+//     (overlap re-pinned every tick with ZERO closing speed across the cooldown — the
+//     2026-11-10 incident condition; the vn<0 gate must drain nothing), bolt (one real
+//     player bolt 3 u off the surface aimed at the center — dies at the rock, no
+//     pass-through). Damage events are counted from C.telemetry.damageTaken.rock — the
+//     ONLY accumulator damagePlayer(...,'rock') writes; boss volleys (this walk's wave
+//     cadence can seat the warden mid-window) tag 'bolt' and cannot pollute it.
 //   warn parks (Task A 2026-11-10, Story 7.6 Step 3 sanctioned asserts) — probe-owned
 //     re-parks at r3 65 / 75 / 20, each settled 0.2 s before its #warn sample (the warn
 //     writer in combat.js steer recomputes from r3 every tick; vel/speed zeroed so the park
 //     is steady). Samples the element's live render state: visible / text / .danger class.
 //   report — { ambientCount, shellFill, clearance, shellRemoved (MEASURED — shellScan, see
-//     that helper), lifecycle: { shownOnEnter }, rockHit, warn: { approaching, turnBack,
-//     inside } } on window.__stage2.dressingProbe (+ lastReport parity via api.report).
+//     that helper), lifecycle: { shownOnEnter }, rockHit: { radius, impact, graze,
+//     boltStopped }, laneHiddenInCombat (MEASURED — launch.js setLaneVisible's __stage2
+//     mirror, the dressingLive precedent), warn: { approaching, turnBack, inside } } on
+//     window.__stage2.dressingProbe (+ lastReport parity via api.report).
 //     The clear/re-show lifecycle half is verified by the HARNESS via __stage2.dressingLive()
 //     across a death → gameover → SKIP → combat re-entry walk (see flow-check's story-017
 //     block) — the in-page tick cannot witness the gameover gap (it only runs in combat).
@@ -35,16 +47,36 @@ import * as DRESSING from './arena-dressing.js'; // story-017: combat-only ambie
 const qs = new URLSearchParams(location.search);
 const DRESSING_PROBE = qs.get('dressingProbe') === '1'; // story-017: deterministic dressing walk (ambient field + shell visual)
 
-const DD = { t: 0, stage: 0, mark: 0, sub: null, done: false, minCl: 0, samples: 0, pulses: [], entryShown: null, opacityAt78: null, opacityAt60: null, rockHit: null, warn65: null, warn75: null, warnIn: null }; // story-017 dressing walk — page-scoped (see the reset note + dressingProbeTick); Task A 2026-11-10 adds the warn-park + rockHit sample fields
+const DD = { t: 0, stage: 0, mark: 0, sub: null, done: false, minCl: 0, samples: 0, pulses: [], entryShown: null, opacityAt78: null, opacityAt60: null, rockHit: null, warn65: null, warn75: null, warnIn: null, rw: null }; // story-017 dressing walk — page-scoped (see the reset note + dressingProbeTick); Task A 2026-11-10 adds the warn-park + rockHit sample fields; Task B 2026-11-10 adds rw (the rock-witness scratch bag, rebuilt at stage-2 arm)
 
 export function resetDressingProbe() { // probes.js resetProbes delegates (the story-018 split's call order)
   // story-017: the dressing walk's report gets the same stale-free hygiene. Its MEASUREMENT
   // state (DD) is deliberately NOT fully reset here — the walk is page-scoped: it begins at
   // combat entry and its lifecycle witness spans the page's combat re-entries, so `done`
   // latches across reset calls (see dressingProbeTick).
-  Object.assign(DD, { t: 0, stage: 0, mark: 0, sub: null, minCl: 0, samples: 0, pulses: [], entryShown: null, opacityAt78: null, opacityAt60: null, rockHit: null, warn65: null, warn75: null, warnIn: null }); // Task A 2026-11-10: the warn-park + rockHit samples join the same stale-free hygiene
+  Object.assign(DD, { t: 0, stage: 0, mark: 0, sub: null, minCl: 0, samples: 0, pulses: [], entryShown: null, opacityAt78: null, opacityAt60: null, rockHit: null, warn65: null, warn75: null, warnIn: null, rw: null }); // Task A 2026-11-10: the warn-park + rockHit samples join the same stale-free hygiene; Task B 2026-11-10: rw joins (a mid-walk death restarts the drive from stage 0 — no stale impact/graze samples may ride)
   window.__stage2.dressingProbeLive = false;
   delete window.__stage2.dressingProbe;
+}
+
+// the Task A warn-park handoff — body moved verbatim from the old stage-2 tail (the stage
+// grew into the Task B rock-witness drive, so the shared exit lives here once)
+function warnHandoff(C, env) {
+  ENEMIES.clearEnemies(); C.hp = env.HP_MAX; C.shield = env.SHIELD_MAX; // walk discipline — the stationary ship must not die mid-sampling
+  C.pos.set(0, env.ARENA_Y, 65); C.vel.set(0, 0, 0); C.speed = 0; C.pitch = 0;
+  DD.mark = DD.t; DD.sub = 'warn65'; DD.stage = 3;
+}
+
+// the Task B rockHit report assembly — one shape, both exits (the bolt window's death path
+// and its spawn-failure path; every field absent there reads null/false downstream → red by
+// absence, never a vacuous green)
+function rockWitnessReport(rw, boltStopped) {
+  return {
+    radius: rw.r0.radius,
+    impact: { hpDelta: rw.hpDelta, hpTicks: rw.ticks, rockDmg: rw.rockDmg, sawOverlap: rw.saw, endOverlapFree: rw.endPen === 0, minAxial: +rw.minAx.toFixed(2), endAxial: +rw.endAx.toFixed(2), deflected: rw.saw && rw.endPen === 0 && rw.minAx > 0, windowS: 1.0 },
+    graze: { hpDelta: rw.gzDelta, hpTicks: rw.gzTicks, rockDmg: rw.gzRockDmg, pinnedOverlapTicks: rw.gzPins, penMin: +rw.gzPenMin.toFixed(2), windowS: 1.2 },
+    boltStopped,
+  };
 }
 
 export function dressingProbeTick(dt, C, env) {
@@ -88,29 +120,121 @@ export function dressingProbeTick(dt, C, env) {
     return;
   }
 
-  if (DD.stage === 2) { // rock-collision witness at the r3 78 park, then re-park for the warn stage
-    const r0 = DRESSING.getRock ? DRESSING.getRock(0) : null;
-    let rockHit = null;
-    if (r0) {
-      // verify world rock collision detection
-      const testPos = { x: r0.wx, y: r0.wy, z: r0.wz };
-      const normal = C.tmp;
-      const pen = DRESSING.collideRocks(testPos, 1.4, normal);
-      rockHit = {
-        detected: pen > 0,
-        radius: r0.radius,
-        pen: +pen.toFixed(3),
-        hasNormal: normal.lengthSq() > 0,
-      };
+  if (DD.stage === 2) { // rock-collision witness — story 7.5 Step 5 sanctioned shape (Task B 2026-11-10).
+    // The pre-Task-B stage was a self-seeded center test: a static {x,y,z} literal (NOT the
+    // ship) probed collideRocks with no velocity — it proved detection exists and nothing
+    // else (the fixture-generosity trap, FIX-PROTOCOL STAGE 4.6). The sanctioned shape below
+    // drives the REAL ship through the REAL steer() path (probe-owned re-seat, bossProbe
+    // shell-park precedent) against rock 0's LIVE world coords (the exposed getRock getter):
+    //   impact — the ship seated 0.5 u INSIDE the rock with REAL inward velocity (17 u/s =
+    //     MAX_SPEED along the nose; the flight model's vel chases forward·speed so it holds
+    //     through steer): exactly one damage tick (hpTicks), the rock-damage sum (rockDmg),
+    //     and deflected — ends overlap-free AND never crosses the rock center (minAxial > 0:
+    //     the anti-fly-through discriminator — a removed push-out ends the fixture on the
+    //     rock's FAR side, overlap-free too, so endOverlapFree alone cannot witness it).
+    //   graze — the 2026-11-10 incident condition: the ship re-seated overlapping every
+    //     tick with vel/speed zeroed (closing speed vn = 0) for 1.2 s > 2× the 0.35 s
+    //     cooldown. The vn<0 gate must drain NOTHING (graze.rockDmg 0 / hpTicks 0); the
+    //     ungated pre-fix code re-fired the clamp minimum (~6) every 0.35 s here — the
+    //     sustained ~17 dps drain. pinnedOverlapTicks is the fixture guard (a broken seat
+    //     reads 0 → honest red, never a vacuous green).
+    //   bolt — one real player bolt spawned 3 u off the surface aimed at the center
+    //     (bossProbe bossBolt placement pattern): must die at the rock (travel ≤ 8 u —
+    //     life expiry travels 77) without passing through (endDist < radius + 0.5 — the
+    //     kill shell is the bolt's 0.4 collision radius; beyond it means pass-through).
+    // Damage-event counting: damagePlayer(...,'rock') is the ONLY writer of
+    // C.telemetry.damageTaken.rock and adds exactly once per event — per-tick deltas count
+    // events and sum damage, immune to the boss volley ('bolt' tag) this walk's wave
+    // cadence can seat mid-window. Shield regen is pinned OFF (C.regenT = 0 every tick —
+    // a regen tick would inflate hp+shield and mask the deltas). The throttle releases at
+    // the FIRST impact damage tick so the post-bounce outward drift clears the rock (the
+    // sustained-contact re-entry cycle is what the graze window measures deliberately).
+    ENEMIES.clearEnemies(); C.regenT = 0; // walk discipline + regen pin (see above)
+    const rw = DD.rw;
+    if (!rw) { // arm: seat the ship overlapping rock 0 with real inward velocity
+      const r0 = DRESSING.getRock ? DRESSING.getRock(0) : null;
+      if (!r0) { DD.rockHit = null; warnHandoff(C, env); return; } // rock absent → the asserts read null (red by absence)
+      const uxz = Math.hypot(r0.wx, r0.wz);
+      const ux = uxz > 1 ? r0.wx / uxz : 1, uz = uxz > 1 ? r0.wz / uxz : 0; // deterministic XZ-radial approach axis (yaw drift is tangential — ⟂ this axis)
+      const minD = 1.4 + r0.radius; // 1.4 = the ship radius steer passes to collideRocks (combat.js call site) — keep in step with it
+      C.pos.set(r0.wx + ux * (minD - 0.5), r0.wy, r0.wz + uz * (minD - 0.5));
+      C.heading = Math.atan2(-ux, -uz); C.pitch = 0; C.bank = 0; // nose into the rock
+      C.vel.set(-ux * 17, 0, -uz * 17); C.speed = 17; // REAL inward velocity — NOT zeroed (the old test's trap)
+      for (const k of ['KeyW', 'KeyA', 'KeyD', 'KeyR', 'KeyF', 'Space']) keys.delete(k);
+      C.api.input.mouseActive = false;
+      DD.rw = { r0, ux, uz, minD, sub: 'impact', mark: DD.t, hp0: C.hp + C.shield, dmg0: C.telemetry.damageTaken.rock, last: C.telemetry.damageTaken.rock, ticks: 0, saw: DRESSING.collideRocks(C.pos, 1.4, null) > 0, minAx: Infinity };
+      return;
     }
-    DD.rockHit = rockHit;
-    // Task A 2026-11-10 (Story 7.6 Step 3): probe-owned re-parks for the two-stage #warn
-    // asserts (bossProbe shell-park precedent). Keys are already released (walk end); the
-    // warn writer recomputes from r3 on the next steer tick, so each park settles 0.2 s.
-    ENEMIES.clearEnemies(); C.hp = env.HP_MAX; C.shield = env.SHIELD_MAX; // walk discipline — the stationary ship must not die mid-sampling
-    C.pos.set(0, env.ARENA_Y, 65); C.vel.set(0, 0, 0); C.speed = 0; C.pitch = 0;
-    DD.mark = DD.t; DD.sub = 'warn65'; DD.stage = 3;
-    return;
+    if (rw.sub === 'impact') {
+      const ax = (C.pos.x - rw.r0.wx) * rw.ux + (C.pos.z - rw.r0.wz) * rw.uz; // signed offset along the approach axis (+ = entry side)
+      const dm = C.telemetry.damageTaken.rock;
+      if (dm > rw.last) { rw.ticks++; rw.last = dm; C.speed = 0; } // release at the FIRST damage tick
+      if (ax < rw.minAx) rw.minAx = ax;
+      if (DD.t >= rw.mark + 1.0) {
+        rw.endPen = DRESSING.collideRocks(C.pos, 1.4, null);
+        rw.endAx = ax;
+        rw.hpDelta = +(C.hp + C.shield - rw.hp0).toFixed(2);
+        rw.rockDmg = rw.last - rw.dmg0;
+        rw.sub = 'graze'; rw.mark = DD.t;
+        rw.gzHp0 = C.hp + C.shield; rw.gzDmg0 = C.telemetry.damageTaken.rock; rw.gzLast = rw.gzDmg0;
+        rw.gzTicks = 0; rw.gzPins = 0; rw.gzPenMin = Infinity;
+      }
+      return;
+    }
+    if (rw.sub === 'graze') {
+      const g0 = DRESSING.getRock(0); // re-read every tick — the field group keeps yawing (~0.005 rad/s); the getter is the exposed world transform (probe-only path, pitchProbe's per-tick clone precedent)
+      if (g0) {
+        const guxz = Math.hypot(g0.wx, g0.wz);
+        const gx = guxz > 1 ? g0.wx / guxz : 1, gz2 = guxz > 1 ? g0.wz / guxz : 0;
+        const gminD = 1.4 + g0.radius;
+        C.pos.set(g0.wx + gx * (gminD - 0.5), g0.wy, g0.wz + gz2 * (gminD - 0.5)); // the pin: steer() sees this overlap on its next tick
+        C.vel.set(0, 0, 0); C.speed = 0; // closing speed exactly 0 — the incident's hover/graze condition
+        const gpen = DRESSING.collideRocks(C.pos, 1.4, null);
+        if (gpen > 0) rw.gzPins++;
+        if (gpen < rw.gzPenMin) rw.gzPenMin = gpen;
+      }
+      const dm2 = C.telemetry.damageTaken.rock;
+      if (dm2 > rw.gzLast) { rw.gzTicks++; rw.gzLast = dm2; }
+      if (DD.t >= rw.mark + 1.2) { // > 2× the 0.35 s cooldown — the ungated code re-fires ~3× inside this window
+        rw.gzDelta = +(C.hp + C.shield - rw.gzHp0).toFixed(2);
+        rw.gzRockDmg = rw.gzLast - rw.gzDmg0;
+        rw.sub = 'bolt'; rw.mark = DD.t; rw.bolt = null;
+      }
+      return;
+    }
+    if (rw.sub === 'bolt') { // one real player bolt into the same rock (bossProbe bossBolt placement pattern)
+      if (!rw.bolt) {
+        const g0 = DRESSING.getRock(0); // fresh coords — the bolt + its endDist witness use the SAME frame's rock (drift ≤ 0.1 u over the 0.5 s watch)
+        const b = g0 ? C.bolts.spawn() : null;
+        if (!b) { // pool/rock absent → record honestly and hand off (no hang; asserts read died:false → red)
+          DD.rockHit = rockWitnessReport(rw, { spawned: false, died: false, travel: -1, endDist: -1 });
+          warnHandoff(C, env);
+          return;
+        }
+        const guxz = Math.hypot(g0.wx, g0.wz);
+        const gx = guxz > 1 ? g0.wx / guxz : 1, gz2 = guxz > 1 ? g0.wz / guxz : 0;
+        rw.br = { wx: g0.wx, wy: g0.wy, wz: g0.wz };
+        C.tmp2.set(g0.wx, g0.wy, g0.wz);
+        C.tmp.set(gx, 0, gz2);
+        b.position.copy(C.tmp2).addScaledVector(C.tmp, g0.radius + 3.0); // 3 u off the surface, on the approach axis
+        b.userData.dir.copy(C.tmp).negate();
+        b.userData.life = env.BOLT_LIFE;
+        b.lookAt(C.tmp2.copy(b.position).add(b.userData.dir));
+        rw.p0 = { x: b.position.x, y: b.position.y, z: b.position.z };
+        rw.bolt = b;
+        return;
+      }
+      if (!rw.bolt.userData.alive || DD.t >= rw.mark + 0.5) {
+        const b = rw.bolt;
+        const travel = Math.hypot(b.position.x - rw.p0.x, b.position.y - rw.p0.y, b.position.z - rw.p0.z);
+        const endDist = Math.hypot(b.position.x - rw.br.wx, b.position.y - rw.br.wy, b.position.z - rw.br.wz);
+        if (b.userData.alive) C.bolts.kill(b); // never leak a live bolt into the warn parks (pitchProbe precedent)
+        DD.rockHit = rockWitnessReport(rw, { spawned: true, died: !b.userData.alive, travel: +travel.toFixed(2), endDist: +endDist.toFixed(2) });
+        warnHandoff(C, env); // the Task A warn-park handoff — body verbatim (see the helper)
+        return;
+      }
+      return;
+    }
   }
 
   if (DD.stage === 3) { // warn park 60 <= r3 < 72 → APPROACHING ZONE EDGE, .danger ABSENT
@@ -151,6 +275,10 @@ export function dressingProbeTick(dt, C, env) {
         shellRemoved: shellScan(C.scene), // Task A 2026-11-10: MEASURED (was the literal `true` — a tautology, defect class false green)
         lifecycle: { shownOnEnter: DD.entryShown },
         rockHit: DD.rockHit,
+        // Task B 2026-11-10 (Story 7.5 Step 3): the launch-corridor lane rocks hidden while in
+        // combat — MEASURED off launch.js setLaneVisible's __stage2 mirror (dressingLive
+        // precedent). `undefined` mirror (surface removed) reads false → the harness assert reds.
+        laneHiddenInCombat: !!(window.__stage2 && window.__stage2.laneVisible === false),
         warn: { approaching: DD.warn65, turnBack: DD.warn75, inside: DD.warnIn }, // Task A 2026-11-10 (Story 7.6 Step 3)
       };
       window.__stage2.dressingProbe = probe;
