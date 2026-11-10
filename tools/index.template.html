@@ -172,6 +172,14 @@ body.playing.paused, body.playing.paused *{cursor:auto !important;}
 #hud-bars .mtrack.bo i{background:#9fd8ff;}
 #hud-bars .mtrack.crit i{animation:critBlink .5s steps(2) infinite;}
 @keyframes critBlink{50%{opacity:.35;}}
+/* Task A (a11y, 2026-11-10): prefers-reduced-motion — the combat chrome's infinite
+   pulse/blink animations stop; the states they decorate stay visible via their static
+   styles (.crit keeps the red fill, #warn keeps its text/colors). Adjacent animation-only
+   rule FOUND and deliberately NOT guarded here (reported per brief): #hitveil.crit critPulse. */
+@media (prefers-reduced-motion: reduce) {
+  #warn{animation:none;}
+  #hud-bars .mtrack.crit i{animation:none;}
+}
 /* stage-6 H1: dedicated boss HP bar */
 #boss-bar{position:absolute;top:16px;left:50%;transform:translateX(-50%);width:min(46vw,440px);
   display:flex;align-items:center;gap:10px;}
@@ -224,7 +232,9 @@ body.playing.paused, body.playing.paused *{cursor:auto !important;}
 #lock-bracket{position:absolute;left:0;top:0;width:34px;height:34px;
   border:2px solid rgba(125,215,255,.85);border-radius:4px;box-shadow:0 0 10px rgba(125,215,255,.4);
   will-change:transform;}
-#lock-bracket .dist-label{position:absolute;left:100%;top:0;margin-left:6px;font:700 11px ui-monospace,Consolas,monospace;color:#bfe9ff;white-space:nowrap;}
+/* .dist-label rule removed (Task A dead-code pass, 2026-11-10): no element references the
+   class — #lock-bracket is written empty by aim-assist.js hudTick and the bracket's distance
+   child (story 7.7 step 3) was never implemented. */
 #hitveil.crit:not(.on){opacity:.25;animation:critPulse 1.2s ease-in-out infinite;}
 @keyframes critPulse{50%{opacity:.45;}}
 /* S4 combat: damage veil */

@@ -319,7 +319,12 @@ function steer(dt) {
     C.pos.addScaledVector(C.tmp, pen);
     const vn = C.vel.dot(C.tmp);
     if (vn < 0) C.vel.addScaledVector(C.tmp, -1.6 * vn);
-    if (C.rockCooldown <= 0 && !C.dead) {
+    // 2026-11-10 audit: ungated rock damage drained ~17 dps on zero-closing-speed grazes —
+    // the old condition fired on ANY overlap, so hovering/grazing at a rock took the clamp
+    // minimum (6) every cooldown while vn >= 0. Damage only when the ship moves INTO the
+    // rock (vn < 0 — the same test that gates the bounce above): a graze/hover still
+    // deflects, but drains nothing (Story 7.5: impact damage from closing speed only).
+    if (vn < 0 && C.rockCooldown <= 0 && !C.dead) {
       const impactSpeed = Math.max(0, -vn);
       const dmg = Math.min(25, Math.max(6, Math.round(impactSpeed * 0.75)));
       C.rockCooldown = 0.35;
@@ -797,7 +802,7 @@ export function combatState() {
     boost: C.boost,
     rimOpacity: C.rim ? +C.rim.material.opacity.toFixed(3) : 0, // story-016: the equator ring's 3D-proximity driver, harness-visible (probe surface only)
     speed: +C.speed.toFixed(2), heading: +C.heading.toFixed(3), // probe surface — flow-check's throttle/turn asserts (story-004)
-    pitch: +C.pitch.toFixed(3), velMag: +C.vel.length().toFixed(2), // story-015: pitch envelope + true speed under drift (SPD keeps showing C.speed; velMag is harness-only, §8 decision c)
+    pitch: +C.pitch.toFixed(3), velMag: +C.vel.length().toFixed(2), // story-015: pitch envelope + true speed under drift (Task A 2026-11-10: the stale "SPD keeps showing C.speed" claim rewritten — SPD reads velMag since story 7.4's real-speed writer, phases.js tickSpdReadout:177 rounds cs.velMag; C.speed stays the throttle state)
     charge: +Math.min(1, C.chargeT / T_CHARGE).toFixed(3), // story-018: the charge fill 0..1 over T_CHARGE
     charging: C.charging, // story-018: past the threshold — stream suppressed, release fires the charged bolt
     effects: { SPREAD: +C.effects.SPREAD.toFixed(2), OVERDRIVE: +C.effects.OVERDRIVE.toFixed(2), SHIELD: +C.effects.SHIELD.toFixed(2) }, // story-018: seconds remaining per effect (the EXPOSED surface — GDD names it combatState().effects)

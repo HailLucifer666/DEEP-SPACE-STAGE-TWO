@@ -282,7 +282,7 @@ export function hudTick() { // called once per tickCombat, after the edge-pip bl
   // no per-frame innerHTML churn (hard build constraint 1). Cyan: amber is elite/boss
   // language (scope.md color rule).
   if (C.ui.lockBr) {
-    let vis = false, kx = 0, ky = 0, sz = 34, distM = 0;
+    let vis = false, kx = 0, ky = 0, sz = 34; // Task A 2026-11-10: distM removed (dead computation — computed, never read/written anywhere)
     if (!C.dead && lockTarget && lockTarget.userData && lockTarget.userData.alive) {
       C.camera.getWorldDirection(S.camFwd);
       S.toT.copy(lockTarget.position).sub(C.camera.position);
@@ -294,7 +294,6 @@ export function hudTick() { // called once per tickCombat, after the edge-pip bl
         const f = (window.innerHeight * 0.5) / Math.tan((C.camera.fov * 0.5) * Math.PI / 180);
         const hitR = Math.max(lockTarget.userData.r || 1, 1);
         sz = Math.max(28, Math.min(120, Math.round(2 * hitR * 1.4 * f / dist)));
-        distM = Math.round(dist);
         vis = true;
       }
     }

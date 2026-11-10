@@ -1054,21 +1054,24 @@ try {
   ok('CONSOLE [] (pitchProbe page)', errs.length === 0, errs.join(' | '));
 
   /* --- story-017 world goes 3D (?dressingProbe=1): combat-only ambient field + shell visual ---
-     Deterministic drive (pitchProbe pattern, in-page, src/probes.js dressingProbeTick):
-     reports window.__stage2.dressingProbe = { ambientCount, shellFill, clearance, shell,
-     lifecycle }:
-       ambientCount — instanced rock instances on the combat-only ambient field (design 120).
+     Deterministic drive (pitchProbe pattern, in-page, src/probes-dressing.js
+     dressingProbeTick — moved out of probes.js in c44f925, 2026-11-10, one-walk-per-file):
+     reports window.__stage2.dressingProbe = { ambientCount, shellFill, clearance,
+     shellRemoved, lifecycle, rockHit, laneHiddenInCombat, warn }:
+       ambientCount — instanced rock instances on the combat-only ambient field (design 40
+                     since story 7.5).
        shellFill   — sampled min/max radial distance from O across all instances (construction
                      band 25-75, fixed PRNG seed AMBIENT_FIELD_SEED — stable across runs).
        clearance   — nearest instance-to-ship distance min'd over a 10 s drive at cruise with a
                      full-yaw orbit + varied-pitch pulses (R/F). The orbit holds radius ≈7 u
-                     around O (the drift circle), so the geometric margin to the shell's inner
+                     around O (the drift circle), so the geometric margin to the field's inner
                      edge (25 u) is ~18 u; the assert requires > 10 u.
-       shell       — material grammar (additive/transparent/depthWrite:false, the rim-ring/rift
-                     family) + opacity sampled at two probe-owned parks: r3 78 (> 0, design
-                     0.162) and r3 60 (== 0), teleported like the bossProbe shell park (C.pos
-                     set, vel/speed zeroed, keys released).
-       lifecycle   — shownOnEnter: the field/shell visibility sampled at combat entry.
+       shell       — (story-017 era, FIELD REMOVED) the wireframe shell died in story 7.6.
+                     Task A 2026-11-10 replaced this entry with the MEASURED `shellRemoved`
+                     witness and the `warn` samples; Task B 2026-11-10 added `rockHit` and
+                     `laneHiddenInCombat`. Details live at the dated assert comments below
+                     and in src/probes-dressing.js — this header no longer describes them.
+       lifecycle   — shownOnEnter: the field visibility sampled at combat entry.
      The clear/re-show half of the lifecycle is a HARNESS-verified phase walk on this same
      page. NOTE (architecture §5 / phases.js): setPhase is exit-before-enter — the current
      phase's exit() runs before the target's enter(), and combat.exit() calls clearCombat().
@@ -1134,8 +1137,8 @@ try {
     const t0 = Date.now();
     for (;;) {
       try {
-        const g = await J(`({ p: (window.__stage2 && __stage2.phase) || 'boot', dl: (window.__stage2 && window.__stage2.dressingLive) ? __stage2.dressingLive() : null })`);
-        if (g.p === 'combat') { if (g.dl) lcSeen.atReenter = { fv: g.dl.fieldVisible, sv: g.dl.shellVisible }; break; }
+        const g = await J(`({ p: (window.__stage2 && __stage2.phase) || 'boot', dl: (window.__stage2 && window.__stage2.dressingLive) ? __stage2.dressingLive() : null, lv: (window.__stage2 && typeof __stage2.laneVisible === 'boolean') ? __stage2.laneVisible : null })`);
+        if (g.p === 'combat') { if (g.dl) lcSeen.atReenter = { fv: g.dl.fieldVisible, sv: g.dl.shellVisible, lv: g.lv }; break; } // lv: Task B 2026-11-10 — the launch lane mirror (story 7.5)
       } catch {}
       if (Date.now() - t0 > 20000) break; // deadline — the asserts below record the red
       await sleep(200);
@@ -1155,24 +1158,107 @@ try {
     const t0 = Date.now();
     for (;;) {
       try {
-        const g = await J(`({ p: (window.__stage2 && __stage2.phase) || 'boot', dl: (window.__stage2 && window.__stage2.dressingLive) ? __stage2.dressingLive() : null })`);
-        if (g.p === 'pad') { if (g.dl) lcSeen.atPad = { fv: g.dl.fieldVisible, sv: g.dl.shellVisible }; break; }
+        const g = await J(`({ p: (window.__stage2 && __stage2.phase) || 'boot', dl: (window.__stage2 && window.__stage2.dressingLive) ? __stage2.dressingLive() : null, lv: (window.__stage2 && typeof __stage2.laneVisible === 'boolean') ? __stage2.laneVisible : null })`);
+        if (g.p === 'pad') { if (g.dl) lcSeen.atPad = { fv: g.dl.fieldVisible, sv: g.dl.shellVisible, lv: g.lv }; break; } // lv: Task B 2026-11-10 — clearCombat restores the lane (combat.js setLaneVisible(true))
       } catch {}
       if (Date.now() - t0 > 20000) break; // deadline — the asserts below record the red
       await sleep(200);
     }
   }
   const dp17X = dp17 || {};
-  const sf = dp17X.shellFill || {}, cl = dp17X.clearance || {}, sh = dp17X.shell || {}, lc = dp17X.lifecycle || {}, mt = sh.material || {};
+  // Task A follow-up 2026-11-10 (review finding 2): the sh/mt destructures (dp17X.shell →
+  // sh.material) were orphaned by the Task A commit — the probe stopped reporting `shell`
+  // when the story-7.6 shell removal made shellRemoved the measured witness. Dropped; the
+  // probe still reports shellFill/clearance/lifecycle, and none of the asserts read sh/mt.
+  const sf = dp17X.shellFill || {}, cl = dp17X.clearance || {}, lc = dp17X.lifecycle || {};
   ok('dressingProbe reports (story-017)', !!dp17, JSON.stringify(dp17));
-  ok('ambient field present (≥ 100 instances)', dp17X.ambientCount === 40, `count=${dp17X.ambientCount}`);
+  // Task A 2026-11-10: LABEL-ONLY fix — the label said "≥ 100" (the pre-story-7.5 field size)
+  // while the assert reads === 40 (story 7.5 thinned AMBIENT_FIELD_COUNT to 40). The assert
+  // expression is untouched; only the stale label text was corrected.
+  ok('ambient field present (40 instances — story 7.5 thinned field)', dp17X.ambientCount === 40, `count=${dp17X.ambientCount}`);
   ok('field fills the shell (min ≥ 25, max ≤ 75)', typeof sf.minR3 === 'number' && sf.minR3 >= 25 && sf.maxR3 <= 75, JSON.stringify(sf));
   ok('field never crowds the ship (clearance > 10u over 10s varied-pitch drive)', typeof cl.min === 'number' && cl.min > 10, `minClear=${cl.min} samples=${cl.samples}`);
-  // SANCTIONED REWRITE (Story 7.6 - Boundary): blue shell wireframe sphere removed
+  // SANCTIONED REWRITE (Story 7.6 - Boundary): blue shell wireframe sphere removed.
+  // Task A 2026-11-10: shellRemoved is now MEASURED in the probe (probes-dressing.js shellScan
+  // — any wireframe-material MESH at shell scale fails; the walk + helper moved to that file in
+  // the review follow-up split), not the literal `true` it replaced (tautology / false green).
+  // MUTATION-PROVEN 2026-11-10, two recorded mutations, each verified applied by grepping the
+  // built bundle before trusting the red:
+  //   (a) a wireframe IcosahedronGeometry(78,2) MESH re-added inside dressingProbeTick → RED
+  //       here with shellRemoved:false in the probe JSON below; restored → green. Adjacent
+  //       keep-passing in that run: the ambient count / shell-fill / clearance asserts all
+  //       stayed green (the mutation mesh touches nothing else the block measures).
+  //   (b) review finding 3: the same shell re-added as THREE.LineSegments (a LINE, not a Mesh —
+  //       line materials carry no wireframe flag, and a line cage is the most natural future
+  //       boundary shape) → RED here with shellRemoved:false for that reason; restored → green.
+  //       This mutation exists because the first cut witnessed only o.isMesh; the shellScan
+  //       class is now closed (isLine || isLineSegments fail on the same 40 u radius floor).
   ok('boundary wireframe shell removed (story 7.6)', dp17X.shellRemoved === true, JSON.stringify(dp17X));
+  // Task A 2026-11-10 (Story 7.6 Step 3 sanctioned #warn-text asserts): asserted against the
+  // PLAN's sanctioned strings (docs/FIX_PLAN.md Story 7.6 Step 2) — verified byte-identical to
+  // what src/combat.js steer writes (#warn textContent at r3 ≥ 72 / 60 < r3 < 72, lines 345-351).
+  // A red here means the warn texts/classes drifted: fix combat.js, NEVER these strings —
+  // rewriting the assert to match drifted code is exactly how the shell tautology happened.
+  // MUTATION-PROVEN 2026-11-10: 'END OF COMBAT ZONE - TURN BACK' swapped in combat.js → RED
+  // 'boundary warn END OF COMBAT ZONE - TURN BACK' (text mismatch in the JSON); the
+  // APPROACHING and inside asserts stayed GREEN (adjacent-case control). Restore → green.
+  const wr = dp17X.warn || {};
+  ok('boundary warn APPROACHING ZONE EDGE at 60<=r<72 (visible, .danger absent — story 7.6)',
+    !!wr.approaching && wr.approaching.visible === true && wr.approaching.text === 'APPROACHING ZONE EDGE' && wr.approaching.danger === false,
+    JSON.stringify(wr.approaching || null));
+  ok('boundary warn END OF COMBAT ZONE - TURN BACK at r>=72 (visible, .danger present — story 7.6)',
+    !!wr.turnBack && wr.turnBack.visible === true && wr.turnBack.text === 'END OF COMBAT ZONE - TURN BACK' && wr.turnBack.danger === true,
+    JSON.stringify(wr.turnBack || null));
+  ok('boundary warn hidden back inside r<60 (story 7.6)',
+    !!wr.inside && wr.inside.visible === false && wr.inside.danger === false,
+    JSON.stringify(wr.inside || null));
   ok('field lifecycle: hidden on clearCombat (pad), re-shown on enterCombat',
     !!lcSeen.atPad && lcSeen.atPad.fv === false && !!lcSeen.atReenter && lcSeen.atReenter.fv === true,
     JSON.stringify(lcSeen));
+  /* --- Task B 2026-11-10 (Story 7.5 Step 5 sanctioned rock asserts): the rockHit witness is
+     now the REAL-ship drive (probes-dressing.js stage 2 — impact / graze / bolt windows),
+     replacing the self-seeded center test that flow-check never read (ZERO rockHit asserts
+     existed — rock collision had no battery coverage at all). Asserts read MEASURED probe
+     values, each red by absence when the probe never reports. The damage witnesses read the
+     probe's rock-accumulator counts (damageTaken.rock — only damagePlayer(...,'rock') writes
+     it), immune to the boss volley the walk's wave cadence can seat mid-window.
+     MUTATION-PROVEN 2026-11-10 (each verified applied by grepping the built bundle before
+     trusting the red; restore → green):
+       1. graze gate removed (combat.js: the damage condition dropped its vn<0 half — damage
+          on ANY overlap again) → RED 'rock graze: zero closing speed drains nothing …'
+          (graze.rockDmg 24, hpTicks 4 — the clamp minimum ~6 re-fired every 0.35 s on the
+          pinned zero-closing-speed overlap: the audit's ~17 dps drain). Adjacent
+          keep-passing: both impact asserts (the bounce still clears the overlap — exactly
+          one impact tick, deflected), boltStopped, laneHidden (untouched mechanisms).
+       2. steer()'s collideRocks ship call removed (pen forced 0 — no push-out/bounce/damage)
+          → RED 'rock impact …' (hpTicks 0, rockDmg 0, hpDelta 0 — no collision block ran) +
+          RED 'deflected' (minAxial < 0 — the ship flew THROUGH to the far side: the fixture's
+          anti-fly-through discriminator, since endOverlapFree alone cannot witness it).
+          Adjacent keep-passing: the graze assert (zero damage is EXPECTED there — the pinned
+          ship simply never collides) and boltStopped (weapons.js holds its OWN collideRocks
+          binding via initWeapons — the ship-call mutation cannot reach it).
+       3. boltStopped's own mechanism (weapons.js rock-kill branch disabled — `false &&` folded
+          the branch out of the bundle: signature position,.4,null absent, present after restore)
+          → RED 'player bolt stops at the rock …' (travel 35, endDist 29.21 — the bolt flew
+          CLEAN THROUGH; died:true there is the probe's window-end cleanup kill, which is why
+          the assert conjuncts travel < 8 and endDist < radius+0.5 rather than trusting died
+          alone). Adjacent keep-passing: impact, deflected, graze, laneHidden. */
+  const rk = dp17X.rockHit || {};
+  ok('rock impact: seat overlaps, exactly one damage tick, hp/shield dropped (story 7.5)',
+    !!rk.impact && rk.impact.sawOverlap === true && rk.impact.hpTicks === 1 && rk.impact.rockDmg > 0 && rk.impact.hpDelta < 0,
+    JSON.stringify(rk.impact || null));
+  ok('rock impact: deflected — pushed out, ends overlap-free, never crossed the center (story 7.5)',
+    !!rk.impact && rk.impact.deflected === true,
+    JSON.stringify(rk.impact || null));
+  ok('rock graze: zero closing speed drains nothing across the cooldown (story 7.5 gate — 2026-11-10 audit)',
+    !!rk.graze && rk.graze.pinnedOverlapTicks >= 10 && rk.graze.rockDmg === 0 && rk.graze.hpTicks === 0,
+    JSON.stringify(rk.graze || null));
+  ok('player bolt stops at the rock — dies at the surface, no pass-through (story 7.5)',
+    !!rk.boltStopped && rk.boltStopped.spawned === true && rk.boltStopped.died === true && rk.boltStopped.travel < 8 && typeof rk.boltStopped.endDist === 'number' && rk.radius > 0 && rk.boltStopped.endDist < rk.radius + 0.5,
+    JSON.stringify(rk.boltStopped || null));
+  ok('launch lane hidden in combat, restored on clearCombat (story 7.5)',
+    dp17X.laneHiddenInCombat === true && !!lcSeen.atReenter && lcSeen.atReenter.lv === false && !!lcSeen.atPad && lcSeen.atPad.lv === true,
+    JSON.stringify({ laneHiddenInCombat: dp17X.laneHiddenInCombat, atReenter: lcSeen.atReenter && lcSeen.atReenter.lv, atPad: lcSeen.atPad && lcSeen.atPad.lv }));
   ok('CONSOLE [] (dressingProbe page)', errs.length === 0, errs.join(' | '));
   /* --- story-018 charged shot (?chargeProbe=1, page over the SAME CDP session) ---
      Deterministic in-page drive (droneProbe pattern; src/probes-charge.js chargeProbeTick —
