@@ -241,8 +241,11 @@ initWeapons({ C, forward, noseWorld, ARENA_Y, R_HARD, SHIELD_MAX, KILL_MARK_S })
 // stage-6 W1: the aim-lock seam — the same live-reference contract as initWeapons above
 // (call-time reads of C.pos/C.camera/C.api; forward is the live closure). NOT probeEnv — that
 // is the probes-only seam; the aim state is game code, not probe plumbing. Called once at
-// module scope: the references never change for the page's lifetime.
-AIM.initAimAssist({ C, forward });
+// module scope: the references never change for the page's lifetime. story 7.4: the camera
+// rides the seam too — C.camera is assigned asynchronously in prepareCombat, so aim-assist
+// lazily binds the live reference on first use (the hudTick precedent: the camera is read
+// through the C bag, never snapshotted at init time).
+AIM.initAimAssist({ C, forward, camera: C.camera });
 
 /* ---------- input → steering (story-004: throttle + turn) ---------- */
 function steer(dt) {
@@ -503,7 +506,7 @@ export function tickCombat(dt, t) {
   const p = C.pose;
   if (!C.dead) C.time += dt; // story-014 combat clock — dt is already the scaled sdt (loop.js): the death slow-mo slows the world AND the clock, and the frozen clock reads 0:00-drift while dead
   steer(dt);
-  AIM.lockTick(); // stage-6 W1: the lock scan settles THIS tick before the fire path — spawnBolt's bias reads a lock that includes the heading steered this frame (no 1-tick staleness on the spawn)
+  AIM.lockTick(dt); // story 7.4: dt param (the retain grace AIMK.LOCK_GRACE is time-based) — the lock scan settles THIS tick before the fire path — spawnBolt's aimDir reads a lock that includes the heading steered this frame (no 1-tick staleness on the spawn)
   fireTick(dt);
   boltsTick(dt);
   ENEMIES.tickEnemies(dt, C.pos, { damagePlayer, explosion: (pos) => EFFECTS.explosion(pos) }); // story-019: the bolt/ram tags ride the enemies.js call sites (the file's only two damage values: 12 = gunner/boss-volley bolt, 25 = ram)
@@ -543,6 +546,7 @@ export function tickCombat(dt, t) {
   const k = 1 - Math.exp(-5 * dt); // feel: trail reads — 6 -> 5 (story-002)
   C.camera.position.lerp(camTarget, k);
   C.camera.lookAt(C.pos.x + C.tmp2.x * 4, C.pos.y + C.tmp2.y * 4, C.pos.z + C.tmp2.z * 4); // story-015: look-target y UNPINNED from ARENA_Y — rides the pitched nose
+  C.camera.updateMatrixWorld(true); // story 7.4: every projection AFTER this point (pipper anchor state, lock bracket) reads THIS frame's camera — the matrixWorld was one frame stale behind the lookAt write
   EFFECTS.applyShake(dt);
   EFFECTS.tickEffects(dt); // drive the explosion pool — was never called (particles never faded)
   C.flow += ((C.boosting ? 1 : 0) - C.flow) * (1 - Math.exp(-4 * dt)); // smoothed boost rush

@@ -26,7 +26,7 @@ import * as EFFECTS from './effects.js';
 import * as POWERUPS from './powerups.js';
 import { EFFECT_T, KINDS as EFFECT_KINDS } from './powerups.js';
 import { beep, chargeWhine, chargeRelease, expireBlip, sfxLaser, sfxExplosion, sfxPickup } from './audio.js'; // story-018: named synth recipes (audio.js) — the fire path owns the crossing/release voices, the effect side owns the pickup/expire blips; powerups.js stays sound-free. stage-6 A1a: the laser/explosion/pickup one-liners play the CC0 sample when decoded with the shipped synth params as the CONSOLE-SILENT fallback (audio-audit wiring map)
-import * as AIM from './aim-assist.js'; // stage-6 W1: the spawn-bias source — stream bolts only (aim-assist imports enemies/drone/store, never combat.js — dep-check acyclic; the sum-clamp decision lives in its header)
+import * as AIM from './aim-assist.js'; // story 7.4: camera-true aim — weapons consumes aimDir (the spawnBolt/spawnStreamShot base), getLockTarget (the homing-target stamp), targetAlive/leadPoint/AIMK.HOMING_RATE (boltsTick homing); biasDir is retired/uncalled (aim-assist imports enemies/drone/store, never combat.js — dep-check acyclic)
 
 /* ---------- the seam (see the header) ---------- */
 let C = null; // combat.js's live state bag — set once by initWeapons, read at CALL TIME
@@ -46,8 +46,8 @@ export function initWeapons(deps) {
 }
 
 const FIRE_INTERVAL = 1 / 8; // ~8/s hold-fire
-const BOLT_SPEED = 42;
-export const BOLT_LIFE = 1.2; // exported — combat.js's scriptedKill path + probeEnv still read it (review-fix split)
+const BOLT_SPEED = 70; // story 7.4: 42 → 70 — camera-true aim + homing need the bolt to reach the converge/lead point inside the life window
+export const BOLT_LIFE = 1.1; // story 7.4: 1.2 → 1.1 (range 77u at 70 u/s vs the old 50u — exported — combat.js's scriptedKill path + probeEnv still read it (review-fix split))
 // story-018 charged shot (GDD §3.1-3.2, §7 — threshold spray-then-charge, the resolved
 // Decision 1): ONE trigger, two stages. Below T_CHARGE of continuous LMB hold the stream fires
 // exactly as shipped (first bolt on the press frame); AT the threshold the stream suppresses
@@ -89,14 +89,15 @@ export function makeBolt() { // the factory rides with the fire path; combat.js'
 function spawnBolt(dmg, charged, dir) {
   const b = C.bolts.spawn();
   noseWorld(b.position);
-  if (dir) b.userData.dir.copy(dir); else forward(b.userData.dir);
-  // stage-6 W1: the aim-lock spawn bias — STREAM bolts only (the charged release at :147 stays
-  // the manual-aim reward, ux-audit F1). The bias is FINAL at spawn: boltsTick never rewrites
-  // dir after this, bolts stay ballistic (no homing). Runs BEFORE the lookAt so the mesh
-  // follows the biased dir. biasDir uses aim-assist's OWN scratch — never C.tmp (the clobber
-  // warning below); at zero lock angle it is a no-op, so the fire-path baseline invariant
-  // (bolts fly along forward) is untouched.
-  if (!charged) AIM.biasDir(b.userData.dir, b.position);
+  // story 7.4: bolts aim at what the CAMERA sees — stream bolts steer at the locked target's
+  // lead point (AIM.aimDir), charged bolts stay manual but camera-true (the AIMK.CONVERGE_DIST
+  // point). The old nose-forward aim + the spawn bias (AIM.biasDir — retired, still exported
+  // uncalled) are gone: a locked bolt converges by AIMING at the target, and boltsTick HOMES
+  // stream bolts from here on. aimDir writes the module's OWN scratch — never C.tmp (the
+  // clobber warning below still applies to the lookAt itself). Runs BEFORE the lookAt so the
+  // mesh follows the aimed dir.
+  if (dir) b.userData.dir.copy(dir); else AIM.aimDir(b.position, charged, BOLT_SPEED, b.userData.dir);
+  b.userData.target = charged ? null : AIM.getLockTarget(); // story 7.4: the homing target — boltsTick steers stream bolts at its lead point; charged never homes
   b.userData.life = BOLT_LIFE;
   b.userData.dmg = dmg;
   b.userData.charged = charged;
@@ -106,24 +107,26 @@ function spawnBolt(dmg, charged, dir) {
   return b;
 }
 
-// story-018 fan scratch (module-level — no per-shot allocation). The fan rotates the shot's
-// forward ±SPREAD_ARC about the SHIP'S LOCAL UP (kept perpendicular to forward, so the angle
-// between the dirs is exactly ±6° at any pitch — a world-up rotation would narrow the fan at
-// high pitch). The charged bolt is NEVER fanned (GDD §3.2: 3×6 = 18 alpha per cycle would
-// break the DPS parity anchor). NOTE: the center dir is copied OUT of C.tmp first — spawnBolt's
-// lookAt clobbers C.tmp, so a second spawnBolt(dir) reading C.tmp would fly a garbage direction.
-const FAN = { right: new THREE.Vector3(), up: new THREE.Vector3(), left: new THREE.Vector3(), rightD: new THREE.Vector3(), center: new THREE.Vector3() };
+// story-018 fan scratch (module-level — no per-shot allocation). story 7.4: the fan's BASE is
+// the CAMERA-TRUE aim (AIM.aimDir — the locked target's lead point or the AIMK.CONVERGE_DIST
+// point), not the ship's nose; the ±SPREAD_ARC rotation keeps the existing axis derivation
+// (right = base × WORLD_UP, up = right × base — kept perpendicular to the base, so the angle
+// between the dirs is exactly ±6° at any pitch) applied to that base. The charged bolt is
+// NEVER fanned (GDD §3.2: 3×6 = 18 alpha per cycle would break the DPS parity anchor). NOTE:
+// FAN.center is the aimDir OUT vector (never C.tmp), so spawnBolt's lookAt clobber no longer
+// threatens the base — each spawnBolt copies its dir before any lookAt anyway.
+const FAN = { right: new THREE.Vector3(), up: new THREE.Vector3(), left: new THREE.Vector3(), rightD: new THREE.Vector3(), center: new THREE.Vector3(), nose: new THREE.Vector3() };
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 
 function spawnStreamShot() {
-  const d0 = forward(C.tmp); // center dir
+  noseWorld(FAN.nose);
+  AIM.aimDir(FAN.nose, false, BOLT_SPEED, FAN.center); // camera-true base (locked → lead point; else the converge point)
   if (C.effects.SPREAD > 0) {
-    FAN.right.copy(d0).cross(WORLD_UP).normalize();
-    FAN.up.copy(FAN.right).cross(d0).normalize();
+    FAN.right.copy(FAN.center).cross(WORLD_UP).normalize();
+    FAN.up.copy(FAN.right).cross(FAN.center).normalize();
     const a = SPREAD_ARC * Math.PI / 180;
-    FAN.left.copy(d0).applyAxisAngle(FAN.up, a).normalize();
-    FAN.rightD.copy(d0).applyAxisAngle(FAN.up, -a).normalize();
-    FAN.center.copy(d0); // out of the lookAt-clobbered scratch BEFORE the first spawn
+    FAN.left.copy(FAN.center).applyAxisAngle(FAN.up, a).normalize();
+    FAN.rightD.copy(FAN.center).applyAxisAngle(FAN.up, -a).normalize();
     spawnBolt(1, false, FAN.left);
     spawnBolt(1, false, FAN.center);
     spawnBolt(1, false, FAN.rightD);
@@ -172,18 +175,46 @@ export function fireTick(dt) {
   spawnStreamShot();
 }
 
+// story 7.4 homing + swept-scan scratch (module-level — no per-frame allocation)
+const _prev = new THREE.Vector3(), _hp = new THREE.Vector3(), _hd = new THREE.Vector3(),
+  _ab = new THREE.Vector3(), _ac = new THREE.Vector3(), _cl = new THREE.Vector3();
+
+// story 7.4: swept segment × sphere — a 70 u/s bolt moves 1.2-2.3 u per tick, and the old
+// fixed point-sample (distance² < 1.1 at the bolt's NEW position only) could tunnel past a
+// small target between samples at headless frame times. a→b is the bolt's per-tick segment;
+// c/r the target sphere. Returns true when the segment passes within r of c.
+function segHitsSphere(a, b, c, r) {
+  _ab.copy(b).sub(a);
+  const t = THREE.MathUtils.clamp(_ac.copy(c).sub(a).dot(_ab) / (_ab.lengthSq() || 1), 0, 1);
+  return _cl.copy(a).addScaledVector(_ab, t).distanceToSquared(c) < r * r;
+}
+
 export function boltsTick(dt) {
   C.bolts.update(dt, (b) => {
     b.userData.life -= dt;
+    _prev.copy(b.position); // story 7.4: pre-move position — the swept hit test below spans [prev, now]
+    const tg = b.userData.target; // story 7.4 homing — stream bolts steer at the locked target's lead point (charged bolts carry null: never home)
+    if (tg && AIM.targetAlive(tg)) {
+      AIM.leadPoint(tg, b.position, BOLT_SPEED, _hp);
+      _hd.copy(_hp).sub(b.position).normalize();
+      if (b.userData.dir.dot(_hd) < 0) b.userData.target = null; // passed it: stop homing
+      else {
+        b.userData.dir.lerp(_hd, 1 - Math.exp(-AIM.AIMK.HOMING_RATE * dt)).normalize();
+        b.lookAt(C.tmp.copy(b.position).add(b.userData.dir));
+      }
+    }
     b.position.addScaledVector(b.userData.dir, BOLT_SPEED * dt);
     if (b.userData.life <= 0) { C.bolts.kill(b); return; }
     // bolt × drone scan (both pools are small — brute force is the honest option)
     ENEMIES.eachAlive((d) => {
       if (!b.userData.alive) return;
-      // story-015: full-3D squared distance (the orb scan's proven form) — the XZ-only form
-      // hit a raider a whole ring-tilt above/below the bolt once the ship can pitch
-      const dx = d.position.x - b.position.x, dy = d.position.y - b.position.y, dz = d.position.z - b.position.z;
-      if (dx * dx + dy * dy + dz * dz < 1.1) {
+      // story 7.4: swept segment test with the stamped radius — RADIUS_PROP = userData.r
+      // (enemies.js: the elite stamp and the unconditional per-spawn reset both write it).
+      // The 1.1 floor keeps the old fixed kill-sphere (r ≈ 1.05) as the minimum; ×1.6 is the
+      // plan's band. Orbs carry their ORBIT radius in userData.r too — never read here; the
+      // orb scan below uses its own bolt radius.
+      const r = Math.max(d.userData.r || 0, 1.1) * 1.6;
+      if (segHitsSphere(_prev, b.position, d.position, r)) {
         C.bolts.kill(b);
         C.telemetry.hits[b.userData.charged ? 'charged' : 'stream']++; // story-019: bolts die on hit — 1:1 max (probe-spawned unstamped bolts read stream)
         EFFECTS.explosion(d.position);
@@ -209,12 +240,12 @@ export function boltsTick(dt) {
         }
       }
     });
-    // bolt × orb scan (story-012) — FULL 3D distance: orbs fly altitudes, so the raiders' XZ
-    // check would hit a drone a whole ring-tilt above the bolt (or miss one below it)
+    // bolt × orb scan (story-012) — story 7.4: the same swept segment test, the orb's radius
+    // VALUE unchanged (orbBoltR2 = 1.3², drone.js; sqrt reads the radius the old point-test
+    // compared against). Orbs fly altitudes — full-3D by construction in the swept form.
     DRONES.eachAlive((o) => {
       if (!b.userData.alive) return;
-      const dx = o.position.x - b.position.x, dy = o.position.y - b.position.y, dz = o.position.z - b.position.z;
-      if (dx * dx + dy * dy + dz * dz < DRONES.orbBoltR2()) {
+      if (segHitsSphere(_prev, b.position, o.position, Math.sqrt(DRONES.orbBoltR2()))) {
         C.bolts.kill(b);
         C.telemetry.hits[b.userData.charged ? 'charged' : 'stream']++; // story-019: same 1:1 hit rule
         EFFECTS.explosion(o.position);

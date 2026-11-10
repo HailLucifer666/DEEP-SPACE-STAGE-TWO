@@ -989,7 +989,9 @@ try {
   ok('drift recovers (<8° at 0.8s after release)', typeof sl.recoveredDeg === 'number' && sl.recoveredDeg < 8, `slip=${sl.recoveredDeg}`);
   ok('full-turn circle radius 6.5-7.3 u (FLAGGED: GDD predicted 8.5-11.5, formula traces 6.94 — see block comment + report)', typeof dpth.radius === 'number' && dpth.radius >= 6.5 && dpth.radius <= 7.3, `r=${dpth.radius} max=${dpth.radiusMax}`);
   ok('pitched bolt climbs (>5u over 0.5s)', br.dy > 5, `dy=${br.dy}`);
-  ok('pitched bolt xz-speed honest (±10% of BOLT_SPEED·cosφ)', typeof br.xzSpeed === 'number' && typeof br.phi === 'number' && Math.abs(br.xzSpeed - 42 * Math.cos(br.phi)) <= 0.1 * 42 * Math.cos(br.phi), `xz=${br.xzSpeed} φ=${br.phi}`);
+  // story 7.4: BOLT_SPEED 42 → 70 (weapons.js) — the assert formula reads the new constant (the
+  // measured xzSpeed is BOLT_SPEED·cosφ by construction; ±10% band unchanged)
+  ok('pitched bolt xz-speed honest (±10% of BOLT_SPEED·cosφ)', typeof br.xzSpeed === 'number' && typeof br.phi === 'number' && Math.abs(br.xzSpeed - 70 * Math.cos(br.phi)) <= 0.1 * 70 * Math.cos(br.phi), `xz=${br.xzSpeed} φ=${br.phi}`);
   // BAND SCAFFOLD RETIRED BY STORY-016 — sphere replaces it (FLAGGED, never a quiet edit).
   // Removed 2026-11-05 with the BAND_H/BAND_HH consts and the band bleed block in combat.js:
   // the three story-015 band asserts ('altitude band holds |y−18| ≤ 20.5', 'band vertical
@@ -1425,10 +1427,20 @@ try {
   ok('blink during the last 2 s (off before 6.0 s, on after — blink starts at LIFE − BLINK = 6.0)', puDs.blinkAt55 === false && puDs.blinkAt65 === true, JSON.stringify(puDs));
   ok('pickup radius full-3D (1.3 picks up, 1.6 does not, vertical 1.345 picks up)',
     puRad.pickedAt13 === true && puRad.pickedAt3D === true && puRad.pickedAt16 === false, JSON.stringify(puRad));
-  ok('SPREAD: one shot = 3-bolt fan at ±6°, charged stays single',
-    puSpr.fan === 3 && typeof puSpr.anglePlus === 'number' && Math.abs(puSpr.anglePlus - 6) <= 0.5 &&
-    typeof puSpr.angleMinus === 'number' && Math.abs(puSpr.angleMinus - 6) <= 0.5 &&
-    puSpr.centerAngle <= 0.5 && puSpr.chargedSingle === 1, JSON.stringify(puSpr));
+  // story 7.4 REWRITE (was: anglePlus/angleMinus ≈ 6 and centerAngle ≤ 0.5 — the fan measured
+  // against the NOSE forward, which was the old base). The fan base is the CAMERA-TRUE
+  // converge aim now (?lock=0 on this page — nothing locked): the drive's angles-vs-forward
+  // become geometry constants of the parked seat (centerAngle ≈16°, the camera offset; the
+  // ±6° spread is perpendicular to that offset, so it barely moves the polar angles — the
+  // fan's ±6° geometry is asserted where the real dirs are captured: the fireProbe stage-3
+  // pairSpan assert). What THIS page can still prove: 3 fan bolts, the base is clearly off
+  // the nose (camera-true — centerAngle ≥10 would read 0 on the old base), and charged stays
+  // single. All three fan dirs sit within ±3° of the base's polar angle (bounded fan).
+  ok('SPREAD: one shot = 3-bolt fan about the camera-true base (centerAngle ≈16° parked-seat camera offset, both outer bolts within 3° of it), charged stays single',
+    puSpr.fan === 3 && typeof puSpr.centerAngle === 'number' && puSpr.centerAngle >= 10 && puSpr.centerAngle <= 19 &&
+    typeof puSpr.anglePlus === 'number' && Math.abs(puSpr.anglePlus - puSpr.centerAngle) <= 3 &&
+    typeof puSpr.angleMinus === 'number' && Math.abs(puSpr.angleMinus - puSpr.centerAngle) <= 3 &&
+    puSpr.chargedSingle === 1, JSON.stringify(puSpr));
   // RE-REVIEW band widen (2026-11-06, test-only): shots floor 9 → 8. The reviewer's arithmetic,
   // recorded here: at dt ≳ 0.0238 the fire cadence quantizes to 3 frames ≈ 0.0714 s and
   // 0.617 s / 0.0714 ≈ 8.6 → 8 is the DETERMINISTIC low edge, not a miss (committed history:
@@ -1794,7 +1806,7 @@ try {
   let fp = null;
   {
     const t0 = Date.now();
-    let arm1 = false, arm2 = false, arm3 = false, arm4 = false;
+    let arm1 = false, arm2 = false, arm3 = false, arm4 = false, arm6 = false, arm6b = false, arm6c = false;
     // the REAL trigger — CDP mouse input through input.js's own listener (the same chain a
     // player's click hits); the drive only watches for the fireGoN handshake
     const firePress = async (go) => {
@@ -1810,6 +1822,10 @@ try {
         else if (arm1 && !arm2 && await evl(`(window.__stage2 && window.__stage2.fireArm2) === true`)) { arm2 = true; await firePress('fireGo2'); }
         else if (arm2 && !arm3 && await evl(`(window.__stage2 && window.__stage2.fireArm3) === true`)) { arm3 = true; await firePress('fireGo3'); }
         else if (arm3 && !arm4 && await evl(`(window.__stage2 && window.__stage2.fireArm4) === true`)) { arm4 = true; await firePress('fireGo4'); }
+        // story 7.4: the camera-axis hit witness — one real press per seat (16/24/34 u)
+        else if (arm4 && !arm6 && await evl(`(window.__stage2 && window.__stage2.fireArm6) === true`)) { arm6 = true; await firePress('fireGo6'); }
+        else if (arm6 && !arm6b && await evl(`(window.__stage2 && window.__stage2.fireArm6b) === true`)) { arm6b = true; await firePress('fireGo6b'); }
+        else if (arm6b && !arm6c && await evl(`(window.__stage2 && window.__stage2.fireArm6c) === true`)) { arm6c = true; await firePress('fireGo6c'); }
         fp = await J(`(window.__stage2 && window.__stage2.fireProbe) || null`);
       } catch { fp = null; }
       if (fp) break;
@@ -1820,10 +1836,13 @@ try {
   const fpX = fp || {};
   const fs1 = fpX.s1 || {}, fs2 = fpX.s2 || {}, fs3 = fpX.s3 || {}, fs4 = fpX.s4 || {}, fs5 = fpX.boss || {};
   ok('fireProbe reports (stage-6 W1)', !!fp, JSON.stringify(fpX));
-  // FIRE-PATH BASELINE — the invariant the bias must not break (green-by-design on the pre-W1
-  // build; see the block comment). Reads b.userData.dir of REAL fired bolts via the drive.
-  ok('W1 fire-path baseline: real fired bolt flies along forward (b.userData.dir vs forward ≤1.1°)',
-    fs1.boltCaptured === true && typeof fs1.dirDeg === 'number' && fs1.dirDeg <= 1.1, `dirDeg=${fs1.dirDeg}`);
+  // FIRE-PATH BASELINE — story 7.4 rewrite (was: dir vs forward ≤1.1°, the nose-alignment
+  // invariant the W1 bias had to keep). With nothing on the field the lock is null, so the
+  // first real bolt must be CAMERA-TRUE converge aim: dir == normalize(camPos+camFwd·28−muzzle)
+  // within 0.5° (28 = AIMK.CONVERGE_DIST). The old metric rides the report as s1.dirDeg
+  // (provenance only — under 7.4 it reads ~16°, the parked-seat camera offset, BY DESIGN).
+  ok('7.4 fire-path baseline: with nothing locked the real fired bolt is camera-true converge aim (dir vs normalize(camPos+camFwd*28−muzzle) ≤0.5°)',
+    fs1.boltCaptured === true && typeof fs1.convDeg === 'number' && fs1.convDeg <= 0.5, `convDeg=${fs1.convDeg} dirDeg=${fs1.dirDeg}`);
   ok('W1 fire-path baseline: the real fired bolt kills the seeded dead-ahead target (real trigger → spawnBolt → boltsTick)',
     fs1.killConfirmed === true, JSON.stringify(fs1));
   // stage-6 H1: the kill-only hit marker — the registered kill (this stage's real bolt kill,
@@ -1832,34 +1851,78 @@ try {
   // bossProbe page's 6-real-hit evidence.
   ok('H1: hit marker shows on the registered kill (stage-1 real-bolt kill; element present, seen visible ~150 ms)',
     fs1.markElSeen === true && fs1.killConfirmed === true && fs1.killMarkSeen === true, JSON.stringify(fs1));
-  ok('W1: lock acquires an in-cone target (dead-ahead seed, acquire cone ≤6°)', fs2.lockSeen === true, JSON.stringify(fs2));
-  ok('W1: hysteresis — the lock RETAINS a target parked at 8.5° (outside acquire 6°, inside retain ~10°)',
-    fs2.lockRetainedSeen === true, JSON.stringify(fs2));
-  ok('W1: bias cap — the fired bolt converges on the retained target (≥5.5° off the nose) and never exceeds 6.3° (the 6° bias max; the fan+bias sum is bounded by the 10° retain cone — see the block comment)',
-    typeof fs2.biasDeg === 'number' && fs2.biasDeg >= 5.5 && fs2.biasDeg <= 6.3, `biasDeg=${fs2.biasDeg}`);
+  // story 7.4: the positive half of the pipper `locked` class — the stage-1 target is in-cone,
+  // so the lock holds while the drive samples the element (the negative half is the empty-field
+  // assert below).
+  ok('7.4: pipper carries the `locked` class while a lock is held (stage-1 in-cone sample)',
+    fs1.lockSeen === true && fs1.pipLockedSeen === true, JSON.stringify(fs1));
+  ok('W1: lock acquires an in-cone target (dead-ahead seed)', fs2.lockSeen === true, JSON.stringify(fs2));
+  // story 7.4 rewrite (was: parked 8.5° off the NOSE, outside acquire 6 / inside retain 10):
+  // the park is now 16° off the CAMERA axis — outside acquire 12°, inside retain 20° (the same
+  // hysteresis intent at the new cone numbers); parkDeg ≈16 recorded as the seat sanity.
+  ok('7.4: hysteresis — the lock RETAINS a target parked at 16° off the camera axis (outside acquire 12°, inside retain 20°)',
+    fs2.lockRetainedSeen === true && typeof fs2.parkDeg === 'number' && Math.abs(fs2.parkDeg - 16) <= 1, JSON.stringify(fs2));
+  // story 7.4 rewrite (was: the bias-cap band ≥5.5 ≤6.3 — the capped spawn rotation). The bias
+  // is retired: the fired bolt is LOCK-AIMED at the retained target (≈0° from the direct dir).
+  ok('7.4: the fired bolt is lock-aimed on the retained target (dir vs the direct target dir ≤3°)',
+    typeof fs2.convToTargetDeg === 'number' && fs2.convToTargetDeg <= 3, `convToTargetDeg=${fs2.convToTargetDeg}`);
   ok('W1: dead-target drops the lock (the real bolt kills the retained target; lock reads false after)',
     fs2.lockAfterKill === false, `lockAfterKill=${JSON.stringify(fs2.lockAfterKill)}`);
-  ok('W1: SPREAD fan + bias — the far fan bolt does NOT fully converge (the 6° bias clamp binds; unclamped it would land on the target)',
-    fs3.lockSeen === true && fs3.spreadSeen === true && typeof fs3.maxAngleToTarget === 'number' && fs3.maxAngleToTarget >= 3, JSON.stringify(fs3));
-  ok('W1: SPREAD fan + bias — every fired bolt stays ≤6.3° from the nose (stage-scoped band: fresh-acquire geometry)',
-    fs3.lockSeen === true && typeof fs3.maxAngleToForward === 'number' && fs3.maxAngleToForward <= 6.3, `maxF=${fs3.maxAngleToForward}`);
-  ok('W1: outside-cone target never locks (20° parked; lock false the whole window; fired bolt stays unbiased)',
-    fs4.locked === false && fs4.lockEverTrue === false && typeof fs4.boltAngleToForward === 'number' && fs4.boltAngleToForward <= 1.1, JSON.stringify(fs4));
+  // story 7.4 rewrites (were: 'far fan bolt does NOT fully converge' + 'every bolt ≤6.3° from
+  // the nose' — both describe the retired bias clamp). The fan's base is the camera-true
+  // lock-aim now and fan bolts HOME: the fan still spreads ±6° about that base (max pairwise
+  // dir span at capture, narrowed only by the homing lerp) and a fan bolt converges ON the
+  // locked target (min angle-to-target ≈0 — the center bolt is lock-aimed).
+  ok('7.4: SPREAD fan — the fan still spreads ±6° about the camera-true base (max pairwise dir span 4-13° at capture)',
+    fs3.lockSeen === true && fs3.spreadSeen === true && typeof fs3.pairSpan === 'number' && fs3.pairSpan >= 4 && fs3.pairSpan <= 13, JSON.stringify(fs3));
+  ok('7.4: SPREAD fan — a fan bolt converges ON the locked target (min angle-to-target ≤2.5°; the center bolt is lock-aimed, homing sharpens the outers)',
+    fs3.lockSeen === true && typeof fs3.minToTarget === 'number' && fs3.minToTarget <= 2.5, JSON.stringify(fs3));
+  // story 7.4 rewrite (was: 20° off the NOSE, bolt stays nose-aligned ≤1.1°): the seat is 25°
+  // off the CAMERA axis (outside acquire 12 AND retain 20) and the fired bolt is camera-true
+  // converge aim ≤0.5° (the boltAngleToForward provenance field reads ~16° by design now).
+  ok('7.4: outside-cone target never locks (25° off the camera axis; lock false the whole window)',
+    fs4.locked === false && fs4.lockEverTrue === false, JSON.stringify(fs4));
+  ok('7.4: with nothing locked the fired bolt is camera-true converge aim (dir vs normalize(camPos+camFwd*28−muzzle) ≤0.5°)',
+    typeof fs4.boltConvDeg === 'number' && fs4.boltConvDeg <= 0.5, `boltConvDeg=${fs4.boltConvDeg}`);
   ok('W1: the boss never locks (boss parked dead-ahead 26u — dead-center in the acquire cone — for the whole window)',
     fs5.bossAliveSeen === true && fs5.bossInConeEver === true && fs5.bossLockSeen === false && fpX.lockWasDefined === true, JSON.stringify(fs5));
 
-  // pipper — element-budget law: pipper = bolt path. Renders ONLY while the reticle (pointer)
-  // diverges past the threshold; self-hides aligned. The post-drive field is empty for ~99 s
-  // (the drive's wave-gap pin), so "no lock" here is deterministic. Real pointer events.
+  /* --- story 7.4: camera-axis hit witness (RED-first 2026-11-10) ---
+     The drive seats a raider exactly ON the camera axis (camPos + camForward·D, live-read from
+     C.camera) at 16/24/34 u and fires real bolts per seat. The pre-7.4 nose-aim build misses
+     all three (bolts fly the nose; the camera axis crosses it only 4 u out — perpendicular
+     miss 2.1/4.4/7.2 u vs the 1.05 u kill sphere) and never locks the seat (8-12° off the
+     NOSE, outside the old 6° acquire cone) — both asserts below record honest reds there.
+     lockFrames counts DRIVE ticks from seat to first locked sample: 1 = the tick after the
+     seat (lockTick precedes the probe in tickCombat — same-frame is structurally impossible);
+     ≤3 tolerates a harness stall frame without weakening the no-delay contract. */
+  const fs6 = fpX.s6 || {};
+  ok('7.4 camera-axis hit witness: real fired bolts kill a raider seated ON the camera axis at 16/24/34u (pre-7.4 nose-aim misses all three)',
+    !!fs6.d16 && typeof fs6.d16.seatDeg === 'number' && fs6.d16.killed === true &&
+    !!fs6.d24 && fs6.d24.killed === true && !!fs6.d34 && fs6.d34.killed === true, JSON.stringify(fs6));
+  ok('7.4: lock acquires the camera-axis seat within ~1 frame of it entering the acquire cone (all three seats; null = never locked)',
+    !!fs6.d16 && fs6.d16.lockFrames >= 1 && fs6.d16.lockFrames <= 3 &&
+    !!fs6.d24 && fs6.d24.lockFrames >= 1 && fs6.d24.lockFrames <= 3 &&
+    !!fs6.d34 && fs6.d34.lockFrames >= 1 && fs6.d34.lockFrames <= 3, JSON.stringify(fs6));
+
+  // pipper — story 7.4 REWRITE (was: renders ONLY while the reticle (pointer, px) diverges
+  // past the 72px threshold — self-hides aligned; that rule and PIPPER_ON_PX are removed).
+  // The pipper is ALWAYS visible while the combat HUD is on (screen-center anchor — with
+  // camera-true aim it is the honest bolt-path marker at every range) and carries the
+  // `locked` class iff a lock is held. The post-drive field is empty for ~99 s (the drive's
+  // wave-gap pin), so "no lock" here is deterministic. Real pointer events.
   await evl(`window.dispatchEvent(new PointerEvent('pointermove', {clientX: Math.round(window.innerWidth/2), clientY: Math.round(window.innerHeight/2), bubbles: true}))`);
   await sleep(300);
   const w1PipC = await J(`({ el: !!document.getElementById('pipper'),
-    hidden: document.getElementById('pipper') ? document.getElementById('pipper').hidden : null })`);
-  ok('W1: pipper self-hides when the reticle is aligned (center pointer)', w1PipC.el === true && w1PipC.hidden === true, JSON.stringify(w1PipC));
+    hidden: document.getElementById('pipper') ? document.getElementById('pipper').hidden : null,
+    locked: document.getElementById('pipper') ? document.getElementById('pipper').classList.contains('locked') : null })`);
+  ok('7.4: pipper always visible in combat (center pointer — the 72px hide rule is gone)', w1PipC.el === true && w1PipC.hidden === false, JSON.stringify(w1PipC));
+  ok('7.4: pipper `locked` class absent with nothing locked (post-drive field empty)', w1PipC.locked === false, JSON.stringify(w1PipC));
   await evl(`window.dispatchEvent(new PointerEvent('pointermove', {clientX: Math.round(window.innerWidth*0.75), clientY: Math.round(window.innerHeight/2), bubbles: true}))`);
   await sleep(300);
-  const w1PipO = await J(`({ hidden: document.getElementById('pipper') ? document.getElementById('pipper').hidden : null })`);
-  ok('W1: pipper renders while the reticle diverges past the threshold (the bolt-path marker appears)', w1PipO.hidden === false, JSON.stringify(w1PipO));
+  const w1PipO = await J(`({ hidden: document.getElementById('pipper') ? document.getElementById('pipper').hidden : null,
+    locked: document.getElementById('pipper') ? document.getElementById('pipper').classList.contains('locked') : null })`);
+  ok('7.4: pipper stays visible while the reticle diverges (always-on law) and still unlocked on the empty field', w1PipO.hidden === false && w1PipO.locked === false, JSON.stringify(w1PipO));
   // stage-6 H1 pipper honesty rider (W1's chair flag): the pipper's visibility gate rides
   // pointer-divergence — the same input-state class as the pre-law reticle — so combatState()
   // now exposes the WRITER'S OWN stored state ({ visible, divergenceDeg }) and the harness can
@@ -1873,7 +1936,7 @@ try {
   await evl(`window.dispatchEvent(new PointerEvent('pointermove', {clientX: Math.round(window.innerWidth/2), clientY: Math.round(window.innerHeight/2), bubbles: true}))`);
   await sleep(300);
   const w1PipR = await J(`({ hidden: document.getElementById('pipper') ? document.getElementById('pipper').hidden : null })`);
-  ok('W1: pipper self-hides on re-alignment (renders ONLY while diverging)', w1PipR.hidden === true, JSON.stringify(w1PipR));
+  ok('7.4: pipper still visible on re-alignment (the always-on law — no self-hide)', w1PipR.hidden === false, JSON.stringify(w1PipR));
   // bracket — ONE element, the locked target only; hidden without a lock; honesty surface:
   // combatState().lockTarget must be null exactly when nothing is locked
   const w1Br = await J(`({ hidden: document.getElementById('lock-bracket') ? document.getElementById('lock-bracket').hidden : null,
