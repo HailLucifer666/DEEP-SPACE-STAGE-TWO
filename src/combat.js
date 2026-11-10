@@ -797,7 +797,7 @@ export function combatState() {
     boost: C.boost,
     rimOpacity: C.rim ? +C.rim.material.opacity.toFixed(3) : 0, // story-016: the equator ring's 3D-proximity driver, harness-visible (probe surface only)
     speed: +C.speed.toFixed(2), heading: +C.heading.toFixed(3), // probe surface — flow-check's throttle/turn asserts (story-004)
-    pitch: +C.pitch.toFixed(3), velMag: +C.vel.length().toFixed(2), // story-015: pitch envelope + true speed under drift (SPD keeps showing C.speed; velMag is harness-only, §8 decision c)
+    pitch: +C.pitch.toFixed(3), velMag: +C.vel.length().toFixed(2), // story-015: pitch envelope + true speed under drift (Task A 2026-11-10: the stale "SPD keeps showing C.speed" claim rewritten — SPD reads velMag since story 7.4's real-speed writer, phases.js tickSpdReadout:177 rounds cs.velMag; C.speed stays the throttle state)
     charge: +Math.min(1, C.chargeT / T_CHARGE).toFixed(3), // story-018: the charge fill 0..1 over T_CHARGE
     charging: C.charging, // story-018: past the threshold — stream suppressed, release fires the charged bolt
     effects: { SPREAD: +C.effects.SPREAD.toFixed(2), OVERDRIVE: +C.effects.OVERDRIVE.toFixed(2), SHIELD: +C.effects.SHIELD.toFixed(2) }, // story-018: seconds remaining per effect (the EXPOSED surface — GDD names it combatState().effects)

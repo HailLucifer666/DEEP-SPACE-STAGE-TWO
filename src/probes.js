@@ -47,7 +47,7 @@ const BP = { t: -1, stage: 'spawn', stageT: 0, fired: 0, hpMark: 0, spawnWave: 0
   dyingSamples: 0, barElSeen: false, dyingBarVisible: false,
   markSamples: 0, markElSeen: false, markOnHit: false };
 const PP = { state: null, done: false }; // the pitch walk's one probe-only object, rebuilt fresh on combat entry
-const DD = { t: 0, stage: 0, mark: 0, sub: null, done: false, minCl: 0, samples: 0, pulses: [], entryShown: null, opacityAt78: null, opacityAt60: null }; // story-017 dressing walk — page-scoped (see resetProbes note + dressingProbeTick)
+const DD = { t: 0, stage: 0, mark: 0, sub: null, done: false, minCl: 0, samples: 0, pulses: [], entryShown: null, opacityAt78: null, opacityAt60: null, rockHit: null, warn65: null, warn75: null, warnIn: null }; // story-017 dressing walk — page-scoped (see resetProbes note + dressingProbeTick); Task A 2026-11-10 adds the warn-park + rockHit sample fields
 
 export function resetProbes() { // rider R-e: what enterCombat's inline probe resets did — same state, same window hygiene
   Object.assign(DP, { t: -1, drone: null, win: 0, done: false, tele: false, dive: false, contact: false, samples: 0, mm: null });
@@ -65,7 +65,7 @@ export function resetProbes() { // rider R-e: what enterCombat's inline probe re
   // state (DD) is deliberately NOT reset here — the walk is page-scoped: it begins at combat
   // entry and its lifecycle witness spans the page's combat re-entries, so `done` latches
   // across resetProbes calls (see dressingProbeTick).
-  Object.assign(DD, { t: 0, stage: 0, mark: 0, sub: null, minCl: 0, samples: 0, pulses: [], entryShown: null, opacityAt78: null, opacityAt60: null });
+  Object.assign(DD, { t: 0, stage: 0, mark: 0, sub: null, minCl: 0, samples: 0, pulses: [], entryShown: null, opacityAt78: null, opacityAt60: null, rockHit: null, warn65: null, warn75: null, warnIn: null }); // Task A 2026-11-10: the warn-park + rockHit samples join the same stale-free hygiene
   window.__stage2.dressingProbeLive = false;
   delete window.__stage2.dressingProbe;
   // story-018: the charge/powerup walks' reports + the harness arm flags — stale-delete hygiene.
@@ -674,26 +674,28 @@ export function pitchProbeTick(dt, C, env) {
 
 /* ---------- story-017 dressing probe (?dressingProbe=1) ----------
  * Deterministic walk of the combat-only ambient dressing (droneProbe/pitchProbe pattern).
- * Stages, in order:
- *   entry (0 s) — snap the field/shell visibility at combat entry (the re-show half of the
+ * Stages, in order (story-017 original walk + the Task A 2026-11-10 warn/shell extension):
+ *   entry (0 s) — snap the field visibility at combat entry (the re-show half of the
  *     rim-ring lifecycle), clear the enemy field + reseat the ship at O (probe-owned
  *     precondition; bossProbe/pitchProbe precedent), then start the clearance walk: W cruise
  *     + full-yaw orbit (drift circle radius ≈7 u around O) + varied-pitch pulses (R/F 0.35 s
- *     every 2 s). The orbit stays ≥ ~18 u from the shell's inner edge (25 u), so the
- *     geometric clearance margin is ~15-18 u. The field is cleared EVERY tick during the walk
- *     + HP/shield healed (pitchProbe precedent) — the walk must not die mid-drive with wave
- *     raiders orbiting the ship.
+ *     every 2 s). The field is cleared EVERY tick during the walk + HP/shield healed
+ *     (pitchProbe precedent) — the walk must not die mid-drive with wave raiders orbiting
+ *     the ship.
  *   walk (10 s) — sample the nearest instance-to-ship 3D distance every tick (min over the
  *     drive).
- *   parks — teleport-park at r3 78 (bossProbe shell-park precedent: C.pos set, vel/speed
- *     zeroed, keys released), wait 0.6 s for the driver to settle, sample shell opacity (> 0,
- *     design 0.162); re-park at r3 60, wait, sample (== 0).
- *   report — { ambientCount, shellFill, clearance, shell: { material, opacityAt78,
- *     opacityAt60 }, lifecycle: { shownOnEnter } } on window.__stage2.dressingProbe
- *     (+ lastReport parity via api.report). The clear/re-show lifecycle half is verified by
- *     the HARNESS via __stage2.dressingLive() across a death → gameover → SKIP → combat
- *     re-entry walk (see flow-check's story-017 block) — the in-page tick cannot witness the
- *     gameover gap (it only runs in combat). */
+ *   rock park (r3 78; bossProbe shell-park precedent: C.pos set, vel/speed zeroed, keys
+ *     released at walk end) — the story-7.5 rock-collision witness (collideRocks on rock 0).
+ *   warn parks (Task A 2026-11-10, Story 7.6 Step 3 sanctioned asserts) — probe-owned
+ *     re-parks at r3 65 / 75 / 20, each settled 0.2 s before its #warn sample (the warn
+ *     writer in combat.js steer recomputes from r3 every tick; vel/speed zeroed so the park
+ *     is steady). Samples the element's live render state: visible / text / .danger class.
+ *   report — { ambientCount, shellFill, clearance, shellRemoved (MEASURED — shellScan, see
+ *     that helper), lifecycle: { shownOnEnter }, rockHit, warn: { approaching, turnBack,
+ *     inside } } on window.__stage2.dressingProbe (+ lastReport parity via api.report).
+ *     The clear/re-show lifecycle half is verified by the HARNESS via __stage2.dressingLive()
+ *     across a death → gameover → SKIP → combat re-entry walk (see flow-check's story-017
+ *     block) — the in-page tick cannot witness the gameover gap (it only runs in combat). */
 export function dressingProbeTick(dt, C, env) {
   if (!DRESSING_PROBE || DD.done) return;
   DD.t += dt;
@@ -735,7 +737,7 @@ export function dressingProbeTick(dt, C, env) {
     return;
   }
 
-  if (DD.stage === 2) { // shell removed verification & rock hit
+  if (DD.stage === 2) { // rock-collision witness at the r3 78 park, then re-park for the warn stage
     const r0 = DRESSING.getRock ? DRESSING.getRock(0) : null;
     let rockHit = null;
     if (r0) {
@@ -750,18 +752,102 @@ export function dressingProbeTick(dt, C, env) {
         hasNormal: normal.lengthSq() > 0,
       };
     }
-    const probe = {
-      ambientCount: DRESSING.fieldCount(),
-      shellFill: DRESSING.shellFill(),
-      clearance: { min: +DD.minCl.toFixed(2), samples: DD.samples },
-      shellRemoved: true,
-      lifecycle: { shownOnEnter: DD.entryShown },
-      rockHit,
-    };
-    window.__stage2.dressingProbe = probe;
-    window.__stage2.dressingProbeLive = false;
-    DD.done = true;
-    C.api.report({ dressingProbe: probe }); // parity — lands on __stage2.lastReport too
+    DD.rockHit = rockHit;
+    // Task A 2026-11-10 (Story 7.6 Step 3): probe-owned re-parks for the two-stage #warn
+    // asserts (bossProbe shell-park precedent). Keys are already released (walk end); the
+    // warn writer recomputes from r3 on the next steer tick, so each park settles 0.2 s.
+    ENEMIES.clearEnemies(); C.hp = env.HP_MAX; C.shield = env.SHIELD_MAX; // walk discipline — the stationary ship must not die mid-sampling
+    C.pos.set(0, env.ARENA_Y, 65); C.vel.set(0, 0, 0); C.speed = 0; C.pitch = 0;
+    DD.mark = DD.t; DD.sub = 'warn65'; DD.stage = 3;
     return;
   }
+
+  if (DD.stage === 3) { // warn park 60 <= r3 < 72 → APPROACHING ZONE EDGE, .danger ABSENT
+    ENEMIES.clearEnemies();
+    if (C.hp < env.HP_MAX) C.hp = env.HP_MAX;
+    if (C.shield < env.SHIELD_MAX) C.shield = env.SHIELD_MAX;
+    if (DD.t >= DD.mark + 0.2) {
+      DD.warn65 = warnSample(C, env.ARENA_Y);
+      C.pos.set(0, env.ARENA_Y, 75); C.vel.set(0, 0, 0); C.speed = 0;
+      DD.mark = DD.t; DD.sub = 'warn75'; DD.stage = 4;
+    }
+    return;
+  }
+
+  if (DD.stage === 4) { // warn park r3 >= 72 → END OF COMBAT ZONE - TURN BACK, .danger PRESENT
+    ENEMIES.clearEnemies();
+    if (C.hp < env.HP_MAX) C.hp = env.HP_MAX;
+    if (C.shield < env.SHIELD_MAX) C.shield = env.SHIELD_MAX;
+    if (DD.t >= DD.mark + 0.2) {
+      DD.warn75 = warnSample(C, env.ARENA_Y);
+      C.pos.set(0, env.ARENA_Y, 20); C.vel.set(0, 0, 0); C.speed = 0;
+      DD.mark = DD.t; DD.sub = 'warnIn'; DD.stage = 5;
+    }
+    return;
+  }
+
+  if (DD.stage === 5) { // warn park back inside r3 < 60 → hidden; then the measured report
+    ENEMIES.clearEnemies();
+    if (C.hp < env.HP_MAX) C.hp = env.HP_MAX;
+    if (C.shield < env.SHIELD_MAX) C.shield = env.SHIELD_MAX;
+    if (DD.t >= DD.mark + 0.2) {
+      DD.warnIn = warnSample(C, env.ARENA_Y);
+      DD.done = true;
+      const probe = {
+        ambientCount: DRESSING.fieldCount(),
+        shellFill: DRESSING.shellFill(),
+        clearance: { min: +DD.minCl.toFixed(2), samples: DD.samples },
+        shellRemoved: shellScan(C.scene), // Task A 2026-11-10: MEASURED (was the literal `true` — a tautology, defect class false green)
+        lifecycle: { shownOnEnter: DD.entryShown },
+        rockHit: DD.rockHit,
+        warn: { approaching: DD.warn65, turnBack: DD.warn75, inside: DD.warnIn }, // Task A 2026-11-10 (Story 7.6 Step 3)
+      };
+      window.__stage2.dressingProbe = probe;
+      window.__stage2.dressingProbeLive = false;
+      C.api.report({ dressingProbe: probe }); // parity — lands on __stage2.lastReport too
+    }
+    return;
+  }
+}
+
+/* ---------- Task A 2026-11-10: the measured shell witness + the #warn sample ----------
+ * shellRemoved used to be the unconditional literal `true` in the dressing probe report —
+ * a tautology (defect class: false green; it could never fail). It is now MEASURED off the
+ * live scene graph: ANY mesh carrying a wireframe material at arena-shell scale fails the
+ * witness, so a shell mesh existing again (even hidden — traverse does not skip invisible
+ * objects) turns the harness assert red. The removed boundary shell (story 7.6) was
+ * IcosahedronGeometry(78, 2) wireframe; a grep of src/ (2026-11-10) shows ZERO wireframe
+ * materials in the game and the largest legitimate scene meshes are single-digit u, so the
+ * ≥ 40 u floor cannot false-positive on live geometry.
+ * MUTATION-PROVEN 2026-11-10: a wireframe IcosahedronGeometry(78, 2) mesh re-added to the
+ * scene during this probe → shellRemoved measured FALSE → flow-check RED 'boundary wireframe
+ * shell removed (story 7.6)'; restored → green (build/flow-taskA-baseline.txt is the green
+ * record; the red transcript was read from the mutation run). */
+const SHELL_SCAN_MIN_R = 40; // u — shell-scale floor (the shell was 78; legit meshes ≤ ~single-digit u)
+function shellScan(scene) {
+  if (!scene) return false; // absent scene → honest red (absence must never read as a green witness)
+  let shellFound = false;
+  scene.traverse((o) => {
+    if (shellFound || !o.isMesh || !o.material || !o.geometry) return;
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    let wire = false;
+    for (let i = 0; i < mats.length; i++) { if (mats[i] && mats[i].wireframe) { wire = true; break; } }
+    if (!wire) return;
+    if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere(); // one-shot probe report path, NOT a tick path
+    const r = o.geometry.boundingSphere ? o.geometry.boundingSphere.radius : 0;
+    if (r >= SHELL_SCAN_MIN_R) shellFound = true; // a wireframe mesh at shell scale — the shell is back
+  });
+  return !shellFound;
+}
+
+// the #warn element's live render state (combat.js steer writes it every tick from r3)
+function warnSample(C, arenaY) {
+  const w = C.ui && C.ui.warn;
+  if (!w) return null; // element-absent build → honest red (the assert reads the null)
+  return {
+    r3: +Math.hypot(C.pos.x, C.pos.y - arenaY, C.pos.z).toFixed(2), // the measured park radius — provenance for the assert
+    visible: w.hidden !== true,
+    text: w.textContent || '',
+    danger: w.classList.contains('danger'),
+  };
 }

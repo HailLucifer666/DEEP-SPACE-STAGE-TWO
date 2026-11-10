@@ -108,13 +108,12 @@ export function tickDressing(dt) {
 
 /* ---------- probe surfaces (dressingProbeTick reads these) ---------- */
 export function fieldVisible() { return D.group ? D.group.visible : false; }
-export function shellVisible() { return false; }
 export function fieldCount() { return D.field ? D.field.count : 0; }
 export function shellFill() { return D.fill; }
-export function shellOpacity() { return 0; }
-export function shellMaterial() {
-  return { additive: true, transparent: true, depthWrite: false, removed: true };
-}
+// Task A 2026-11-10: shellVisible()/shellOpacity()/shellMaterial() removed — since story 7.6
+// deleted the shell they returned hardcoded constants, and a grep of src/ + tools/ found ZERO
+// callers (the harness's lifecycle reads go through the dressingLive window surface below,
+// which keeps its own shellVisible/shellOpacity properties — a different, referenced surface).
 
 export function collideRocks(pos, radius, outNormal) {
   const rocks = D.rocks;

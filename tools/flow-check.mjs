@@ -1165,11 +1165,39 @@ try {
   const dp17X = dp17 || {};
   const sf = dp17X.shellFill || {}, cl = dp17X.clearance || {}, sh = dp17X.shell || {}, lc = dp17X.lifecycle || {}, mt = sh.material || {};
   ok('dressingProbe reports (story-017)', !!dp17, JSON.stringify(dp17));
-  ok('ambient field present (≥ 100 instances)', dp17X.ambientCount === 40, `count=${dp17X.ambientCount}`);
+  // Task A 2026-11-10: LABEL-ONLY fix — the label said "≥ 100" (the pre-story-7.5 field size)
+  // while the assert reads === 40 (story 7.5 thinned AMBIENT_FIELD_COUNT to 40). The assert
+  // expression is untouched; only the stale label text was corrected.
+  ok('ambient field present (40 instances — story 7.5 thinned field)', dp17X.ambientCount === 40, `count=${dp17X.ambientCount}`);
   ok('field fills the shell (min ≥ 25, max ≤ 75)', typeof sf.minR3 === 'number' && sf.minR3 >= 25 && sf.maxR3 <= 75, JSON.stringify(sf));
   ok('field never crowds the ship (clearance > 10u over 10s varied-pitch drive)', typeof cl.min === 'number' && cl.min > 10, `minClear=${cl.min} samples=${cl.samples}`);
-  // SANCTIONED REWRITE (Story 7.6 - Boundary): blue shell wireframe sphere removed
+  // SANCTIONED REWRITE (Story 7.6 - Boundary): blue shell wireframe sphere removed.
+  // Task A 2026-11-10: shellRemoved is now MEASURED in the probe (probes.js shellScan — any
+  // wireframe mesh ≥ 40 u in the live scene fails), not the literal `true` it replaced
+  // (tautology / false green). MUTATION-PROVEN 2026-11-10: a wireframe IcosahedronGeometry(78,2)
+  // mesh re-added to the scene inside dressingProbeTick → RED here with shellRemoved:false in
+  // the probe JSON below; restored → green. Adjacent keep-passing in that run: the ambient
+  // count / shell-fill / clearance asserts all stayed green (the mutation mesh touches nothing
+  // else the block measures).
   ok('boundary wireframe shell removed (story 7.6)', dp17X.shellRemoved === true, JSON.stringify(dp17X));
+  // Task A 2026-11-10 (Story 7.6 Step 3 sanctioned #warn-text asserts): asserted against the
+  // PLAN's sanctioned strings (docs/FIX_PLAN.md Story 7.6 Step 2) — verified byte-identical to
+  // what src/combat.js steer writes (#warn textContent at r3 ≥ 72 / 60 < r3 < 72, lines 345-351).
+  // A red here means the warn texts/classes drifted: fix combat.js, NEVER these strings —
+  // rewriting the assert to match drifted code is exactly how the shell tautology happened.
+  // MUTATION-PROVEN 2026-11-10: 'END OF COMBAT ZONE - TURN BACK' swapped in combat.js → RED
+  // 'boundary warn END OF COMBAT ZONE - TURN BACK' (text mismatch in the JSON); the
+  // APPROACHING and inside asserts stayed GREEN (adjacent-case control). Restore → green.
+  const wr = dp17X.warn || {};
+  ok('boundary warn APPROACHING ZONE EDGE at 60<=r<72 (visible, .danger absent — story 7.6)',
+    !!wr.approaching && wr.approaching.visible === true && wr.approaching.text === 'APPROACHING ZONE EDGE' && wr.approaching.danger === false,
+    JSON.stringify(wr.approaching || null));
+  ok('boundary warn END OF COMBAT ZONE - TURN BACK at r>=72 (visible, .danger present — story 7.6)',
+    !!wr.turnBack && wr.turnBack.visible === true && wr.turnBack.text === 'END OF COMBAT ZONE - TURN BACK' && wr.turnBack.danger === true,
+    JSON.stringify(wr.turnBack || null));
+  ok('boundary warn hidden back inside r<60 (story 7.6)',
+    !!wr.inside && wr.inside.visible === false && wr.inside.danger === false,
+    JSON.stringify(wr.inside || null));
   ok('field lifecycle: hidden on clearCombat (pad), re-shown on enterCombat',
     !!lcSeen.atPad && lcSeen.atPad.fv === false && !!lcSeen.atReenter && lcSeen.atReenter.fv === true,
     JSON.stringify(lcSeen));
