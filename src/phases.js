@@ -173,7 +173,8 @@ function tickSpdReadout(dt) {
   spdAccum += dt;
   if (spdAccum < 0.125) return;
   spdAccum = 0;
-  const s = Math.round(COMBAT.combatState().speed);
+  const cs = COMBAT.combatState();
+  const s = Math.round(typeof cs.velMag === "number" ? cs.velMag : cs.speed);
   if (s !== lastSpd) { ctx.ui.tele.textContent = `SPD ${s} u/s`; lastSpd = s; }
 }
 export function tickCombat(dt, t) { // combat core (combat.js) + the SPD line — phases owns #tele in this phase

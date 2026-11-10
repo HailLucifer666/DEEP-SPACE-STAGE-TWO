@@ -597,8 +597,9 @@ export function tickCombat(dt, t) {
   // write — the dedicated #boss-bar element owns boss HP now (one meaning per element;
   // boss.js stays zero-diff, its barLine() text write retired from this path).
   if (C.ui.hudBars) {
+    const critClass = C.hp < 25 ? " crit" : "";
     const bars =
-      `<div class="meter"><span class="ml">HULL ${fmt(C.hp)}</span><span class="mtrack"><i style="width:${fmt(clamp(C.hp, 0, HP_MAX))}%"></i></span></div>` +
+      `<div class="meter"><span class="ml">HULL ${fmt(C.hp)}</span><span class="mtrack${critClass}"><i style="width:${fmt(clamp(C.hp, 0, HP_MAX))}%"></i></span></div>` +
       `<div class="meter"><span class="ml">SHIELD ${fmt(C.shield)}</span><span class="mtrack sh"><i style="width:${fmt(clamp(C.shield, 0, SHIELD_MAX) * 2)}%"></i></span></div>` +
       `<div class="meter"><span class="ml">BOOST ${fmt(C.boost * 100)}%</span><span class="mtrack bo"><i style="width:${fmt(C.boost * 100)}%"></i></span></div>`;
     if (bars !== C.lastBars) { C.ui.hudBars.innerHTML = bars; C.lastBars = bars; }
@@ -694,7 +695,7 @@ export function tickCombat(dt, t) {
 
   // edge pips — point at raiders you can't see (off-screen or behind the camera)
   if (C.pips.length) {
-    const ring = 130, cx = window.innerWidth / 2, cy = window.innerHeight / 2;
+    const ring = Math.min(window.innerWidth, window.innerHeight) * 0.38, cx = window.innerWidth / 2, cy = window.innerHeight / 2;
     C.camera.getWorldDirection(C.pipFwd);
     C.pipInv.copy(C.camera.quaternion).invert();
     let pi = 0;

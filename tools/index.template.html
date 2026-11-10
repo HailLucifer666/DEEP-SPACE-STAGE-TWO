@@ -32,18 +32,19 @@ body.playing.paused, body.playing.paused *{cursor:auto !important;}
 .overlay{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;}
 [hidden]{display:none !important;}
 
-#hud{position:fixed;inset:0;z-index:30;pointer-events:none;}
+#hud{position:fixed;inset:0;z-index:30;pointer-events:none;--u:clamp(0.9px, 0.1vh, 1.8px);}
 #count{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
   font-size:17vh;font-weight:900;color:#fff;letter-spacing:.04em;opacity:.95;
   text-shadow:0 0 46px rgba(255,255,255,.4), 0 2px 16px rgba(0,0,0,.45);}
 #count.pop{animation:hpop .52s cubic-bezier(.16,.9,.24,1);}
 @keyframes hpop{0%{transform:scale(1.8);opacity:.05;filter:blur(10px);}55%{opacity:1;filter:blur(0);}100%{transform:scale(1);}}
-#tele{position:absolute;top:18px;right:22px;font:12px/1.75 ui-monospace,Consolas,monospace;
+#tele{position:absolute;top:calc(20 * var(--u));right:calc(26 * var(--u));font:calc(15 * var(--u))/1.75 ui-monospace,Consolas,monospace;
   color:#9fd8ff;letter-spacing:.1em;white-space:pre;text-align:right;
-  text-shadow:0 0 12px rgba(159,216,255,.35);}
-#warn{position:fixed;left:50%;bottom:64px;transform:translateX(-50%);z-index:34;pointer-events:none;
-  font:700 13px ui-monospace,Consolas,monospace;letter-spacing:.34em;color:#ffd88f;
-  text-shadow:0 0 14px rgba(255,216,143,.45);text-transform:uppercase;}
+  text-shadow:0 0 6px rgba(0,0,0,.9), 0 0 12px rgba(125,215,255,.35);}
+#warn{position:fixed;left:50%;top:22vh;transform:translateX(-50%);z-index:34;pointer-events:none;
+  font:700 calc(22 * var(--u)) ui-monospace,Consolas,monospace;letter-spacing:.34em;color:#ffd88f;
+  text-shadow:0 0 14px rgba(255,216,143,.45);text-transform:uppercase;animation:warnPulse 1s ease-in-out infinite;}
+@keyframes warnPulse{50%{opacity:.55;}}
 #warn.danger{color:#ff6a4d;text-shadow:0 0 14px rgba(255,106,77,.6);}
 
 #webglveil{z-index:70;background:#0a0e14;padding:0 24px;}
@@ -146,9 +147,9 @@ body.playing.paused, body.playing.paused *{cursor:auto !important;}
   text-shadow:0 0 40px rgba(125,215,255,.45);}
 #combat-online.on{opacity:1;filter:blur(0);transform:scale(1);}
 /* S3 transition: B2 HUD lock-in assembly */
-#reticle{position:absolute;left:50%;top:50%;width:132px;height:132px;transform:translate(-50%,-50%) scale(1.55);
+#reticle{position:absolute;left:50%;top:50%;width:calc(88 * var(--u));height:calc(88 * var(--u));transform:translate(-50%,-50%) scale(1.55);
   opacity:0;transition:transform .6s cubic-bezier(.16,.9,.24,1), opacity .5s ease;pointer-events:none;}
-#reticle span{position:absolute;width:26px;height:26px;border:2px solid rgba(125,215,255,.75);}
+#reticle span{position:absolute;width:calc(16 * var(--u));height:calc(16 * var(--u));border:2px solid rgba(125,215,255,.45);}
 #reticle .tl{left:0;top:0;border-right:0;border-bottom:0;}
 #reticle .tr{right:0;top:0;border-left:0;border-bottom:0;}
 #reticle .bl{left:0;bottom:0;border-right:0;border-top:0;}
@@ -157,86 +158,75 @@ body.playing.paused, body.playing.paused *{cursor:auto !important;}
 #hud.assemble #tele{animation:teleIn .7s cubic-bezier(.16,.9,.24,1) both;}
 @keyframes teleIn{from{transform:translateX(26px);opacity:0;}to{transform:translateX(0);opacity:1;}}
 
-/* S4 combat → stage-6 H1: labeled HULL/SHIELD/BOOST meter rows (label + track + fill) — a
-   presentation-only restyle of the SAME change-gated writer values (combat.js's lastBars
-   gate untouched; honesty law: no new values, the fill IS the value the text stack wrote —
-   visual-audit F1). Numbers ride the label as the secondary read. */
-#hud-bars{position:absolute;left:22px;bottom:20px;display:grid;row-gap:7px;
-  font:700 11px/1.4 'Rajdhani','Segoe UI',sans-serif;letter-spacing:.14em;color:#bfe9ff;
-  text-shadow:0 0 10px rgba(125,215,255,.4);}
-#hud-bars .meter{display:grid;grid-template-columns:86px 180px;align-items:center;column-gap:10px;}
+/* S4 combat → stage-6 H1: labeled HULL/SHIELD/BOOST meter rows */
+#hud-bars{position:absolute;left:calc(28 * var(--u));bottom:calc(28 * var(--u));display:grid;row-gap:calc(10 * var(--u));
+  font:700 calc(15 * var(--u))/1.4 'Rajdhani','Segoe UI',sans-serif;letter-spacing:.14em;color:#bfe9ff;
+  text-shadow:0 0 6px rgba(0,0,0,.9), 0 0 12px rgba(125,215,255,.35);
+  background:rgba(6,10,20,.45);padding:calc(10 * var(--u)) calc(14 * var(--u));border-radius:calc(8 * var(--u));}
+#hud-bars .meter{display:grid;grid-template-columns:calc(110 * var(--u)) calc(260 * var(--u));align-items:center;column-gap:calc(10 * var(--u));}
 #hud-bars .ml{white-space:pre;}
-#hud-bars .mtrack{width:180px;height:8px;background:rgba(255,255,255,.09);border:1px solid rgba(125,215,255,.28);
+#hud-bars .mtrack{width:calc(260 * var(--u));height:calc(14 * var(--u));background:rgba(255,255,255,.09);border:1px solid rgba(125,215,255,.28);
   border-radius:4px;overflow:hidden;}
 #hud-bars .mtrack i{display:block;height:100%;background:#ff5a3c;transition:width .18s ease;}
 #hud-bars .mtrack.sh i{background:#7dd7ff;}
 #hud-bars .mtrack.bo i{background:#9fd8ff;}
-/* stage-6 H1: dedicated boss HP bar — the fight's central state gets a bar, not a text line
-   (visual-audit F1; boss.js untouched, its barLine() text write retired from combat.js's
-   #hud-bars string). Fed from BOSS.state() {hp,maxHp}; the fill steps in 5% increments (the
-   charge-meter change-gate pattern, combat.js). Amber fill = the boss's own color language
-   (the weak-point node 0xffc85a); label/track stay cyan (scope.md color rule). No clip-path
-   polygons (flow-check counts #hud clip-path children = the 8 edge pips exactly). */
+#hud-bars .mtrack.crit i{animation:critBlink .5s steps(2) infinite;}
+@keyframes critBlink{50%{opacity:.35;}}
+/* stage-6 H1: dedicated boss HP bar */
 #boss-bar{position:absolute;top:16px;left:50%;transform:translateX(-50%);width:min(46vw,440px);
   display:flex;align-items:center;gap:10px;}
-#boss-bar .bb-label{font:700 12px/1 'Rajdhani','Segoe UI',sans-serif;letter-spacing:.3em;color:#bfe9ff;
+#boss-bar .bb-label{font:700 calc(14 * var(--u))/1 'Rajdhani','Segoe UI',sans-serif;letter-spacing:.3em;color:#bfe9ff;
   text-shadow:0 0 10px rgba(125,215,255,.4);}
 #boss-bar .bb-track{flex:1;height:10px;background:rgba(255,255,255,.09);border:1px solid rgba(125,215,255,.35);
   border-radius:5px;overflow:hidden;}
 #boss-bar .bb-track i{display:block;height:100%;width:calc(var(--w,0)*1%);
   background:linear-gradient(90deg,#c88a3c,#ffc85a);transition:width .18s ease;
   box-shadow:0 0 12px rgba(255,200,90,.5);}
-/* stage-6 H1: wave banner — the #combat-online reveal grammar (opacity/blur/scale + .on)
-   re-instanced at the top strip so it never covers the reticle center (audit F3 budget);
-   pointer-events: none via #hud. Writer: combat.js (entry wave + the wavesTick increment,
-   ~2 s window). */
-#wave-banner{position:absolute;top:72px;left:0;right:0;text-align:center;
+/* stage-6 H1: wave banner */
+#wave-banner{position:absolute;top:calc(90 * var(--u));left:0;right:0;text-align:center;
   font-weight:900;font-family:'Orbitron',ui-monospace,Consolas,monospace;font-size:clamp(20px,3.6vw,34px);
   letter-spacing:.42em;padding-left:.42em;color:#bfe9ff;opacity:0;filter:blur(10px);transform:scale(1.06);
   transition:opacity .5s ease, filter .6s ease, transform .6s ease;
   text-shadow:0 0 30px rgba(125,215,255,.45);}
 #wave-banner.on{opacity:1;filter:blur(0);transform:scale(1);}
-/* stage-6 H1: kill-only hit marker — small cyan X anchored at the reticle (the sight-confirm
-   decision, documented in combat.js's H1 writer block). Two crossing bars (::before/::after),
-   no clip-path polygons. Shows ~150 ms on a registered kill (weapons.js kill sites stamp the
-   timestamp; the writer owns element + countdown), then gone. */
-#hit-mark{position:absolute;left:0;top:0;width:22px;height:22px;margin:-11px 0 0 -11px;
+/* stage-6 H1: kill-only hit marker */
+#hit-mark{position:absolute;left:0;top:0;width:calc(28 * var(--u));height:calc(28 * var(--u));margin:calc(-14 * var(--u)) 0 0 calc(-14 * var(--u));
   filter:drop-shadow(0 0 6px rgba(125,215,255,.6));}
-#hit-mark::before,#hit-mark::after{content:'';position:absolute;left:50%;top:50%;width:22px;height:2px;
-  margin:-1px 0 0 -11px;background:rgba(125,215,255,.95);}
+#hit-mark::before,#hit-mark::after{content:'';position:absolute;left:50%;top:50%;width:calc(28 * var(--u));height:2px;
+  margin:-1px 0 0 calc(-14 * var(--u));background:rgba(125,215,255,.95);}
 #hit-mark::before{transform:rotate(45deg);}
 #hit-mark::after{transform:rotate(-45deg);}
-#hud-score{position:absolute;top:18px;left:22px;font:700 13px/1.4 ui-monospace,Consolas,monospace;
-  letter-spacing:.18em;color:#bfe9ff;text-shadow:0 0 12px rgba(125,215,255,.4);}
-/* story-018: effect chips — one chip per active effect, name + whole seconds left
-   (combat.js writes change-gated; the kind classes carry the effect's hue) */
-#hud-chips{position:absolute;top:46px;left:50%;transform:translateX(-50%);display:flex;gap:8px;
-  font:700 12px/1 ui-monospace,Consolas,monospace;letter-spacing:.14em;pointer-events:none;}
+#hud-score{position:absolute;top:calc(20 * var(--u));left:calc(26 * var(--u));font:700 calc(18 * var(--u))/1.4 ui-monospace,Consolas,monospace;
+  letter-spacing:.18em;color:#bfe9ff;text-shadow:0 0 6px rgba(0,0,0,.9), 0 0 12px rgba(125,215,255,.35);
+  background:rgba(6,10,20,.45);padding:calc(8 * var(--u)) calc(12 * var(--u));border-radius:calc(6 * var(--u));}
+/* story-018: effect chips */
+#hud-chips{position:absolute;top:calc(60 * var(--u));left:50%;transform:translateX(-50%);display:flex;gap:8px;
+  font:700 calc(16 * var(--u))/1 ui-monospace,Consolas,monospace;letter-spacing:.14em;pointer-events:none;}
 #hud-chips .chip{padding:6px 10px;border:1px solid rgba(125,215,255,.4);border-radius:6px;
   background:rgba(8,13,20,.6);color:#bfe9ff;text-shadow:0 0 10px rgba(125,215,255,.4);}
 #hud-chips .chip.k-OVERDRIVE{border-color:rgba(255,160,47,.55);color:#ffd88f;text-shadow:0 0 10px rgba(255,160,47,.45);}
 #hud-chips .chip.k-SHIELD{border-color:rgba(125,255,176,.5);color:#bfffdd;text-shadow:0 0 10px rgba(125,255,176,.4);}
-/* story-018: charge meter — the reticle ring fills 0→1 over T_CHARGE (combat.js sets --p 0-100)
-   and flashes at the threshold crossing (.charge-full). conic-gradient wedge, ring-masked. */
-#charge-ring{position:absolute;inset:8px;border-radius:50%;opacity:0;transition:opacity .12s ease;
-  background:conic-gradient(rgba(255,200,90,.9) calc(var(--p,0)*1%), rgba(255,200,90,.08) 0);
+/* story-018: charge meter */
+#charge-ring{position:absolute;inset:calc(8 * var(--u));border-radius:50%;opacity:0;transition:opacity .12s ease;
+  background:conic-gradient(rgba(255,160,40,.95) calc(var(--p,0)*1%), rgba(255,160,40,.08) 0);
   -webkit-mask:radial-gradient(circle, transparent 0 54%, #000 58%);mask:radial-gradient(circle, transparent 0 54%, #000 58%);}
 #reticle.charge #charge-ring{opacity:.85;}
-#reticle.charge-full #charge-ring{opacity:1;filter:drop-shadow(0 0 10px rgba(255,200,90,.8));}
-/* stage-6 W1: gun pipper — the bolt-path marker. Analytic anchor: the nose-forward projection
-   is ≈ screen center by construction (combat.js chase-cam lookAt rides pos+forward·4 from
-   behind the nose — aim-assist.js header documents the decision and the rejected per-frame
-   projection's 1-frame matrixWorld staleness). Renders ONLY while the reticle (pointer)
-   diverges past the threshold; self-hides aligned. Cyan; no clip-path. */
-#pipper{position:absolute;left:50%;top:50%;width:10px;height:10px;transform:translate(-50%,-50%);
-  border:1px solid rgba(125,215,255,.95);border-radius:50%;
+#reticle.charge-full #charge-ring{opacity:1;filter:drop-shadow(0 0 10px rgba(255,160,40,.8));}
+/* stage-6 W1: gun pipper */
+#pipper{position:absolute;left:50%;top:50%;width:calc(28 * var(--u));height:calc(28 * var(--u));transform:translate(-50%,-50%);
+  border:calc(2 * var(--u)) solid rgba(125,215,255,.95);border-radius:50%;
   box-shadow:0 0 8px rgba(125,215,255,.55), inset 0 0 3px rgba(125,215,255,.4);}
-/* stage-6 W1: lock bracket — ONE element (single lock at a time), the locked target's
-   projected anchor (pip-block math, integer-px change-gated transform writes). Cyan — amber
-   is this game's elite/boss language (scope.md color rule). No clip-path. */
-#lock-bracket{position:absolute;left:0;top:0;width:34px;height:34px;margin:-17px 0 0 -17px;
+#pipper::after{content:'';position:absolute;left:50%;top:50%;width:calc(4 * var(--u));height:calc(4 * var(--u));
+  transform:translate(-50%,-50%);background:rgba(125,215,255,.95);border-radius:50%;}
+#pipper.locked{border-color:#ffd88f;box-shadow:0 0 10px rgba(255,216,143,.7);}
+#pipper.locked::after{background:#ffd88f;}
+/* stage-6 W1: lock bracket */
+#lock-bracket{position:absolute;left:0;top:0;width:34px;height:34px;
   border:2px solid rgba(125,215,255,.85);border-radius:4px;box-shadow:0 0 10px rgba(125,215,255,.4);
   will-change:transform;}
+#lock-bracket .dist-label{position:absolute;left:100%;top:0;margin-left:6px;font:700 11px ui-monospace,Consolas,monospace;color:#bfe9ff;white-space:nowrap;}
+#hitveil.crit:not(.on){opacity:.25;animation:critPulse 1.2s ease-in-out infinite;}
+@keyframes critPulse{50%{opacity:.45;}}
 /* S4 combat: damage veil */
 #hitveil{position:fixed;inset:0;z-index:46;pointer-events:none;opacity:0;transition:opacity .14s ease;
   background:radial-gradient(ellipse at center, transparent 42%, rgba(255,42,26,.42) 100%);}

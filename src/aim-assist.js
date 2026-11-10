@@ -282,20 +282,29 @@ export function hudTick() { // called once per tickCombat, after the edge-pip bl
   // no per-frame innerHTML churn (hard build constraint 1). Cyan: amber is elite/boss
   // language (scope.md color rule).
   if (C.ui.lockBr) {
-    let vis = false, kx = 0, ky = 0;
+    let vis = false, kx = 0, ky = 0, sz = 34, distM = 0;
     if (!C.dead && lockTarget && lockTarget.userData && lockTarget.userData.alive) {
       C.camera.getWorldDirection(S.camFwd);
       S.toT.copy(lockTarget.position).sub(C.camera.position);
-      if (S.toT.dot(S.camFwd) > 0) { // behind-camera never brackets (no honest projection exists)
+      const dist = S.toT.length();
+      if (S.toT.dot(S.camFwd) > 0 && dist > 0.1) {
         S.ndc.copy(lockTarget.position).project(C.camera);
         kx = Math.round(((S.ndc.x + 1) / 2) * window.innerWidth);
         ky = Math.round((1 - (S.ndc.y + 1) / 2) * window.innerHeight);
+        const f = (window.innerHeight * 0.5) / Math.tan((C.camera.fov * 0.5) * Math.PI / 180);
+        const hitR = Math.max(lockTarget.userData.r || 1, 1);
+        sz = Math.max(28, Math.min(120, Math.round(2 * hitR * 1.4 * f / dist)));
+        distM = Math.round(dist);
         vis = true;
       }
     }
     if (vis !== brVis || (vis && (kx !== brX || ky !== brY))) {
       C.ui.lockBr.hidden = !vis;
-      if (vis) C.ui.lockBr.style.transform = `translate(${kx}px, ${ky}px)`;
+      if (vis) {
+        C.ui.lockBr.style.width = sz + "px";
+        C.ui.lockBr.style.height = sz + "px";
+        C.ui.lockBr.style.transform = `translate(${kx - Math.round(sz / 2)}px, ${ky - Math.round(sz / 2)}px)`;
+      }
       brVis = vis; brX = kx; brY = ky;
     }
   }
