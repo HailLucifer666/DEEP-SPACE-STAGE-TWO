@@ -414,11 +414,17 @@ export function setLaneVisible(v) {
   const vis = !!v;
   if (L.streamA) L.streamA.visible = vis;
   if (L.streamB) L.streamB.visible = vis;
-  if (L.wreckStream) L.wreckStream.visible = vis;
+  // Story 7.5 Step 3 (docs/FIX_PLAN.md): ONLY the lane-rock instanced bands hide in combat —
+  // the far backdrop wrecks (WRECK_N tail, added to the scene directly) and the mid-lane
+  // wreckStream band (seeded visible, recycled every streamTick) must stay visible. The
+  // wreckStream toggle used to live here; that was the violation.
   // story-7.5 probe surface (Task B 2026-11-10; the arena-dressing dressingLive precedent):
   // mirrors the lane's visibility for the harness's hidden-in-combat / restored-on-clear
   // asserts — a scene-graph traversal would have to re-derive which instanced meshes ARE the
   // lane (the ambient field deliberately shares the rock geometry/material family), so the
   // setter itself is the honest witness. Read-only side effect; gameplay untouched.
-  if (window.__stage2) window.__stage2.laneVisible = vis;
+  if (window.__stage2) {
+    window.__stage2.laneVisible = vis;
+    window.__stage2.wreckVisible = !!(L.wreckStream && L.wreckStream.visible); // measured off the stream group itself — never a literal
+  }
 }

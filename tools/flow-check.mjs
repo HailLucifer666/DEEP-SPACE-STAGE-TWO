@@ -1259,6 +1259,14 @@ try {
   ok('launch lane hidden in combat, restored on clearCombat (story 7.5)',
     dp17X.laneHiddenInCombat === true && !!lcSeen.atReenter && lcSeen.atReenter.lv === false && !!lcSeen.atPad && lcSeen.atPad.lv === true,
     JSON.stringify({ laneHiddenInCombat: dp17X.laneHiddenInCombat, atReenter: lcSeen.atReenter && lcSeen.atReenter.lv, atPad: lcSeen.atPad && lcSeen.atPad.lv }));
+  /* MUTATION-PROVEN 2026-11-11 — setLaneVisible re-made to toggle wreckStream (the story 7.5
+     step-3 violation re-applied: `if (L.wreckStream) L.wreckStream.visible = vis;` restored in
+     src/launch.js) → RED 'backdrop wreck stream stays visible in combat' (wreckVisibleInCombat
+     :false — the mirror measured the hidden group); restored → green. Proves this assert
+     discriminates the fix and would catch the regression class again. */
+  ok('backdrop wreck stream stays visible in combat (story 7.5 step 3 — docs/FIX_PLAN.md)',
+    dp17X.wreckVisibleInCombat === true,
+    JSON.stringify({ wreckVisibleInCombat: dp17X.wreckVisibleInCombat }));
   ok('CONSOLE [] (dressingProbe page)', errs.length === 0, errs.join(' | '));
   /* --- story-018 charged shot (?chargeProbe=1, page over the SAME CDP session) ---
      Deterministic in-page drive (droneProbe pattern; src/probes-charge.js chargeProbeTick —

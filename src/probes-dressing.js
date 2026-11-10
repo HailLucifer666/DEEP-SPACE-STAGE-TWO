@@ -279,6 +279,7 @@ export function dressingProbeTick(dt, C, env) {
         // combat — MEASURED off launch.js setLaneVisible's __stage2 mirror (dressingLive
         // precedent). `undefined` mirror (surface removed) reads false → the harness assert reds.
         laneHiddenInCombat: !!(window.__stage2 && window.__stage2.laneVisible === false),
+        wreckVisibleInCombat: !!(window.__stage2 && window.__stage2.wreckVisible === true), // Story 7.5 Step 3 (2026-11-11): MEASURED off launch.js's wreckVisible mirror — undefined reads false → honest red
         warn: { approaching: DD.warn65, turnBack: DD.warn75, inside: DD.warnIn }, // Task A 2026-11-10 (Story 7.6 Step 3)
       };
       window.__stage2.dressingProbe = probe;
