@@ -1,4 +1,19 @@
-# STAGE TWO
+# 🚀 DEEP SPACE: STAGE TWO
+
+> **A self-contained, single-file 3D browser space combat experience.**  
+> Built with vanilla **Three.js** and featuring 3D assets generated via **[Vi3W](https://app.vi3w.in)**.
+
+📦 **Standalone Single-File (`index.html`)** | 🎮 **Zero-Dependency Arcade Combat** | 🛠️ **Built with AI Agent Workflows**
+
+---
+
+### 🌟 Highlights
+- **100% Standalone**: Compiled into a single self-contained `index.html` (~4.7 MB) with embedded models, Web Audio synthesizer, and shaders. Runs completely offline by double-clicking with zero server or npm runtime needed for players.
+- **Vi3W Pipeline**: Hero Interceptor and orbital rocket derelicts authored directly through [Vi3W](https://app.vi3w.in)'s Sketch-to-3D tool.
+- **Full Gameplay Loop**: Launchpad cinematic countdown ➔ atmospheric burnout ➔ 60 FPS 3D space dogfights against raiders & orbiting drones ➔ multipart dreadnought boss fight.
+- **Production Rigor**: Backed by an automated headless CDP battery with 270+ passing assertions.
+
+---
 
 A single-file browser arcade shooter — wave combat, pickups, and a boss fight — built
 in vanilla three.js r187 as an interview take-home. No framework, no server, and no
