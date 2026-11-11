@@ -175,10 +175,11 @@ body.playing.paused, body.playing.paused *{cursor:auto !important;}
 /* Task A (a11y, 2026-11-10): prefers-reduced-motion — the combat chrome's infinite
    pulse/blink animations stop; the states they decorate stay visible via their static
    styles (.crit keeps the red fill, #warn keeps its text/colors). Adjacent animation-only
-   rule FOUND and deliberately NOT guarded here (reported per brief): #hitveil.crit critPulse. */
+   rule guarded 2026-11-11 (plan-gap close): #hitveil.crit critPulse is killed below too. */
 @media (prefers-reduced-motion: reduce) {
   #warn{animation:none;}
   #hud-bars .mtrack.crit i{animation:none;}
+  #hitveil.crit{animation:none;}
 }
 /* stage-6 H1: dedicated boss HP bar */
 #boss-bar{position:absolute;top:16px;left:50%;transform:translateX(-50%);width:min(46vw,440px);
@@ -214,6 +215,11 @@ body.playing.paused, body.playing.paused *{cursor:auto !important;}
   background:rgba(8,13,20,.6);color:#bfe9ff;text-shadow:0 0 10px rgba(125,215,255,.4);}
 #hud-chips .chip.k-OVERDRIVE{border-color:rgba(255,160,47,.55);color:#ffd88f;text-shadow:0 0 10px rgba(255,160,47,.45);}
 #hud-chips .chip.k-SHIELD{border-color:rgba(125,255,176,.5);color:#bfffdd;text-shadow:0 0 10px rgba(125,255,176,.4);}
+/* story 7.7 step 5 + step 3 (2026-11-11): HULL CRITICAL + CHARGING ride the chips line — the
+   plan's sanctioned #hud-chips home (zero new top-level elements; the hud.js element-budget
+   law — one meaning per element — stays intact). */
+#hud-chips .chip.k-crit{border-color:rgba(255,106,77,.6);color:#ff8a70;text-shadow:0 0 10px rgba(255,106,77,.5);}
+#hud-chips .chip.k-charge{border-color:rgba(255,200,90,.55);color:#ffd88f;text-shadow:0 0 10px rgba(255,200,90,.5);}
 /* story-018: charge meter */
 #charge-ring{position:absolute;inset:calc(8 * var(--u));border-radius:50%;opacity:0;transition:opacity .12s ease;
   background:conic-gradient(rgba(255,160,40,.95) calc(var(--p,0)*1%), rgba(255,160,40,.08) 0);
@@ -232,9 +238,12 @@ body.playing.paused, body.playing.paused *{cursor:auto !important;}
 #lock-bracket{position:absolute;left:0;top:0;width:34px;height:34px;
   border:2px solid rgba(125,215,255,.85);border-radius:4px;box-shadow:0 0 10px rgba(125,215,255,.4);
   will-change:transform;}
-/* .dist-label rule removed (Task A dead-code pass, 2026-11-10): no element references the
-   class — #lock-bracket is written empty by aim-assist.js hudTick and the bracket's distance
-   child (story 7.7 step 3) was never implemented. */
+/* story 7.7 step 3 (2026-11-11): the bracket's distance readout — wired this time (the Task A
+   dead-code pass removed the unwired predecessor; the child element + the writer now land
+   together, so the class can never be an orphan again). */
+#lock-bracket .dist-label{position:absolute;left:50%;top:100%;transform:translateX(-50%);
+  margin-top:calc(4 * var(--u));font:700 calc(13 * var(--u))/1 ui-monospace,Consolas,monospace;
+  letter-spacing:.12em;color:#bfe9ff;text-shadow:0 0 6px rgba(0,0,0,.9);white-space:nowrap;}
 #hitveil.crit:not(.on){opacity:.25;animation:critPulse 1.2s ease-in-out infinite;}
 @keyframes critPulse{50%{opacity:.45;}}
 /* S4 combat: damage veil */
@@ -284,7 +293,7 @@ body.playing.paused, body.playing.paused *{cursor:auto !important;}
        meaning per element (reticle keeps steer/charge), no clip-path polygons (flow-check
        counts #hud clip-path children = the 8 edge pips exactly). Writers: aim-assist.js. -->
   <div id="pipper" hidden></div>
-  <div id="lock-bracket" hidden></div>
+  <div id="lock-bracket" hidden><span class="dist-label"></span></div>
   <!-- stage-6 H1: dedicated boss HP bar — fed from BOSS.state() {hp,maxHp} via combat.js's
        change-gated writer; the BOSS text line left #hud-bars (the boss's own write now).
        The dying window never renders it (boss.js barLine:389's rule, mirrored in the writer). -->

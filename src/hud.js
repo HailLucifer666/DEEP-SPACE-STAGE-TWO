@@ -17,7 +17,8 @@ export function initHud(context) { probs = context.probs; }
 /* ============================== UI ============================== */
 const $ = (id) => document.getElementById(id);
 const ui = {
-  webglveil: $('webglveil'), loading: $('loading'), loadingNote: $('loading-note'),
+  webglveil: $('webglveil'), hitveil: $('hitveil'), // story 7.7 step 5 (2026-11-11): the sustained crit class rides combat's change-gated writer — the flash side stays effects.js
+  loading: $('loading'), loadingNote: $('loading-note'),
   title: $('title'), hud: $('hud'), debug: $('debug'), toast: $('toast'),
   count: $('count'), tele: $('tele'), warn: $('warn'),
   hsLine: $('hs-line'), btnLaunch: $('btn-launch'), btnSkip: $('btn-skip'),

@@ -18,7 +18,7 @@ import { noiseBurst, loopStart, musicEvict, musicSetDuck, alarmTick, proximityTi
 import { initWeapons, makeBolt, fireTick, boltsTick, effectsTick, applyEffect, T_CHARGE, BOLT_LIFE } from './weapons.js'; // review-fix split (story-018 review round): the fire path + projectile/effect side — verbatim moves; combat calls them at the same tickCombat positions and composes POWERUP_API around the imported applyEffect
 import { stageShip, combatFlow, setLaneVisible } from './launch.js';
 import * as AIM from './aim-assist.js'; // stage-6 W1: the lock scan + spawn-bias + aim HUD owner — combat hands the LIVE C + forward closure ONCE (the initWeapons seam pattern); aim-assist imports enemies/drone directly and must NEVER import combat.js (dep-check rule)
-import { droneProbeTick, bossProbeTick, pitchProbeTick, dressingProbeTick, chargeProbeTick, powerupProbeTick, balanceProbeTick, fireProbeTick, flightProbeTick, resetProbes } from './probes.js'; // rider R-e: the probe drives + their state live in probes.js — combat calls them, never the reverse (dep-check: acyclic; story-019 adds balanceProbeTick through the same re-export wiring; stage-6 W1 adds fireProbeTick — the real-fire capture walk; stage-7 story 7.0 adds flightProbeTick — the flight-baseline walk)
+import { droneProbeTick, bossProbeTick, pitchProbeTick, dressingProbeTick, chargeProbeTick, powerupProbeTick, balanceProbeTick, fireProbeTick, flightProbeTick, hudProbeTick, resetProbes } from './probes.js'; // rider R-e: the probe drives + their state live in probes.js — combat calls them, never the reverse (dep-check: acyclic; story-019 adds balanceProbeTick through the same re-export wiring; stage-6 W1 adds fireProbeTick — the real-fire capture walk; stage-7 story 7.0 adds flightProbeTick — the flight-baseline walk; 2026-11-11 plan-gap close adds hudProbeTick — the HUD-state walk)
 import * as DRESSING from './arena-dressing.js'; // story-017: combat-only ambient field + shell visual (GDD §3.6)
 
 const ARENA_Y = 18; // story-016: re-anchored as the sphere CENTER's y — O = (0, ARENA_Y, 0) (the spawn point)
@@ -57,6 +57,11 @@ const PITCH_MAX = 1.2566;    // 72° — up-vector safety envelope (camera later
 const PITCH_DEADZONE = 0.08; // NDC — mirrors the yaw deadzone exactly
 const PITCH_INVERT = false;  // flips the POINTER convention ONLY (keys unaffected) — playtest escape hatch
 const ALIGN_RATE = 4.5;      // 1/s — drift realignment toward forward·speed (slip ≈ 25° at full turn)
+// story 7.5 step 4 rock-crash constants (docs/FIX_PLAN.md, aligned 2026-11-11 — the plan
+// declares them beside collideRocks; here they live beside the crash block that uses them)
+const SHIP_R = 1.1;          // ship collision radius passed to collideRocks (was a bare 1.4)
+const RESTITUTION = 0.4;     // rock bounce: vel gets -(1 + RESTITUTION)·vn → factor -1.4
+const CRASH_COOLDOWN = 0.6;  // s — crash damage re-fire gate (was 0.35)
 // story-018 rider (orchestrator-accepted): 24 → 36 — SPREAD+OVERDRIVE saturation headroom
 // (GDD §3.8: 17.6 shots/s × 3 fan bolts × 1.2 s life at the pathological extreme). Prepare-time
 // allocation, restart-clean preserved; pool.js steal-oldest remains the final cap.
@@ -127,7 +132,7 @@ const C = {
   // stage-6 H1 chrome change-gates: boss bar (presence + 5%-stepped fill), wave banner
   // (composed visibility+text signal), kill marker (visibility) — all DOM writes gated on
   // these, the lastBars pattern (hard build constraint 1).
-  lastBossShow: null, lastBossPct: -1, bannerT: 0, lastBannerSig: '', killMarkLeft: 0, lastKillMark: false,
+  lastBossShow: null, lastBossPct: -1, bannerT: 0, bannerClearT: 0, lastBannerSig: '', killMarkLeft: 0, lastKillMark: false, lastVeilCrit: false, // bannerClearT: story 7.7 step 8 WAVE CLEAR window (2026-11-11); lastVeilCrit: step 5 sustained veil-crit gate
 };
 const qs = new URLSearchParams(location.search);
 const SCRIPTED_KILL = qs.get('scriptedKill') === '1';
@@ -312,13 +317,17 @@ function steer(dt) {
   }
   C.pos.addScaledVector(C.vel, dt);
 
-  // rock collision (story 7.5) — sphere-vs-sphere obstacle deflection + impact damage
+  // rock collision (story 7.5) — sphere-vs-sphere obstacle deflection + impact damage.
+  // 2026-11-11: C.vel here is already the plan's "effective velocity" — the drift lerp above merges the throttle into it.
   if (C.rockCooldown > 0) C.rockCooldown = Math.max(0, C.rockCooldown - dt);
-  const pen = DRESSING.collideRocks(C.pos, 1.4, C.tmp);
+  const pen = DRESSING.collideRocks(C.pos, SHIP_R, C.tmp);
   if (pen > 0) {
     C.pos.addScaledVector(C.tmp, pen);
     const vn = C.vel.dot(C.tmp);
-    if (vn < 0) C.vel.addScaledVector(C.tmp, -1.6 * vn);
+    if (vn < 0) {
+      C.vel.addScaledVector(C.tmp, -(1 + RESTITUTION) * vn); // bounce (plan step 4: e = 0.4)
+      C.vel.multiplyScalar(0.85); // overall speed loss — the ship leaves 15% slower (plan step 4)
+    }
     // 2026-11-10 audit: ungated rock damage drained ~17 dps on zero-closing-speed grazes —
     // the old condition fired on ANY overlap, so hovering/grazing at a rock took the clamp
     // minimum (6) every cooldown while vn >= 0. Damage only when the ship moves INTO the
@@ -326,8 +335,10 @@ function steer(dt) {
     // deflects, but drains nothing (Story 7.5: impact damage from closing speed only).
     if (vn < 0 && C.rockCooldown <= 0 && !C.dead) {
       const impactSpeed = Math.max(0, -vn);
-      const dmg = Math.min(25, Math.max(6, Math.round(impactSpeed * 0.75)));
-      C.rockCooldown = 0.35;
+      const dmg = THREE.MathUtils.clamp(Math.round(impactSpeed), 5, 25); // plan step 4: raw impact speed clamped — no 0.75 scale
+      C.rockCooldown = CRASH_COOLDOWN;
+      C.speed *= 0.5; // plan step 4: halve the throttle on a crash — this codebase's throttle state IS C.speed
+      EFFECTS.explosion(C.pos); // plan onCrash: small pooled burst at the crash site (shake + hit sfx + red veil already ride damagePlayer)
       damagePlayer(dmg, 'rock');
     }
   }
@@ -414,11 +425,11 @@ function wavesTick(dt) {
       DRONES.aliveCount() === 0 && DRONES.queuedCount() === 0 && !BOSS.alive()) {
     if (C.waveGapT <= 0) {
       C.waveGapT = 1.6;
-      if (C.wave > 0) { const bonus = SCORE_WAVE * C.wave; C.score += bonus; C.telemetry.scoreBy.waveBonus += bonus; } // story-019: score-by-source at the existing bonus event
+      if (C.wave > 0) { const bonus = SCORE_WAVE * C.wave; C.score += bonus; C.telemetry.scoreBy.waveBonus += bonus; C.bannerClearT = 1.5; } // story 7.7 step 8 (2026-11-11): the field just cleared — WAVE CLEAR holds ~1.5 s of the gap (wave > 0: no CLEAR before the first spawn, mirroring the bonus gate)
     }
     C.waveGapT -= dt;
     if (C.waveGapT <= 0) {
-      C.waveGapT = 0; C.wave++;
+      C.waveGapT = 0; C.wave++; C.bannerClearT = 0; // story 7.7 step 8: the CLEAR window yields to the next wave's banner at the real increment
       C.bannerT = BANNER_T; // stage-6 H1: the wave banner re-arms at the real increment point
       C.telemetry.waveReached = C.wave; C.telemetry.waveTimes.push(+C.time.toFixed(2)); // story-019: the pacing curve — free at the existing increment event (≤ 6 events/run)
       if (C.wave > BOSS_WAVE && BOSS.eligible()) BOSS.spawnBoss(C.pos); // story-013: the warden arrives
@@ -521,7 +532,7 @@ export function enterCombat(scene, camera, rocket, ui, api) {
   C.lastBars = null; C.lastScore = null; // clearCombat emptied the DOM — force one HUD rewrite
   C.lastChips = null; C.lastChargePct = -1; C.lastChargeFull = null; // story-018: same rewrite force for the chips + charge meter
   C.lastBossShow = null; C.lastBossPct = -1; C.lastBannerSig = null; C.lastKillMark = false; // stage-6 H1: same rewrite force for the boss bar / banner / marker
-  C.bannerT = BANNER_T; C.killMarkLeft = 0; // stage-6 H1: the entry wave is announced like every increment; no marker rides a re-entry
+  C.bannerT = BANNER_T; C.killMarkLeft = 0; C.bannerClearT = 0; C.lastVeilCrit = false; if (C.ui.hitveil) C.ui.hitveil.classList.remove('crit'); // story 7.7 (2026-11-11): re-entry re-announces the wave, never a stale CLEAR window, and the pad never inherits the sustained veil-crit
   C.bolts.clear();
   POWERUPS.clearPowerups(); // story-018: the pickup pool drains with the pools — enterCombat needs no re-show (pickups are hidden until dropped, like bolts)
   ENEMIES.clearEnemies();
@@ -557,6 +568,7 @@ export function tickCombat(dt, t) {
   balanceProbeTick(dt, C, probeEnv); // story-019: elite/table/telemetry walk (?balanceProbe=1) — the drive grows with the story's commits
   fireProbeTick(dt, C, probeEnv); // stage-6 W1: real-fire bolt capture (?fireProbe=1) — seeds targets, captures b.userData.dir of REAL fired bolts (CDP press via the harness arm flags); never spawns a bolt itself
   flightProbeTick(dt, C, probeEnv); // stage-7 story 7.0: flight-baseline walk (?flightProbe=1) — measures the OLD model (pitch clamp, no-roll, fov, cam-lag, R_HARD clamp); the 7.1/7.3 honest-red witness; zero gameplay change
+  hudProbeTick(dt, C, probeEnv); // plan-gap close 2026-11-11: HUD-state walk (?hudProbe=1) — HOSTILES / WAVE CLEAR / HULL CRITICAL / CHARGING samples through the game's own writers (probes-hud.js)
   DRESSING.tickDressing(dt, Math.hypot(C.pos.x, C.pos.y - ARENA_Y, C.pos.z)); // story-017: slow whole-group rotation + shell opacity from 3D proximity (the ring's driver grammar)
 
   // shield regen after a clean 3 s — story-018: while SHIELD is active the regen delay reads 0
@@ -632,7 +644,8 @@ export function tickCombat(dt, t) {
   // frame with zero DOM cost.
   if (C.ui.waveBanner) {
     C.bannerT -= dt;
-    const sig = C.bannerT > 0 ? `WAVE ${fmt(C.wave)}` : '';
+    if (C.bannerClearT > 0) C.bannerClearT -= dt; // story 7.7 step 8 (2026-11-11): the WAVE CLEAR window — ends ~0.1 s before the gap does, so the next wave's banner takes over cleanly
+    const sig = C.bannerClearT > 0 ? 'WAVE CLEAR' : (C.bannerT > 0 ? `WAVE ${fmt(C.wave)}` : '');
     if (sig !== C.lastBannerSig) {
       if (sig) { C.ui.waveBanner.hidden = false; void C.ui.waveBanner.offsetWidth; C.ui.waveBanner.classList.add('on'); }
       else { C.ui.waveBanner.classList.remove('on'); C.ui.waveBanner.hidden = true; }
@@ -660,7 +673,11 @@ export function tickCombat(dt, t) {
   }
   if (C.ui.hudScore) {
     const score = `SCORE ${fmt(C.score)}   WAVE ${fmt(C.wave)}`;
-    if (score !== C.lastScore) { C.ui.hudScore.textContent = score; C.lastScore = score; }
+    // story 7.7 step 8 (2026-11-11): the plan's second line — alive raiders + orbs (the drones
+    // module IS the orb wave layer, story-012; the boss is deliberately not counted — plan wording).
+    const hostiles = ENEMIES.aliveCount() + DRONES.aliveCount();
+    const sig = `${score}\nHOSTILES ${fmt(hostiles)}`;
+    if (sig !== C.lastScore) { C.ui.hudScore.innerHTML = `${score}<br>HOSTILES ${fmt(hostiles)}`; C.lastScore = sig; }
   }
 
   // story-018 effect chips — one per active effect, name + whole seconds left, change-gated
@@ -671,7 +688,19 @@ export function tickCombat(dt, t) {
       const k = EFFECT_KINDS[i];
       if (C.effects[k] > 0) chips += `<span class="chip k-${k}">${k} ${Math.ceil(C.effects[k])}s</span>`;
     }
+    // story 7.7 step 5 + step 3 (2026-11-11): HULL CRITICAL + CHARGING ride the chips line — the
+    // plan's sanctioned #hud-chips home (zero new top-level elements; element-budget law holds).
+    if (C.hp < 25 && !C.dead) chips += `<span class="chip k-crit">HULL CRITICAL</span>`;
+    if (C.charging) chips += `<span class="chip k-charge">CHARGING</span>`;
     if (chips !== C.lastChips) { C.ui.hudChips.innerHTML = chips; C.lastChips = chips; }
+  }
+
+  // story 7.7 step 5 (2026-11-11): the SUSTAINED critical state on the veil — the transient
+  // flash rides damagePlayer's hitVeil(); this is the <25 HP class the critPulse CSS animates.
+  // Change-gated (the lastBars pattern); clearCombat removes the class so the pad never inherits it.
+  if (C.ui.hitveil) {
+    const crit = C.hp < 25 && !C.dead;
+    if (crit !== C.lastVeilCrit) { C.ui.hitveil.classList.toggle('crit', crit); C.lastVeilCrit = crit; }
   }
 
   // story-018 charge meter — the reticle ring fills 0→1 over T_CHARGE during a hold and
