@@ -1,8 +1,32 @@
-node_modules
+node_modules/
 *.log
 Thumbs.db
-build/.edge-profile-cdp*
-build/.edge-probe*
+.DS_Store
 
-.venv
+# Edge/browser automation temp profiles
+build/.edge-profile*
+build/.edge-probe*
+build/_bak*
+build/*.tmp
+build/*.patch
+build/*.txt
+build/live-play*
+build/shots/diag-*.png
+build/*-smoke.mjs
+build/*-shot.mjs
+build/battery-*.mjs
+build/pu-debug.mjs
+build/flow-check-*.mjs
+build/flow018-*.js
+build/analyze-live-play.mjs
+build/*.ps1
+build/run-mutations*.sh
+
+# Python & virtualenvs
+.venv/
+.freebuff/
+
+# Tooling caches
 graphify-out/cache/
+.zcode/
+

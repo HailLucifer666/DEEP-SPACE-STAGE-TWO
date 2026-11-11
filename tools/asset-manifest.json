@@ -1,0 +1,120 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "version": "1.0.0",
+  "name": "deep-space-assets",
+  "description": "Curated CC0/CC-BY Asset Manifest for Deep Space",
+  "limits": {
+    "maxTotalRawBytes": 7471104,
+    "maxTotalBase64Bytes": 9961472,
+    "maxSingleFileHtmlBytes": 12582912
+  },
+  "assets": [
+    {
+      "id": "hero_ship_interceptor",
+      "category": "mesh",
+      "name": "Viper Space Interceptor",
+      "source": "Kenney Space Kit",
+      "sourceUrl": "https://kenney.nl/assets/space-kit",
+      "license": "CC0-1.0",
+      "author": "Kenney",
+      "targetFile": "src/assets/hero-ship.glb",
+      "budgetBytes": 460800,
+      "maxTris": 12000,
+      "status": "pending_import"
+    },
+    {
+      "id": "enemy_raider",
+      "category": "mesh",
+      "name": "Pirate Interceptor",
+      "source": "Kenney Space Kit",
+      "sourceUrl": "https://kenney.nl/assets/space-kit",
+      "license": "CC0-1.0",
+      "author": "Kenney",
+      "targetFile": "src/assets/enemy-raider.glb",
+      "budgetBytes": 327680,
+      "maxTris": 6000,
+      "status": "pending_import"
+    },
+    {
+      "id": "enemy_gunner",
+      "category": "mesh",
+      "name": "Heavy Frigate",
+      "source": "Kenney Space Craft",
+      "sourceUrl": "https://kenney.nl/assets/space-craft",
+      "license": "CC0-1.0",
+      "author": "Kenney",
+      "targetFile": "src/assets/enemy-gunner.glb",
+      "budgetBytes": 409600,
+      "maxTris": 8000,
+      "status": "pending_import"
+    },
+    {
+      "id": "boss_dreadnought",
+      "category": "mesh",
+      "name": "Modular Capital Dreadnought",
+      "source": "CC0 Kitbash",
+      "sourceUrl": "https://opengameart.org/content/space-station-carrier",
+      "license": "CC0-1.0",
+      "author": "Sol Command / OpenGameArt",
+      "targetFile": "src/assets/boss-dreadnought.glb",
+      "budgetBytes": 870400,
+      "maxTris": 18000,
+      "status": "pending_import"
+    },
+    {
+      "id": "skybox_nebula_deep",
+      "category": "texture",
+      "name": "Deep Space Nebula Cube",
+      "source": "ESO / Space Backgrounds",
+      "sourceUrl": "https://opengameart.org/content/space-skyboxes",
+      "license": "CC-BY-4.0",
+      "author": "Japhy",
+      "targetFile": "src/assets/skybox-nebula.webp",
+      "budgetBytes": 1677721,
+      "resolution": "1024x1024x6",
+      "status": "pending_import"
+    },
+    {
+      "id": "fx_explosion_flipbook",
+      "category": "texture",
+      "name": "16-Frame Plasma Explosion Sprite Sheet",
+      "source": "OpenGameArt",
+      "sourceUrl": "https://opengameart.org/content/explosion-sheet",
+      "license": "CC0-1.0",
+      "author": "Sinbad",
+      "targetFile": "src/assets/fx-explosion.webp",
+      "budgetBytes": 225280,
+      "frames": 16,
+      "status": "pending_import"
+    },
+    {
+      "id": "music_combat_track",
+      "category": "audio",
+      "name": "Deep Space Combat Loop",
+      "source": "Incompetech",
+      "sourceUrl": "https://incompetech.com/music/royalty-free/",
+      "license": "CC-BY-3.0",
+      "author": "Kevin MacLeod",
+      "targetFile": "src/assets/music-combat.opus",
+      "budgetBytes": 1153433,
+      "codec": "opus",
+      "bitrateKbps": 64,
+      "status": "pending_import"
+    },
+    {
+      "id": "music_boss_track",
+      "category": "audio",
+      "name": "Wrath of the Void",
+      "source": "OpenGameArt",
+      "sourceUrl": "https://opengameart.org/content/boss-battle-theme",
+      "license": "CC0-1.0",
+      "author": "DST",
+      "targetFile": "src/assets/music-boss.opus",
+      "budgetBytes": 1468006,
+      "codec": "opus",
+      "bitrateKbps": 64,
+      "status": "pending_import"
+    }
+  ]
+}
+

@@ -24,6 +24,7 @@ import { resetBalanceProbe } from './probes-balance.js'; // story-019: the balan
 import { resetFireProbe } from './probes-fire.js'; // stage-6 W1: the fire-path walk's state bag + window hygiene live with the drive (the story-018 split precedent)
 import { resetFlightProbe } from './probes-flight.js'; // stage-7 story 7.0: the flight-baseline walk's state bag + window hygiene live with the drive (the story-018 split precedent)
 import { resetDressingProbe } from './probes-dressing.js'; // Task A follow-up 2026-11-10 (review finding 1): the dressing walk joined the one-walk-per-file split (file hit the <800-line rule) — its state bag + window hygiene live with the drive now
+import { resetHudProbe } from './probes-hud.js'; // plan-gap close 2026-11-11: the HUD walk joined the one-walk-per-file split — its state bag + window hygiene live with the drive now (a bare re-export does NOT bind the name locally: resetProbes calls this)
 import './probes-audio.js'; // stage-6 A1: the self-driving audio probe (?audioProbe=1 / ?sfxFault=1) — no tick, no reset: it waits for the unlock gesture and exercises audio.js's public surface directly (imports audio.js, NEVER combat.js)
 
 // story-018 walks (review-fix split): combat.js imports the ticks from HERE (the R-e wiring,
@@ -34,6 +35,7 @@ export { balanceProbeTick, resetBalanceProbe } from './probes-balance.js'; // st
 export { fireProbeTick, resetFireProbe } from './probes-fire.js'; // stage-6 W1 re-export — the real-fire capture walk (the drive seeds targets + captures b.userData.dir; it never spawns a bolt itself)
 export { flightProbeTick, resetFlightProbe } from './probes-flight.js'; // stage-7 story 7.0 re-export — the flight-baseline walk (measures the OLD model; the 7.1/7.3 honest-red witness)
 export { dressingProbeTick, resetDressingProbe } from './probes-dressing.js'; // Task A follow-up 2026-11-10 re-export — the dressing walk rides the same split (combat.js's import surface stays byte-identical)
+export { hudProbeTick, resetHudProbe } from './probes-hud.js'; // plan-gap close 2026-11-11 re-export — the HUD-state walk (HOSTILES / WAVE CLEAR / HULL CRITICAL / CHARGING), same one-walk-per-file split
 
 const qs = new URLSearchParams(location.search);
 const DRONE_PROBE = qs.get('droneProbe') === '1'; // story-012: deterministic single-drone run
@@ -69,6 +71,7 @@ export function resetProbes() { // rider R-e: what enterCombat's inline probe re
   // split (Task A follow-up 2026-11-10): the DD reset + window hygiene moved verbatim into
   // resetDressingProbe() (probes-dressing.js) — each state bag now lives beside its drive.
   resetDressingProbe();
+  resetHudProbe(); // plan-gap close 2026-11-11: the HUD walk's bag + report join the same stale-delete hygiene
   // story-018: the charge/powerup walks' reports + the harness arm flags — stale-delete hygiene.
   // Review-fix split: those resets moved verbatim into each walk's module (resetChargeProbe /
   // resetPowerupProbe) — each state bag now lives beside its drive; the call order is unchanged

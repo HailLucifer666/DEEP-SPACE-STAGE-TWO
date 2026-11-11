@@ -244,6 +244,7 @@ let pipShow = false; // last pipper gate
 let pipLocked = false; // story 7.4: last pipper `locked`-class gate (change-gated — no per-frame DOM churn)
 let pipDivDeg = 0; // stage-6 H1 honesty rider: the divergence the gate measured this tick (deg off the bolt path) — pipperState() reads THIS stored state, never recomputes
 let brVis = false, brX = -1, brY = -1; // last bracket gates (integer-px change gate)
+let brSz = 34, brDist = -1; // story 7.7 step 3 (2026-11-11): size + rounded-distance gates — size rides the change gate so a head-on approach (fixed kx/ky) still resizes (the audit's frozen-bracket class); brDist gates the .dist-label child write
 
 // stage-6 H1 honesty rider (W1's chair flag): the pointer-divergence from the bolt path in
 // DEGREES, computed from the same pointer read the old visibility gate used — NDC pointer →
@@ -282,7 +283,7 @@ export function hudTick() { // called once per tickCombat, after the edge-pip bl
   // no per-frame innerHTML churn (hard build constraint 1). Cyan: amber is elite/boss
   // language (scope.md color rule).
   if (C.ui.lockBr) {
-    let vis = false, kx = 0, ky = 0, sz = 34; // Task A 2026-11-10: distM removed (dead computation — computed, never read/written anywhere)
+    let vis = false, kx = 0, ky = 0, sz = 34, distR = -1; // 2026-11-11: the distance readout is wired now — the Task A dead-code pass removed the unwired predecessor (distM computed, never written); this time the child element + the writer land together
     if (!C.dead && lockTarget && lockTarget.userData && lockTarget.userData.alive) {
       C.camera.getWorldDirection(S.camFwd);
       S.toT.copy(lockTarget.position).sub(C.camera.position);
@@ -293,18 +294,21 @@ export function hudTick() { // called once per tickCombat, after the edge-pip bl
         ky = Math.round((1 - (S.ndc.y + 1) / 2) * window.innerHeight);
         const f = (window.innerHeight * 0.5) / Math.tan((C.camera.fov * 0.5) * Math.PI / 180);
         const hitR = Math.max(lockTarget.userData.r || 1, 1);
-        sz = Math.max(28, Math.min(120, Math.round(2 * hitR * 1.4 * f / dist)));
+        sz = Math.max(34, Math.min(140, Math.round(2 * hitR * 1.4 * f / dist))); // story 7.7 step 3 plan clamp (was 28..120)
+        distR = Math.round(dist); // story 7.7 step 3: the rounded number the bracket child shows
         vis = true;
       }
     }
-    if (vis !== brVis || (vis && (kx !== brX || ky !== brY))) {
+    if (vis !== brVis || (vis && (kx !== brX || ky !== brY || sz !== brSz))) {
       C.ui.lockBr.hidden = !vis;
       if (vis) {
         C.ui.lockBr.style.width = sz + "px";
         C.ui.lockBr.style.height = sz + "px";
         C.ui.lockBr.style.transform = `translate(${kx - Math.round(sz / 2)}px, ${ky - Math.round(sz / 2)}px)`;
+        const lbl = C.ui.lockBr.firstElementChild; // story 7.7 step 3: the .dist-label child (template markup) — change-gated on the rounded value
+        if (lbl && distR !== brDist) { lbl.textContent = String(distR); brDist = distR; }
       }
-      brVis = vis; brX = kx; brY = ky;
+      brVis = vis; brX = kx; brY = ky; brSz = sz;
     }
   }
 }
@@ -315,7 +319,7 @@ export function resetAimHud() { // clearCombat drain (§8.6): the pad never inhe
     if (C.ui.pipper) { C.ui.pipper.hidden = true; C.ui.pipper.classList.remove('locked'); }
     if (C.ui.lockBr) C.ui.lockBr.hidden = true;
   }
-  pipShow = false; pipLocked = false; brVis = false; brX = -1; brY = -1;
+  pipShow = false; pipLocked = false; brVis = false; brX = -1; brY = -1; brSz = 34; brDist = -1; // 2026-11-11: the readout gates drain with the rest
 }
 
 /* ---------- honesty surface (combatState reads these — the harness-visible lock state) ---------- */

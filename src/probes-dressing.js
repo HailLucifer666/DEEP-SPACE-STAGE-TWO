@@ -71,9 +71,16 @@ function warnHandoff(C, env) {
 // and its spawn-failure path; every field absent there reads null/false downstream → red by
 // absence, never a vacuous green)
 function rockWitnessReport(rw, boltStopped) {
+  // Story 7.5 step 4 (2026-11-11): the crash-physics witnesses are MEASURED in the impact
+  // window — postCrashSpeedRatio = C.speed right after the crash tick ÷ speed just before
+  // impact (read before the probe's throttle release, so steer's halving is what it sees);
+  // crashCooldown = C.rockCooldown read right after the crash tick. Absent crash → null
+  // fields → red by absence downstream, never a vacuous green.
+  const crashRatio = rw.postCrashSpeed !== undefined && rw.preSpeed > 0
+    ? +(rw.postCrashSpeed / rw.preSpeed).toFixed(4) : null;
   return {
     radius: rw.r0.radius,
-    impact: { hpDelta: rw.hpDelta, hpTicks: rw.ticks, rockDmg: rw.rockDmg, sawOverlap: rw.saw, endOverlapFree: rw.endPen === 0, minAxial: +rw.minAx.toFixed(2), endAxial: +rw.endAx.toFixed(2), deflected: rw.saw && rw.endPen === 0 && rw.minAx > 0, windowS: 1.0 },
+    impact: { hpDelta: rw.hpDelta, hpTicks: rw.ticks, rockDmg: rw.rockDmg, sawOverlap: rw.saw, endOverlapFree: rw.endPen === 0, minAxial: +rw.minAx.toFixed(2), endAxial: +rw.endAx.toFixed(2), deflected: rw.saw && rw.endPen === 0 && rw.minAx > 0, postCrashSpeedRatio: crashRatio, crashCooldown: rw.crashCooldown !== undefined ? rw.crashCooldown : null, windowS: 1.0 },
     graze: { hpDelta: rw.gzDelta, hpTicks: rw.gzTicks, rockDmg: rw.gzRockDmg, pinnedOverlapTicks: rw.gzPins, penMin: +rw.gzPenMin.toFixed(2), windowS: 1.2 },
     boltStopped,
   };
@@ -132,9 +139,13 @@ export function dressingProbeTick(dt, C, env) {
     //     and deflected — ends overlap-free AND never crosses the rock center (minAxial > 0:
     //     the anti-fly-through discriminator — a removed push-out ends the fixture on the
     //     rock's FAR side, overlap-free too, so endOverlapFree alone cannot witness it).
+    //     Story 7.5 step 4 (2026-11-11): the impact window also measures the crash physics —
+    //     postCrashSpeedRatio (C.speed right after the crash tick ÷ speed just before impact,
+    //     read BEFORE the probe's throttle release so steer's halving is what it sees) and
+    //     crashCooldown (C.rockCooldown read right after the crash tick).
     //   graze — the 2026-11-10 incident condition: the ship re-seated overlapping every
-    //     tick with vel/speed zeroed (closing speed vn = 0) for 1.2 s > 2× the 0.35 s
-    //     cooldown. The vn<0 gate must drain NOTHING (graze.rockDmg 0 / hpTicks 0); the
+    //     tick with vel/speed zeroed (closing speed vn = 0) for 1.2 s = 2× the 0.6 s crash
+    //     cooldown (story 7.5 step 4 raised it 0.35 → 0.6). The vn<0 gate must drain NOTHING (graze.rockDmg 0 / hpTicks 0); the
     //     ungated pre-fix code re-fired the clamp minimum (~6) every 0.35 s here — the
     //     sustained ~17 dps drain. pinnedOverlapTicks is the fixture guard (a broken seat
     //     reads 0 → honest red, never a vacuous green).
@@ -156,22 +167,31 @@ export function dressingProbeTick(dt, C, env) {
       if (!r0) { DD.rockHit = null; warnHandoff(C, env); return; } // rock absent → the asserts read null (red by absence)
       const uxz = Math.hypot(r0.wx, r0.wz);
       const ux = uxz > 1 ? r0.wx / uxz : 1, uz = uxz > 1 ? r0.wz / uxz : 0; // deterministic XZ-radial approach axis (yaw drift is tangential — ⟂ this axis)
-      const minD = 1.4 + r0.radius; // 1.4 = the ship radius steer passes to collideRocks (combat.js call site) — keep in step with it
+      const minD = 1.1 + r0.radius; // 1.1 = SHIP_R, the ship radius steer passes to collideRocks (combat.js call site, story 7.5 step 4 plan value) — keep in step with it
       C.pos.set(r0.wx + ux * (minD - 0.5), r0.wy, r0.wz + uz * (minD - 0.5));
       C.heading = Math.atan2(-ux, -uz); C.pitch = 0; C.bank = 0; // nose into the rock
       C.vel.set(-ux * 17, 0, -uz * 17); C.speed = 17; // REAL inward velocity — NOT zeroed (the old test's trap)
       for (const k of ['KeyW', 'KeyA', 'KeyD', 'KeyR', 'KeyF', 'Space']) keys.delete(k);
       C.api.input.mouseActive = false;
-      DD.rw = { r0, ux, uz, minD, sub: 'impact', mark: DD.t, hp0: C.hp + C.shield, dmg0: C.telemetry.damageTaken.rock, last: C.telemetry.damageTaken.rock, ticks: 0, saw: DRESSING.collideRocks(C.pos, 1.4, null) > 0, minAx: Infinity };
+      DD.rw = { r0, ux, uz, minD, sub: 'impact', mark: DD.t, hp0: C.hp + C.shield, dmg0: C.telemetry.damageTaken.rock, last: C.telemetry.damageTaken.rock, ticks: 0, saw: DRESSING.collideRocks(C.pos, 1.1, null) > 0, minAx: Infinity, preSpeed: C.speed }; // preSpeed = the throttle just before impact (seat sets 17; kept fresh below until the crash)
       return;
     }
     if (rw.sub === 'impact') {
       const ax = (C.pos.x - rw.r0.wx) * rw.ux + (C.pos.z - rw.r0.wz) * rw.uz; // signed offset along the approach axis (+ = entry side)
       const dm = C.telemetry.damageTaken.rock;
-      if (dm > rw.last) { rw.ticks++; rw.last = dm; C.speed = 0; } // release at the FIRST damage tick
+      if (dm > rw.last) { // a damage tick fired during this frame's steer — the crash
+        rw.ticks++; rw.last = dm;
+        if (rw.ticks === 1) { // the crash tick — measure AFTER steer ran, BEFORE the throttle release below
+          rw.postCrashSpeed = C.speed; // steer already applied the plan's halving (17 → 8.5; story 7.5 step 4)
+          rw.crashCooldown = C.rockCooldown; // set 0.6 in steer this frame — not yet decremented (read right after the crash tick)
+        }
+        C.speed = 0; // release at the FIRST damage tick
+      } else if (rw.ticks === 0) {
+        rw.preSpeed = C.speed; // still pre-impact — hold the speed just before the crash tick
+      }
       if (ax < rw.minAx) rw.minAx = ax;
       if (DD.t >= rw.mark + 1.0) {
-        rw.endPen = DRESSING.collideRocks(C.pos, 1.4, null);
+        rw.endPen = DRESSING.collideRocks(C.pos, 1.1, null);
         rw.endAx = ax;
         rw.hpDelta = +(C.hp + C.shield - rw.hp0).toFixed(2);
         rw.rockDmg = rw.last - rw.dmg0;
@@ -186,16 +206,16 @@ export function dressingProbeTick(dt, C, env) {
       if (g0) {
         const guxz = Math.hypot(g0.wx, g0.wz);
         const gx = guxz > 1 ? g0.wx / guxz : 1, gz2 = guxz > 1 ? g0.wz / guxz : 0;
-        const gminD = 1.4 + g0.radius;
+        const gminD = 1.1 + g0.radius; // SHIP_R in step with steer's call site (story 7.5 step 4)
         C.pos.set(g0.wx + gx * (gminD - 0.5), g0.wy, g0.wz + gz2 * (gminD - 0.5)); // the pin: steer() sees this overlap on its next tick
         C.vel.set(0, 0, 0); C.speed = 0; // closing speed exactly 0 — the incident's hover/graze condition
-        const gpen = DRESSING.collideRocks(C.pos, 1.4, null);
+        const gpen = DRESSING.collideRocks(C.pos, 1.1, null);
         if (gpen > 0) rw.gzPins++;
         if (gpen < rw.gzPenMin) rw.gzPenMin = gpen;
       }
       const dm2 = C.telemetry.damageTaken.rock;
       if (dm2 > rw.gzLast) { rw.gzTicks++; rw.gzLast = dm2; }
-      if (DD.t >= rw.mark + 1.2) { // > 2× the 0.35 s cooldown — the ungated code re-fires ~3× inside this window
+      if (DD.t >= rw.mark + 1.2) { // = 2× the 0.6 s crash cooldown (story 7.5 step 4) — a refire-capable span (the ungated pre-fix code re-fired every cooldown here)
         rw.gzDelta = +(C.hp + C.shield - rw.gzHp0).toFixed(2);
         rw.gzRockDmg = rw.gzLast - rw.gzDmg0;
         rw.sub = 'bolt'; rw.mark = DD.t; rw.bolt = null;

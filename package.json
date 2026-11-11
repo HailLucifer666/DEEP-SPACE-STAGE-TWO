@@ -4,7 +4,9 @@
   "type": "module",
   "description": "STAGE TWO - single-file browser micro-game (rocket launch -> 4-beat transition -> chase-cam combat)",
   "scripts": {
-    "build": "node tools/build.mjs"
+    "build": "node tools/build.mjs",
+    "test": "node tools/flow-check.mjs",
+    "check": "node tools/dep-check.mjs"
   },
   "dependencies": {
     "three": "0.187.0"

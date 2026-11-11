@@ -1250,6 +1250,18 @@ try {
   ok('rock impact: deflected — pushed out, ends overlap-free, never crossed the center (story 7.5)',
     !!rk.impact && rk.impact.deflected === true,
     JSON.stringify(rk.impact || null));
+  /* Story 7.5 step 4 (2026-11-11): the crash-physics plan values get their own witness —
+     postCrashSpeedRatio is MEASURED in the impact window (C.speed right after the crash tick
+     ÷ speed just before impact, read before the probe's throttle release, so steer's crash
+     block is what it sees): in (0,1) means the plan's throttle halving (C.speed *= 0.5) ran
+     AND the ship is not frozen by the bounce+loss. crashCooldown pins the plan's 0.6 s
+     re-fire gate (was 0.35). MUTATION-PROVEN 2026-11-11: the crash block's speed loss removed
+     in src/combat.js (C.vel.multiplyScalar(0.85) deleted AND the C.speed *= 0.5 halving
+     deleted) → RED here (ratio 1 — the crash left the throttle untouched); restored → green.
+     First-ever failing proof for the speed-halving; the 0.85 loss rides the same witness. */
+  ok('rock impact: crash physics — post-crash speed ratio in (0,1), crash cooldown 0.6 (story 7.5 step 4 plan values)',
+    !!rk.impact && rk.impact.postCrashSpeedRatio > 0 && rk.impact.postCrashSpeedRatio < 1 && rk.impact.crashCooldown === 0.6,
+    JSON.stringify(rk.impact || null));
   ok('rock graze: zero closing speed drains nothing across the cooldown (story 7.5 gate — 2026-11-10 audit)',
     !!rk.graze && rk.graze.pinnedOverlapTicks >= 10 && rk.graze.rockDmg === 0 && rk.graze.hpTicks === 0,
     JSON.stringify(rk.graze || null));
@@ -1268,6 +1280,50 @@ try {
     dp17X.wreckVisibleInCombat === true,
     JSON.stringify({ wreckVisibleInCombat: dp17X.wreckVisibleInCombat }));
   ok('CONSOLE [] (dressingProbe page)', errs.length === 0, errs.join(' | '));
+  /* --- plan-gap close 2026-11-11: story-7.7 HUD states (?hudProbe=1, page over the SAME CDP session) ---
+     Deterministic in-page drive (droneProbe pattern; src/probes-hud.js hudProbeTick — the
+     one-walk-per-file split). Samples the five uncovered HUD states through the game's own
+     change-gated writers: the #hud-score HOSTILES line (7.7 step 8), the WAVE CLEAR banner
+     window (step 8), the HULL CRITICAL chip + sustained #hitveil.crit (step 5), the lock
+     bracket's distance readout (step 3 — real lock, no ?lock=0 on this page), and the
+     CHARGING chip (step 3). RED record: ?hudProbe=1 unread → window.__stage2.hudProbe never
+     appears → every assert reds by absence (each guard !!rk.x).
+     MUTATION-PROVEN 2026-11-11 (combined run — each verified by its own assert's red, each
+     restored before the green): (1) the HOSTILES line dropped from the score writer → 'hud
+     hostiles' RED; (2) the wavesTick bannerClearT arm removed → 'hud wave clear' RED; (3) the
+     HULL CRITICAL span dropped from the chips composer → 'hud hull critical' RED; (4) the
+     dist-label write removed from aim-assist hudTick → 'hud bracket distance' RED; (5) the
+     CHARGING span dropped → 'hud charging' RED. */
+  await send('Page.navigate', { url: 'file:///E:/Game%20Build/index.html?debug=1&goto=combat&hudProbe=1' }); // NO ?lock=0 — the bracket stage needs the real lock to acquire
+  let hpr = null;
+  {
+    const t0 = Date.now();
+    for (;;) {
+      try { hpr = await J(`(window.__stage2 && window.__stage2.hudProbe) || null`); } catch { hpr = null; }
+      if (hpr) break;
+      if (Date.now() - t0 > 120000) break; // deadline — the asserts below record the red
+      await sleep(200);
+    }
+  }
+  const hpX = hpr || {};
+  const hsX = hpX.hostiles || {}, wcX = hpX.waveClear || {}, crX = hpX.critical || {}, bkX = hpX.bracket || {}, cgX = hpX.charging || {};
+  ok('hudProbe reports (plan-gap 2026-11-11)', !!hpr, JSON.stringify(hpr));
+  ok('hud hostiles: the score block shows HOSTILES n matching the real alive count (story 7.7 step 8)',
+    !!hsX.line && hsX.line.indexOf('HOSTILES') >= 0 && (() => { const m = /HOSTILES (\d+)/.exec(hsX.line); return !!m && Number(m[1]) === hsX.alive; })() && hsX.alive > 0,
+    JSON.stringify(hsX));
+  ok('hud wave clear: the banner shows WAVE CLEAR in the gap, then the next wave\'s WAVE n (story 7.7 step 8)',
+    wcX.clearShown === true && wcX.nextShown === true && typeof wcX.nextText === 'string' && wcX.nextText.indexOf('WAVE ') === 0 && wcX.nextText !== 'WAVE CLEAR',
+    JSON.stringify(wcX));
+  ok('hud hull critical: chip + sustained veil class + track class below 25 HP (story 7.7 step 5)',
+    crX.chipShown === true && crX.veilCrit === true && crX.trackCrit === true,
+    JSON.stringify(crX));
+  ok('hud hull critical: chip + veil class clear on heal (the false-positive control)',
+    crX.chipGone === true && crX.veilGone === true, JSON.stringify(crX));
+  ok('hud bracket distance: the lock bracket\'s .dist-label child shows a positive integer while locked (story 7.7 step 3)',
+    bkX.locked === true && typeof bkX.distText === 'string' && /^\d+$/.test(bkX.distText) && Number(bkX.distText) > 0,
+    JSON.stringify(bkX));
+  ok('hud charging: the chip shows while charge holds and clears on release (story 7.7 step 3)',
+    cgX.shown === true && cgX.gone === true, JSON.stringify(cgX));
   /* --- story-018 charged shot (?chargeProbe=1, page over the SAME CDP session) ---
      Deterministic in-page drive (droneProbe pattern; src/probes-charge.js chargeProbeTick —
      review-fix split, one walk per file): the

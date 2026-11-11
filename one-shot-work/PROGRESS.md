@@ -1,3 +1,4 @@
+STATE 2026-11-10 | task: stage-two-integrity | last good tag: (none since stage6; master 34404b8 untagged, playtest pending) | build: ok 4.71MB | next: Task A test-integrity on fix/stage-two-integrity -> Task B graze gate + rock coverage -> battery + merge -> OWNER PLAYTEST -> docs/tag | blockers: Gemini/Antigravity session must NOT write to repo until playtest checkpoint
 STATE 2026-11-03 06:22 | task: ccgs-review | last good tag: good-studio | build: ok 4.65MB | next: fix TD-001/TD-002 (overlay sweep + WASD cam, plan ready) then Vi3W drone+boss | blockers: none
 STATE 2026-11-03 06:06 | task: studio-install | last good tag: good-studio | build: ok 4.65MB | next: WASD-feel + overlay-flow fix (plan drafted), then Vi3W drone+boss | blockers: none
 STATE 2026-11-03 05:42 | task: pips | last good tag: good-pips | build: ok 4.65MB | next: final sweep + user visual pass | blockers: none
